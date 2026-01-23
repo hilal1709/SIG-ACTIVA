@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+model MaterialData {
+  id           Int      @id @default(autoincrement())
+  materialId   String
+  materialName String
+  location     String
+  
+  stokAwalOpr       Float
+  stokAwalSap       Float
+  stokAwalSelisih   Float
+  stokAwalTotal     Float
+  
+  produksiOpr       Float
+  produksiSap       Float
+  produksiSelisih   Float
+  produksiTotal     Float
+  
+  rilisOpr          Float
+  rilisSap          Float
+  rilisSelisih      Float
+  rilisTotal        Float
+  
+  stokAkhirOpr      Float
+  stokAkhirSap      Float
+  stokAkhirSelisih  Float
+  stokAkhirTotal    Float
+  
+  blank             Float
+  blankTotal        Float
+  grandTotal        Float
+  
+  importDate DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("material_data")
+  @@index([materialId])
+  @@index([location])
+  @@index([importDate])
+}
+
+model Accrual {
+  id          Int      @id @default(autoincrement())
+  companyCode String?
+  noPo        String?
+  kdAkr       String
+  alokasi     String?
+  kdAkunBiaya String   @map("namaAkun")
+  vendor      String
+  deskripsi   String
+  amount      Float
+  costCenter  String?
+  accrDate    DateTime
+  periode     String?
+  status      String   @default("Pending")
+  type        String?  @default("Linear")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("accruals")
+  @@index([kdAkr])
+  @@index([status])
+  @@index([accrDate])
+}
