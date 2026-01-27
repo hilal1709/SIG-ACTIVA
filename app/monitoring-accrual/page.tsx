@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Plus, MoreVertical, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import { exportToCSV } from '../utils/exportUtils';
+import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // Mapping Kode Akun dan Klasifikasi
 const KODE_AKUN_KLASIFIKASI: Record<string, string[]> = {
@@ -31,6 +33,16 @@ const KODE_AKUN_KLASIFIKASI: Record<string, string[]> = {
   '21600033': ['LAIN-LAIN'],
 };
 
+interface AccrualPeriode {
+  id: number;
+  periodeKe: number;
+  bulan: string;
+  tahun: number;
+  amountAccrual: number;
+  totalRealisasi?: number;
+  saldo?: number;
+}
+
 interface Accrual {
   id: number;
   companyCode?: string;
@@ -40,12 +52,14 @@ interface Accrual {
   kdAkunBiaya: string;
   vendor: string;
   deskripsi: string;
-  amount: number;
+  headerText?: string;
+  klasifikasi?: string;
+  totalAmount: number;
   costCenter?: string;
-  accrDate: string;
-  periode?: string;
-  status: string;
-  type?: string;
+  startDate: string;
+  jumlahPeriode: number;
+  pembagianType: string;
+  periodes?: AccrualPeriode[];
 }
 
 interface AccrualFormData {
@@ -56,11 +70,27 @@ interface AccrualFormData {
   kdAkunBiaya: string;
   vendor: string;
   deskripsi: string;
+  headerText: string;
   klasifikasi: string;
-  amount: string;
+  totalAmount: string;
   costCenter: string;
   startDate: string;
-  periode: string;
+  jumlahPeriode: string;
+  pembagianType: string;
+  periodeAmounts: string[]; // For manual input
+}
+
+interface RealisasiFormData {
+  tanggalRealisasi: string;
+  amount: string;
+  keterangan: string;
+}
+
+interface RealisasiData {
+  id: number;
+  tanggalRealisasi: string;
+  amount: number;
+  keterangan?: string;
 }
 
 export default function MonitoringAccrualPage() {
@@ -70,6 +100,10 @@ export default function MonitoringAccrualPage() {
   const [accrualData, setAccrualData] = useState<Accrual[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [expandedKodeAkun, setExpandedKodeAkun] = useState<Set<string>>(new Set());
+  const [expandedVendor, setExpandedVendor] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState<AccrualFormData>({
     companyCode: '',
     noPo: '',
@@ -78,13 +112,31 @@ export default function MonitoringAccrualPage() {
     kdAkunBiaya: '',
     vendor: '',
     deskripsi: '',
+    headerText: '',
     klasifikasi: '',
-    amount: '',
+    totalAmount: '',
     costCenter: '',
     startDate: '',
-    periode: '',
+    jumlahPeriode: '12',
+    pembagianType: 'otomatis',
+    periodeAmounts: [],
   });
   const [submitting, setSubmitting] = useState(false);
+  const [showRealisasiModal, setShowRealisasiModal] = useState(false);
+  const [selectedPeriode, setSelectedPeriode] = useState<AccrualPeriode | null>(null);
+  const [realisasiData, setRealisasiData] = useState<RealisasiData[]>([]);
+  const [realisasiForm, setRealisasiForm] = useState<RealisasiFormData>({
+    tanggalRealisasi: new Date().toISOString().split('T')[0],
+    amount: '',
+    keterangan: '',
+  });
+  const [submittingRealisasi, setSubmittingRealisasi] = useState(false);
+  const [editingRealisasiId, setEditingRealisasiId] = useState<number | null>(null);
+  const [editingPeriodeId, setEditingPeriodeId] = useState<number | null>(null);
+  const [editPeriodeAmount, setEditPeriodeAmount] = useState<string>('');
+  const [uploadingExcel, setUploadingExcel] = useState(false);
+  const [showImportGlobalModal, setShowImportGlobalModal] = useState(false);
+  const [uploadingGlobalExcel, setUploadingGlobalExcel] = useState(false);
 
   // Get available klasifikasi based on selected kode akun
   const availableKlasifikasi = useMemo(() => {
@@ -112,28 +164,668 @@ export default function MonitoringAccrualPage() {
   };
 
   // Calculate totals
-  const totalAccrual = accrualData.reduce((sum, item) => sum + item.amount, 0);
-  const pendingCount = accrualData.filter(item => item.status === 'Pending').length;
-  const approvedCount = accrualData.filter(item => item.status === 'Approved').length;
-  const reversedCount = accrualData.filter(item => item.status === 'Reversed').length;
+  const totalAccrual = accrualData.reduce((sum, item) => sum + item.totalAmount, 0);
+  const totalPeriodes = accrualData.reduce((sum, item) => sum + (item.periodes?.length || 0), 0);
 
   // Filter data
   const filteredData = accrualData.filter(item => {
     const matchesSearch = searchTerm === '' || 
       item.kdAkr.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.namaAkun.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.kdAkunBiaya.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.deskripsi.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = filterStatus === 'All' || item.status === filterStatus;
-    const matchesType = filterType === 'All' || item.type === filterType;
-    
-    return matchesSearch && matchesStatus && matchesType;
+    return matchesSearch;
   });
+
+  // Group data by kode akun accrual, then by vendor
+  const groupedByKodeAkun = useMemo(() => {
+    const groups: Record<string, Record<string, Accrual[]>> = {};
+    filteredData.forEach(item => {
+      if (!groups[item.kdAkr]) {
+        groups[item.kdAkr] = {};
+      }
+      if (!groups[item.kdAkr][item.vendor]) {
+        groups[item.kdAkr][item.vendor] = [];
+      }
+      groups[item.kdAkr][item.vendor].push(item);
+    });
+    return groups;
+  }, [filteredData]);
 
   const handleExport = () => {
     const headers = ['kdAkr', 'namaAkun', 'vendor', 'deskripsi', 'amount', 'accrDate', 'status'];
     exportToCSV(filteredData, 'Monitoring_Accrual.csv', headers);
+  };
+
+  const handleDownloadAccrualReport = async (item: Accrual) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Detail Accrual');
+    
+    // Title - Kode Akun Accrual
+    worksheet.mergeCells('A1:I1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = `${item.kdAkr} ACCRUAL-${item.klasifikasi?.toUpperCase() || 'TRANSPORTATION'}`;
+    titleCell.font = { name: 'Calibri', size: 11, bold: true };
+    titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF404040' }
+    };
+    titleCell.font = { ...titleCell.font, color: { argb: 'FFFFFFFF' } };
+    
+    // Calculate total outstanding
+    const totalAccrual = item.periodes?.reduce((sum, p) => {
+      const [bulanName, tahunStr] = p.bulan.split(' ');
+      const bulanMap: Record<string, number> = {
+        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+      };
+      const periodeBulan = bulanMap[bulanName];
+      const periodeTahun = parseInt(tahunStr);
+      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+      const today = new Date();
+      if (today >= periodeDate) {
+        return sum + p.amountAccrual;
+      }
+      return sum;
+    }, 0) || 0;
+    
+    const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+    const totalOutstanding = totalAccrual - totalRealisasi;
+    
+    // Add outstanding to title cell (right side)
+    worksheet.getCell('I1').value = totalOutstanding;
+    worksheet.getCell('I1').numFmt = '#,##0.000';
+    worksheet.getCell('I1').alignment = { horizontal: 'right', vertical: 'middle' };
+    
+    // Headers
+    worksheet.getRow(2).height = 30;
+    const headers = ['PEKERJAAN', 'VENDOR', 'PO/PR', 'ORDER', 'KETERANGAN', 'NILAI PO', 'DOC DATE', 'DELIV DATE', 'OUSTANDING'];
+    
+    worksheet.getRow(2).values = headers;
+    worksheet.getRow(2).eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF404040' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+    
+    // Column widths
+    worksheet.columns = [
+      { width: 12 },  // PEKERJAAN
+      { width: 35 },  // VENDOR
+      { width: 15 },  // PO/PR
+      { width: 15 },  // ORDER
+      { width: 45 },  // KETERANGAN
+      { width: 15 },  // NILAI PO
+      { width: 12 },  // DOC DATE
+      { width: 12 },  // DELIV DATE
+      { width: 15 }   // OUSTANDING
+    ];
+    
+    let currentRow = 3;
+    
+    // Data row
+    const row = worksheet.getRow(currentRow);
+    
+    row.getCell(1).value = item.klasifikasi || 'OA';
+    row.getCell(2).value = item.vendor;
+    row.getCell(3).value = item.noPo || '';
+    row.getCell(4).value = item.alokasi || ''; // ORDER (assignment/order)
+    row.getCell(5).value = item.deskripsi;
+    row.getCell(6).value = item.totalAmount;
+    row.getCell(6).numFmt = '#,##0.000';
+    
+    // DOC DATE - format dari startDate
+    const docDate = new Date(item.startDate);
+    row.getCell(7).value = `${docDate.getDate().toString().padStart(2, '0')}/${(docDate.getMonth() + 1).toString().padStart(2, '0')}/${docDate.getFullYear()}`;
+    
+    // DELIV DATE - gunakan tanggal akhir periode
+    const endDate = new Date(item.startDate);
+    endDate.setMonth(endDate.getMonth() + item.jumlahPeriode);
+    row.getCell(8).value = `${endDate.getDate().toString().padStart(2, '0')}/${(endDate.getMonth() + 1).toString().padStart(2, '0')}/${endDate.getFullYear()}`;
+    
+    // OUTSTANDING = saldo (totalAccrual - totalRealisasi)
+    row.getCell(9).value = totalOutstanding;
+    row.getCell(9).numFmt = '#,##0.000';
+    
+    // Apply borders and styling to all cells
+    for (let col = 1; col <= 9; col++) {
+      const cell = row.getCell(col);
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+      
+      if (col === 1 || col === 2 || col === 3 || col === 4 || col === 5 || col === 7 || col === 8) {
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      } else {
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+    }
+    
+    // Generate and download file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Detail_Accrual_${item.kdAkr}_${item.vendor.replace(/\s+/g, '_')}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadGlobalReport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Rekap Akrual');
+    
+    // Title - "Kebutuhan lain rekon akru utang AU exclude 21600001 dan 21600020 (SDM)"
+    worksheet.mergeCells('A1:C1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'Kebutuhan lain rekon akru utang AU exclude 21600001 dan 21600020 (SDM)';
+    titleCell.font = { name: 'Calibri', size: 11, bold: true };
+    titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF92D050' }
+    };
+    
+    // Headers
+    worksheet.getRow(2).height = 30;
+    const headers = ['GL ACCOUNT', 'VENDOR', 'SUM OF AMOUNT IN LOC. CURR.'];
+    
+    worksheet.getRow(2).values = headers;
+    worksheet.getRow(2).eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF00B0F0' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+    
+    // Column widths
+    worksheet.columns = [
+      { width: 15 },  // GL ACCOUNT
+      { width: 40 },  // VENDOR
+      { width: 25 }   // SUM OF AMOUNT
+    ];
+    
+    let currentRow = 3;
+    
+    // Calculate summary data grouped by kdAkr (GL Account) and vendor
+    const summaryData: Record<string, Record<string, number>> = {};
+    
+    Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
+      Object.entries(vendorGroups).forEach(([vendor, items]) => {
+        items.forEach((item) => {
+          const glAccount = item.kdAkr; // Using kode akun accrual
+          const vendorName = item.vendor;
+          
+          // Calculate total saldo (sum of all accrual amounts)
+          const totalSaldo = item.periodes?.reduce((sum, p) => {
+            // Parse bulan periode (format: "Jan 2026")
+            const [bulanName, tahunStr] = p.bulan.split(' ');
+            const bulanMap: Record<string, number> = {
+              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+            };
+            const periodeBulan = bulanMap[bulanName];
+            const periodeTahun = parseInt(tahunStr);
+            
+            // Tanggal 1 bulan periode tersebut
+            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+            const today = new Date();
+            
+            // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+            if (today >= periodeDate) {
+              return sum + p.amountAccrual;
+            }
+            return sum;
+          }, 0) || 0;
+          
+          // Group by GL Account and Vendor
+          if (!summaryData[glAccount]) {
+            summaryData[glAccount] = {};
+          }
+          if (!summaryData[glAccount][vendorName]) {
+            summaryData[glAccount][vendorName] = 0;
+          }
+          summaryData[glAccount][vendorName] += totalSaldo;
+        });
+      });
+    });
+    
+    // Sort GL Accounts
+    const sortedGLAccounts = Object.keys(summaryData).sort();
+    
+    let totalGrandTotal = 0;
+    
+    // Loop through sorted GL Accounts
+    sortedGLAccounts.forEach((glAccount) => {
+      const vendors = summaryData[glAccount];
+      const sortedVendors = Object.keys(vendors).sort();
+      
+      sortedVendors.forEach((vendor, index) => {
+        const amount = vendors[vendor];
+        totalGrandTotal += amount;
+        
+        const row = worksheet.getRow(currentRow);
+        
+        // Only show GL Account on first vendor row
+        if (index === 0) {
+          row.getCell(1).value = parseFloat(glAccount);
+          row.getCell(1).numFmt = '0';
+        } else {
+          row.getCell(1).value = '';
+        }
+        
+        row.getCell(2).value = vendor;
+        row.getCell(3).value = amount;
+        row.getCell(3).numFmt = '#,##0.00';
+        
+        // Add borders
+        for (let col = 1; col <= 3; col++) {
+          const cell = row.getCell(col);
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+          
+          if (col === 1) {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          } else if (col === 2) {
+            cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          } else {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          }
+        }
+        
+        // Highlight rows with yellow background for specific vendors (optional styling)
+        const highlightVendors = ['SEMEN GRESIK', 'KONSULTA SEMEN GRESIK', 'SINERGI INFORMATIKA SEMEN INDONESIA'];
+        if (highlightVendors.some(hv => vendor.toUpperCase().includes(hv))) {
+          for (let col = 1; col <= 3; col++) {
+            const cell = row.getCell(col);
+            cell.fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFFF00' }
+            };
+          }
+        }
+        
+        currentRow++;
+      });
+    });
+    
+    // Add TOTAL row
+    const totalRow = worksheet.getRow(currentRow);
+    worksheet.mergeCells(currentRow, 1, currentRow, 2);
+    const totalLabelCell = totalRow.getCell(1);
+    totalLabelCell.value = 'TOTAL';
+    totalLabelCell.font = { name: 'Calibri', size: 11, bold: true };
+    totalLabelCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    totalLabelCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF00B0F0' }
+    };
+    totalLabelCell.font = { ...totalLabelCell.font, color: { argb: 'FFFFFFFF' } };
+    
+    const totalAmountCell = totalRow.getCell(3);
+    totalAmountCell.value = totalGrandTotal;
+    totalAmountCell.numFmt = '#,##0.00';
+    totalAmountCell.font = { name: 'Calibri', size: 11, bold: true };
+    totalAmountCell.alignment = { horizontal: 'right', vertical: 'middle' };
+    totalAmountCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF00B0F0' }
+    };
+    totalAmountCell.font = { ...totalAmountCell.font, color: { argb: 'FFFFFFFF' } };
+    
+    for (let col = 1; col <= 3; col++) {
+      const cell = totalRow.getCell(col);
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    }
+    
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Rekap_Akrual_Global_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadJurnalSAP = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Jurnal SAP');
+    
+    // Headers row 1 (field names)
+    worksheet.getRow(1).height = 15;
+    const headers1 = [
+      'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
+      'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+    ];
+    
+    // Kolom dengan warna #FFFF00: kursf (7), zuonr (9), prctr (13), nplnr (16), aufnr (17), valut (18)
+    const yellowColumns = [7, 9, 13, 16, 17, 18];
+    
+    worksheet.getRow(1).values = headers1;
+    worksheet.getRow(1).eachCell((cell, colNumber) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: yellowColumns.includes(colNumber) ? 'FFFFFF00' : 'FFFFE699' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+    });
+    
+    // Headers row 2 (descriptions)
+    worksheet.getRow(2).height = 15;
+    const headers2 = [
+      'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
+      'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
+      'cost center', '', 'Network', 'order numi', 'value date', ''
+    ];
+    
+    worksheet.getRow(2).values = headers2;
+    worksheet.getRow(2).eachCell((cell, colNumber) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: yellowColumns.includes(colNumber) ? 'FFFFFF00' : 'FFFFE699' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+    });
+    
+    // Column widths
+    worksheet.columns = [
+      { width: 12 },  // xblnr
+      { width: 10 },  // bukrs
+      { width: 9 },   // blart
+      { width: 9 },   // bldat
+      { width: 12 },  // budat
+      { width: 10 },  // waers
+      { width: 8 },   // kursf
+      { width: 30 },  // bktxt
+      { width: 12 },  // zuonr
+      { width: 12 },  // hkont
+      { width: 15 },  // wrbtr
+      { width: 30 },  // sgtxt
+      { width: 12 },  // prctr
+      { width: 12 },  // kostl
+      { width: 3 },   // empty
+      { width: 10 },  // nplnr
+      { width: 12 },  // aufnr
+      { width: 12 },  // valut
+      { width: 5 }    // flag
+    ];
+    
+    let currentRow = 3;
+    
+    // Generate jurnal entries
+    Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
+      Object.entries(vendorGroups).forEach(([vendor, items]) => {
+        items.forEach((item) => {
+          // Calculate total accrual for this item (only periods that have passed)
+          const totalAccrual = item.periodes?.reduce((sum, p) => {
+            // Parse bulan periode (format: "Jan 2026")
+            const [bulanName, tahunStr] = p.bulan.split(' ');
+            const bulanMap: Record<string, number> = {
+              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+            };
+            const periodeBulan = bulanMap[bulanName];
+            const periodeTahun = parseInt(tahunStr);
+            
+            // Tanggal 1 bulan periode tersebut
+            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+            const today = new Date();
+            
+            // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+            if (today >= periodeDate) {
+              return sum + p.amountAccrual;
+            }
+            return sum;
+          }, 0) || 0;
+          
+          if (totalAccrual > 0) {
+            // Parse tanggal from start date
+            const startDate = new Date(item.startDate);
+            const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+            
+            // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+            const row1 = worksheet.getRow(currentRow);
+            row1.height = 15;
+            
+            row1.getCell(1).value = ''; // xblnr - kosong
+            row1.getCell(2).value = item.companyCode || ''; // bukrs
+            row1.getCell(3).value = 'SA'; // blart
+            row1.getCell(4).value = docDate; // bldat
+            row1.getCell(5).value = docDate; // budat
+            row1.getCell(6).value = 'IDR'; // waers
+            row1.getCell(7).value = ''; // kursf
+            row1.getCell(8).value = item.headerText || ''; // bktxt
+            row1.getCell(9).value = ''; // zuonr
+            row1.getCell(10).value = item.kdAkunBiaya; // hkont (expense account)
+            row1.getCell(11).value = totalAccrual; // wrbtr (positive)
+            row1.getCell(11).numFmt = '0';
+            row1.getCell(12).value = item.headerText || ''; // sgtxt
+            row1.getCell(13).value = ''; // prctr
+            row1.getCell(14).value = item.costCenter || ''; // kostl
+            row1.getCell(15).value = ''; // empty
+            row1.getCell(16).value = ''; // nplnr
+            row1.getCell(17).value = ''; // aufnr
+            row1.getCell(18).value = ''; // valut
+            row1.getCell(19).value = 'G'; // flag
+            
+            // Apply font and alignment to all cells (NO BORDERS)
+            for (let col = 1; col <= 19; col++) {
+              const cell = row1.getCell(col);
+              cell.font = { name: 'Aptos Narrow', size: 12 };
+              if (col === 11) {
+                cell.alignment = { horizontal: 'right', vertical: 'bottom' };
+              } else {
+                cell.alignment = { horizontal: 'left', vertical: 'bottom' };
+              }
+            }
+            
+            currentRow++;
+            
+            // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
+            const row2 = worksheet.getRow(currentRow);
+            row2.height = 15;
+            
+            row2.getCell(1).value = ''; // xblnr - kosong
+            row2.getCell(2).value = item.companyCode || ''; // bukrs
+            row2.getCell(3).value = 'SA'; // blart
+            row2.getCell(4).value = docDate; // bldat
+            row2.getCell(5).value = docDate; // budat
+            row2.getCell(6).value = 'IDR'; // waers
+            row2.getCell(7).value = ''; // kursf
+            row2.getCell(8).value = item.headerText || ''; // bktxt
+            row2.getCell(9).value = ''; // zuonr
+            row2.getCell(10).value = item.kdAkr; // hkont (accrual account)
+            row2.getCell(11).value = -totalAccrual; // wrbtr (negative)
+            row2.getCell(11).numFmt = '0';
+            row2.getCell(12).value = item.headerText || ''; // sgtxt
+            row2.getCell(13).value = ''; // prctr
+            row2.getCell(14).value = item.costCenter || ''; // kostl
+            row2.getCell(15).value = ''; // empty
+            row2.getCell(16).value = ''; // nplnr
+            row2.getCell(17).value = ''; // aufnr
+            row2.getCell(18).value = ''; // valut
+            row2.getCell(19).value = 'G'; // flag
+            
+            // Apply font and alignment to all cells (NO BORDERS)
+            for (let col = 1; col <= 19; col++) {
+              const cell = row2.getCell(col);
+              cell.font = { name: 'Aptos Narrow', size: 12 };
+              if (col === 11) {
+                cell.alignment = { horizontal: 'right', vertical: 'bottom' };
+              } else {
+                cell.alignment = { horizontal: 'left', vertical: 'bottom' };
+              }
+            }
+            
+            currentRow++;
+          }
+        });
+      });
+    });
+    
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_${new Date().getFullYear()}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadJurnalSAPTxt = () => {
+    // Build TXT content (tab-separated)
+    const rows: string[][] = [];
+    
+    // Generate jurnal entries (no headers)
+    Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
+      Object.entries(vendorGroups).forEach(([vendor, items]) => {
+        items.forEach((item) => {
+          // Calculate total accrual for this item (only periods that have passed)
+          const totalAccrual = item.periodes?.reduce((sum, p) => {
+            // Parse bulan periode (format: "Jan 2026")
+            const [bulanName, tahunStr] = p.bulan.split(' ');
+            const bulanMap: Record<string, number> = {
+              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+            };
+            const periodeBulan = bulanMap[bulanName];
+            const periodeTahun = parseInt(tahunStr);
+            
+            // Tanggal 1 bulan periode tersebut
+            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+            const today = new Date();
+            
+            // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+            if (today >= periodeDate) {
+              return sum + p.amountAccrual;
+            }
+            return sum;
+          }, 0) || 0;
+          
+          if (totalAccrual > 0) {
+            const startDate = new Date(item.startDate);
+            const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+            
+            // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+            rows.push([
+              '',
+              item.companyCode || '',
+              'SA',
+              docDate,
+              docDate,
+              'IDR',
+              '',
+              item.headerText || '',
+              '',
+              item.kdAkunBiaya,
+              totalAccrual.toString(),
+              item.headerText || '',
+              '',
+              item.costCenter || '',
+              '',
+              '',
+              '',
+              '',
+              'G'
+            ]);
+            
+            // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
+            rows.push([
+              '',
+              item.companyCode || '',
+              'SA',
+              docDate,
+              docDate,
+              'IDR',
+              '',
+              item.headerText || '',
+              '',
+              item.kdAkr,
+              (-totalAccrual).toString(),
+              item.headerText || '',
+              '',
+              item.costCenter || '',
+              '',
+              '',
+              '',
+              '',
+              'G'
+            ]);
+          }
+        });
+      });
+    });
+    
+    // Convert to TXT string (tab-separated)
+    const txtContent = rows.map(row => row.join('\t')).join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_${new Date().getFullYear()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -142,8 +834,75 @@ export default function MonitoringAccrualPage() {
     // If kode akun changes, reset klasifikasi
     if (name === 'kdAkr') {
       setFormData(prev => ({ ...prev, [name]: value, klasifikasi: '' }));
+    } else if (name === 'jumlahPeriode') {
+      // Reset periodeAmounts when jumlahPeriode changes
+      const newPeriodeAmounts = Array(parseInt(value) || 0).fill('');
+      setFormData(prev => ({ ...prev, [name]: value, periodeAmounts: newPeriodeAmounts }));
+    } else if (name === 'pembagianType') {
+      // Initialize periodeAmounts for manual mode
+      if (value === 'manual') {
+        const count = parseInt(formData.jumlahPeriode) || 12;
+        const newPeriodeAmounts = Array(count).fill('');
+        setFormData(prev => ({ ...prev, [name]: value, periodeAmounts: newPeriodeAmounts }));
+      } else {
+        setFormData(prev => ({ ...prev, [name]: value, periodeAmounts: [] }));
+      }
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const handlePeriodeAmountChange = (index: number, value: string) => {
+    setFormData(prev => {
+      const newAmounts = [...prev.periodeAmounts];
+      newAmounts[index] = value;
+      return { ...prev, periodeAmounts: newAmounts };
+    });
+  };
+
+  const handleEdit = (item: Accrual) => {
+    setEditingId(item.id);
+    
+    // Get periodeAmounts if manual type
+    const periodeAmounts = item.pembagianType === 'manual' && item.periodes 
+      ? item.periodes.map(p => p.amountAccrual.toString())
+      : [];
+    
+    setFormData({
+      companyCode: item.companyCode || '',
+      noPo: item.noPo || '',
+      assignment: item.alokasi || '',
+      kdAkr: item.kdAkr,
+      kdAkunBiaya: item.kdAkunBiaya,
+      vendor: item.vendor,
+      deskripsi: item.deskripsi,
+      headerText: item.headerText || '',
+      klasifikasi: item.klasifikasi || '',
+      totalAmount: item.totalAmount.toString(),
+      costCenter: item.costCenter || '',
+      startDate: item.startDate.split('T')[0],
+      jumlahPeriode: item.jumlahPeriode.toString(),
+      pembagianType: item.pembagianType,
+      periodeAmounts: periodeAmounts,
+    });
+    setShowModal(true);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
+
+    try {
+      const response = await fetch(`/api/accrual?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete accrual');
+
+      fetchAccrualData();
+      alert('Data berhasil dihapus!');
+    } catch (error) {
+      console.error('Error deleting accrual:', error);
+      alert('Gagal menghapus data');
     }
   };
 
@@ -152,8 +911,12 @@ export default function MonitoringAccrualPage() {
     setSubmitting(true);
 
     try {
-      const response = await fetch('/api/accrual', {
-        method: 'POST',
+      const isEditing = editingId !== null;
+      const url = isEditing ? `/api/accrual?id=${editingId}` : '/api/accrual';
+      const method = isEditing ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -165,17 +928,25 @@ export default function MonitoringAccrualPage() {
           kdAkunBiaya: formData.kdAkunBiaya,
           vendor: formData.vendor,
           deskripsi: formData.deskripsi,
-          amount: parseFloat(formData.amount),
+          headerText: formData.headerText || null,
+          klasifikasi: formData.klasifikasi,
+          totalAmount: parseFloat(formData.totalAmount),
           costCenter: formData.costCenter || null,
-          accrDate: formData.startDate,
-          periode: formData.periode || null,
-          status: 'Pending',
-          type: formData.klasifikasi,
+          startDate: formData.startDate,
+          jumlahPeriode: parseInt(formData.jumlahPeriode),
+          pembagianType: formData.pembagianType,
+          periodeAmounts: formData.pembagianType === 'manual' ? formData.periodeAmounts : null,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to create accrual');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.details || (isEditing ? 'Failed to update accrual' : 'Failed to create accrual'));
+      }
 
+      // Refresh data first
+      await fetchAccrualData();
+      
       // Reset form and close modal
       setFormData({
         companyCode: '',
@@ -185,22 +956,417 @@ export default function MonitoringAccrualPage() {
         kdAkunBiaya: '',
         vendor: '',
         deskripsi: '',
-        klasifikasi: 'Linear',
-        amount: '',
+        headerText: '',
+        klasifikasi: '',
+        totalAmount: '',
         costCenter: '',
         startDate: '',
-        periode: '',
+        jumlahPeriode: '12',
+        pembagianType: 'otomatis',
+        periodeAmounts: [],
       });
+      setEditingId(null);
       setShowModal(false);
       
-      // Refresh data
-      fetchAccrualData();
-      alert('Data accrual berhasil ditambahkan!');
+      alert(isEditing ? 'Data accrual berhasil diupdate!' : 'Data accrual berhasil ditambahkan!');
     } catch (error) {
       console.error('Error creating accrual:', error);
       alert('Gagal menambahkan data accrual. Silakan coba lagi.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleOpenRealisasiModal = async (periode: AccrualPeriode) => {
+    setSelectedPeriode(periode);
+    setShowRealisasiModal(true);
+    
+    // Fetch existing realisasi
+    try {
+      const response = await fetch(`/api/accrual/realisasi?periodeId=${periode.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setRealisasiData(data);
+      }
+    } catch (error) {
+      console.error('Error fetching realisasi:', error);
+    }
+  };
+
+  const handleRealisasiInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setRealisasiForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedPeriode) return;
+
+    setUploadingExcel(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const data = event.target?.result;
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          // Skip header row (index 0) and process data rows
+          const successCount = [];
+          const errorCount = [];
+
+          for (let i = 1; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            // Kolom J adalah index 9 (A=0, B=1, ..., J=9)
+            const realisasiAmount = row[9];
+            
+            if (realisasiAmount && !isNaN(Number(realisasiAmount)) && Number(realisasiAmount) > 0) {
+              try {
+                const response = await fetch('/api/accrual/realisasi', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    accrualPeriodeId: selectedPeriode.id,
+                    tanggalRealisasi: new Date().toISOString().split('T')[0],
+                    amount: Number(realisasiAmount),
+                    keterangan: `Import dari Excel - Baris ${i + 1}`,
+                  }),
+                });
+
+                if (response.ok) {
+                  successCount.push(i + 1);
+                } else {
+                  errorCount.push(i + 1);
+                }
+              } catch (error) {
+                errorCount.push(i + 1);
+              }
+            }
+          }
+
+          // Refresh realisasi list
+          const realisasiResponse = await fetch(`/api/accrual/realisasi?periodeId=${selectedPeriode.id}`);
+          if (realisasiResponse.ok) {
+            const data = await realisasiResponse.json();
+            setRealisasiData(data);
+          }
+
+          // Refresh main accrual data
+          await fetchAccrualData();
+
+          // Update selected periode with new totals
+          const updatedAccrual = accrualData.find(a => 
+            a.periodes?.some(p => p.id === selectedPeriode.id)
+          );
+          if (updatedAccrual) {
+            const updatedPeriode = updatedAccrual.periodes?.find(p => p.id === selectedPeriode.id);
+            if (updatedPeriode) {
+              setSelectedPeriode(updatedPeriode);
+            }
+          }
+
+          alert(`Import berhasil!\nBerhasil: ${successCount.length} data\nGagal: ${errorCount.length} data`);
+        } catch (error) {
+          console.error('Error processing Excel:', error);
+          alert('Gagal memproses file Excel. Pastikan format file benar.');
+        } finally {
+          setUploadingExcel(false);
+          // Reset file input
+          e.target.value = '';
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (error) {
+      console.error('Error reading Excel file:', error);
+      alert('Gagal membaca file Excel.');
+      setUploadingExcel(false);
+    }
+  };
+
+  const handleRealisasiSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPeriode) return;
+    
+    setSubmittingRealisasi(true);
+    try {
+      const isEditing = editingRealisasiId !== null;
+      const url = isEditing ? `/api/accrual/realisasi?id=${editingRealisasiId}` : '/api/accrual/realisasi';
+      const method = isEditing ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accrualPeriodeId: selectedPeriode.id,
+          tanggalRealisasi: realisasiForm.tanggalRealisasi,
+          amount: parseFloat(realisasiForm.amount),
+          keterangan: realisasiForm.keterangan || null,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to create realisasi');
+
+      // Reset form and editing state
+      setRealisasiForm({
+        tanggalRealisasi: new Date().toISOString().split('T')[0],
+        amount: '',
+        keterangan: '',
+      });
+      setEditingRealisasiId(null);
+
+      // Refresh realisasi list
+      const realisasiResponse = await fetch(`/api/accrual/realisasi?periodeId=${selectedPeriode.id}`);
+      if (realisasiResponse.ok) {
+        const data = await realisasiResponse.json();
+        setRealisasiData(data);
+      }
+
+      // Refresh main data and update selectedPeriode
+      await fetchAccrualData();
+      
+      // Update selectedPeriode with fresh data
+      const accrualResponse = await fetch('/api/accrual');
+      if (accrualResponse.ok) {
+        const accruals = await accrualResponse.json();
+        const updatedAccrual = accruals.find((acc: Accrual) => 
+          acc.periodes?.some(p => p.id === selectedPeriode.id)
+        );
+        if (updatedAccrual) {
+          const updatedPeriode = updatedAccrual.periodes?.find((p: AccrualPeriode) => p.id === selectedPeriode.id);
+          if (updatedPeriode) {
+            setSelectedPeriode(updatedPeriode);
+          }
+        }
+      }
+      
+      alert(isEditing ? 'Realisasi berhasil diupdate!' : 'Realisasi berhasil ditambahkan!');
+    } catch (error) {
+      console.error('Error creating realisasi:', error);
+      alert('Gagal menambahkan realisasi');
+    } finally {
+      setSubmittingRealisasi(false);
+    }
+  };
+
+  const handleDeleteRealisasi = async (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus realisasi ini?')) return;
+
+    try {
+      const response = await fetch(`/api/accrual/realisasi?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete realisasi');
+
+      // Refresh realisasi list
+      if (selectedPeriode) {
+        const realisasiResponse = await fetch(`/api/accrual/realisasi?periodeId=${selectedPeriode.id}`);
+        if (realisasiResponse.ok) {
+          const data = await realisasiResponse.json();
+          setRealisasiData(data);
+        }
+      }
+
+      // Refresh main data and update selectedPeriode
+      await fetchAccrualData();
+      
+      // Update selectedPeriode with fresh data
+      if (selectedPeriode) {
+        const accrualResponse = await fetch('/api/accrual');
+        if (accrualResponse.ok) {
+          const accruals = await accrualResponse.json();
+          const updatedAccrual = accruals.find((acc: Accrual) => 
+            acc.periodes?.some(p => p.id === selectedPeriode.id)
+          );
+          if (updatedAccrual) {
+            const updatedPeriode = updatedAccrual.periodes?.find((p: AccrualPeriode) => p.id === selectedPeriode.id);
+            if (updatedPeriode) {
+              setSelectedPeriode(updatedPeriode);
+            }
+          }
+        }
+      }
+      
+      alert('Realisasi berhasil dihapus!');
+    } catch (error) {
+      console.error('Error deleting realisasi:', error);
+      alert('Gagal menghapus realisasi');
+    }
+  };
+
+  const handleGlobalExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingGlobalExcel(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const data = event.target?.result;
+          const workbook = XLSX.read(data, { type: 'binary' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          let successCount = 0;
+          let errorCount = 0;
+          const errors: string[] = [];
+          const processedPos: Set<string> = new Set();
+
+          // Skip header row and process data rows
+          for (let i = 1; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            
+            // Dari attachment: kolom C = PO/PR, kolom J = Amount (index 2 dan 9)
+            const noPo = row[2]?.toString().trim();
+            const realisasiAmount = row[9];
+            
+            if (!noPo || !realisasiAmount || isNaN(Number(realisasiAmount)) || Number(realisasiAmount) === 0) {
+              continue; // Skip rows without PO or valid amount
+            }
+
+            // Find accrual by noPo
+            const matchingAccrual = accrualData.find(acc => acc.noPo?.trim() === noPo);
+            
+            if (!matchingAccrual) {
+              if (!processedPos.has(noPo)) {
+                errors.push(`Baris ${i + 1}: PO ${noPo} tidak ditemukan`);
+                processedPos.add(noPo);
+              }
+              errorCount++;
+              continue;
+            }
+
+            // Get current periode (periode yang sedang berjalan)
+            const today = new Date();
+            const currentPeriode = matchingAccrual.periodes?.find(p => {
+              const [bulanName, tahunStr] = p.bulan.split(' ');
+              const bulanMap: Record<string, number> = {
+                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+              };
+              const periodeBulan = bulanMap[bulanName];
+              const periodeTahun = parseInt(tahunStr);
+              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+              
+              // Periode saat ini atau yang sudah lewat
+              return today >= periodeDate && today.getMonth() === periodeBulan && today.getFullYear() === periodeTahun;
+            });
+
+            if (!currentPeriode) {
+              // Jika tidak ada periode saat ini, gunakan periode pertama yang belum fully realisasi
+              const targetPeriode = matchingAccrual.periodes?.find(p => {
+                const saldo = p.amountAccrual - (p.totalRealisasi || 0);
+                return saldo > 0;
+              });
+
+              if (!targetPeriode) {
+                errors.push(`Baris ${i + 1}: PO ${noPo} tidak ada periode aktif`);
+                errorCount++;
+                continue;
+              }
+
+              try {
+                const response = await fetch('/api/accrual/realisasi', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    accrualPeriodeId: targetPeriode.id,
+                    tanggalRealisasi: new Date().toISOString().split('T')[0],
+                    amount: Number(realisasiAmount),
+                    keterangan: `Import Global - PO: ${noPo}`,
+                  }),
+                });
+
+                if (response.ok) {
+                  successCount++;
+                } else {
+                  errors.push(`Baris ${i + 1}: Gagal menyimpan realisasi PO ${noPo}`);
+                  errorCount++;
+                }
+              } catch (error) {
+                errors.push(`Baris ${i + 1}: Error pada PO ${noPo}`);
+                errorCount++;
+              }
+            } else {
+              try {
+                const response = await fetch('/api/accrual/realisasi', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    accrualPeriodeId: currentPeriode.id,
+                    tanggalRealisasi: new Date().toISOString().split('T')[0],
+                    amount: Number(realisasiAmount),
+                    keterangan: `Import Global - PO: ${noPo}`,
+                  }),
+                });
+
+                if (response.ok) {
+                  successCount++;
+                } else {
+                  errors.push(`Baris ${i + 1}: Gagal menyimpan realisasi PO ${noPo}`);
+                  errorCount++;
+                }
+              } catch (error) {
+                errors.push(`Baris ${i + 1}: Error pada PO ${noPo}`);
+                errorCount++;
+              }
+            }
+          }
+
+          // Refresh main accrual data
+          await fetchAccrualData();
+
+          // Show results
+          let message = `Import selesai!\nBerhasil: ${successCount} data\nGagal: ${errorCount} data`;
+          if (errors.length > 0) {
+            message += '\n\nDetail Error:\n' + errors.slice(0, 10).join('\n');
+            if (errors.length > 10) {
+              message += `\n... dan ${errors.length - 10} error lainnya`;
+            }
+          }
+          alert(message);
+          
+          setShowImportGlobalModal(false);
+        } catch (error) {
+          console.error('Error processing Excel:', error);
+          alert('Gagal memproses file Excel. Pastikan format file benar.');
+        } finally {
+          setUploadingGlobalExcel(false);
+          e.target.value = '';
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (error) {
+      console.error('Error reading Excel file:', error);
+      alert('Gagal membaca file Excel.');
+      setUploadingGlobalExcel(false);
+    }
+  };
+
+  const handleUpdatePeriodeAmount = async (periodeId: number, newAmount: string) => {
+    try {
+      const response = await fetch(`/api/accrual/periode?id=${periodeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountAccrual: parseFloat(newAmount),
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to update periode amount');
+
+      // Refresh data
+      await fetchAccrualData();
+      setEditingPeriodeId(null);
+      setEditPeriodeAmount('');
+      alert('Amount periode berhasil diupdate!');
+    } catch (error) {
+      console.error('Error updating periode amount:', error);
+      alert('Gagal mengupdate amount periode');
     }
   };
 
@@ -265,16 +1431,37 @@ export default function MonitoringAccrualPage() {
 
                   {/* Action Buttons */}
                   <div className="flex gap-2 ml-auto">
-                    <button
-                      onClick={handleExport}
-                      className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    <button 
+                      onClick={() => setShowImportGlobalModal(true)}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      <Upload size={18} />
+                      Import Realisasi Global
+                    </button>
+                    <button 
+                      onClick={handleDownloadGlobalReport}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                     >
                       <Download size={18} />
-                      Export Laporan SAP
+                      Export Global
+                    </button>
+                    <button 
+                      onClick={handleDownloadJurnalSAP}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      <Download size={18} />
+                      Jurnal SAP (Excel)
+                    </button>
+                    <button 
+                      onClick={handleDownloadJurnalSAPTxt}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      <Download size={18} />
+                      Jurnal SAP (TXT)
                     </button>
                     <button 
                       onClick={() => setShowModal(true)}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                     >
                       <Plus size={18} />
                       Tambah Data Accrual
@@ -284,7 +1471,7 @@ export default function MonitoringAccrualPage() {
           </div>
 
           {/* Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white rounded-lg border border-gray-200 p-6">
               <p className="text-sm text-gray-600 mb-2">Total Accrual</p>
               <h3 className="text-2xl font-bold text-gray-800">
@@ -292,25 +1479,24 @@ export default function MonitoringAccrualPage() {
               </h3>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Pending</p>
-              <h3 className="text-2xl font-bold text-gray-800">{pendingCount}</h3>
+              <p className="text-sm text-gray-600 mb-2">Jumlah Accrual</p>
+              <h3 className="text-2xl font-bold text-gray-800">{accrualData.length}</h3>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Approved</p>
-              <h3 className="text-2xl font-bold text-gray-800">{approvedCount}</h3>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Reversed</p>
-              <h3 className="text-2xl font-bold text-gray-800">{reversedCount}</h3>
+              <p className="text-sm text-gray-600 mb-2">Total Periode</p>
+              <h3 className="text-2xl font-bold text-gray-800">{totalPeriodes}</h3>
             </div>
           </div>
 
           {/* Table */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
-              <table className="w-full text-sm" style={{ minWidth: '1200px' }}>
+              <table className="w-full text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12">
+                      ▼
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
                       Company Code
                     </th>
@@ -332,6 +1518,9 @@ export default function MonitoringAccrualPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
                       Deskripsi
                     </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                      Header Text
+                    </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
                       Klasifikasi
                     </th>
@@ -344,7 +1533,7 @@ export default function MonitoringAccrualPage() {
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
                       Start Date
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
                       Periode
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
@@ -362,54 +1551,304 @@ export default function MonitoringAccrualPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredData.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.companyCode || '-'}</td>
-                      <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.noPo || '-'}</td>
-                      <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.alokasi || '-'}</td>
-                      <td className="px-4 py-4 text-gray-800 whitespace-nowrap font-medium">{item.kdAkr}</td>
-                      <td className="px-4 py-4 text-gray-800">{item.kdAkunBiaya}</td>
-                      <td className="px-4 py-4 text-gray-600">{item.vendor}</td>
-                      <td className="px-4 py-4 text-gray-600 max-w-xs truncate" title={item.deskripsi}>{item.deskripsi}</td>
-                      <td className="px-4 py-4 text-center">
-                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                          item.type === 'Linear' ? 'bg-blue-100 text-blue-700' : 
-                          item.type === 'Verbal' ? 'bg-purple-100 text-purple-700' : 
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {item.type || '-'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
-                        {formatCurrency(item.amount)}
-                      </td>
-                      <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.costCenter || '-'}</td>
-                      <td className="px-4 py-4 text-center text-gray-600 text-xs whitespace-nowrap">
-                        {formatDate(item.accrDate)}
-                      </td>
-                      <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.periode || '-'}</td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
-                        {formatCurrency(item.amount)}
-                      </td>
-                      <td className="px-4 py-4 text-right text-gray-800 whitespace-nowrap">
-                        {formatCurrency(0)}
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
-                        {formatCurrency(item.amount)}
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                          <MoreVertical size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {Object.entries(groupedByKodeAkun).map(([kodeAkun, vendorGroups]) => {
+                    const isKodeAkunExpanded = expandedKodeAkun.has(kodeAkun);
+                    const allItems = Object.values(vendorGroups).flat();
+                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + item.totalAmount, 0);
+                    const totalRealisasiKodeAkun = allItems.reduce((sum, item) => {
+                      return sum + (item.periodes?.reduce((pSum, p) => pSum + (p.totalRealisasi || 0), 0) || 0);
+                    }, 0);
+
+                    return (
+                      <React.Fragment key={kodeAkun}>
+                        {/* Kode Akun Group Header */}
+                        <tr className="bg-blue-50 font-semibold">
+                          <td className="px-4 py-3 text-center bg-blue-50">
+                            <button
+                              onClick={() => {
+                                const newExpanded = new Set(expandedKodeAkun);
+                                if (isKodeAkunExpanded) {
+                                  newExpanded.delete(kodeAkun);
+                                } else {
+                                  newExpanded.add(kodeAkun);
+                                }
+                                setExpandedKodeAkun(newExpanded);
+                              }}
+                              className="text-blue-700 hover:text-blue-900 transition-colors"
+                            >
+                              {isKodeAkunExpanded ? '▼' : '▶'}
+                            </button>
+                          </td>
+                          <td colSpan={8} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
+                            Kode Akun: {kodeAkun}
+                          </td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                        </tr>
+
+                        {/* Vendor Groups */}
+                        {isKodeAkunExpanded && Object.entries(vendorGroups).map(([vendor, items]) => {
+                          const vendorKey = `${kodeAkun}-${vendor}`;
+                          const isVendorExpanded = expandedVendor.has(vendorKey);
+                          const totalAmountVendor = items.reduce((sum, item) => sum + item.totalAmount, 0);
+                          const totalRealisasiVendor = items.reduce((sum, item) => {
+                            return sum + (item.periodes?.reduce((pSum, p) => pSum + (p.totalRealisasi || 0), 0) || 0);
+                          }, 0);
+
+                          return (
+                            <React.Fragment key={vendorKey}>
+                              {/* Vendor Group Header */}
+                              <tr className="bg-green-50 font-semibold">
+                                <td className="px-4 py-3 text-center bg-green-50">
+                                  <button
+                                    onClick={() => {
+                                      const newExpanded = new Set(expandedVendor);
+                                      if (isVendorExpanded) {
+                                        newExpanded.delete(vendorKey);
+                                      } else {
+                                        newExpanded.add(vendorKey);
+                                      }
+                                      setExpandedVendor(newExpanded);
+                                    }}
+                                    className="text-green-700 hover:text-green-900 transition-colors ml-4"
+                                  >
+                                    {isVendorExpanded ? '▼' : '▶'}
+                                  </button>
+                                </td>
+                                <td colSpan={8} className="px-4 py-3 text-left text-green-900 bg-green-50">
+                                  Vendor: {vendor}
+                                </td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                              </tr>
+
+                              {/* Klasifikasi Items */}
+                              {isVendorExpanded && items.map((item) => {
+                          const isExpanded = expandedRows.has(item.id);
+                          return (
+                            <React.Fragment key={item.id}>
+                              <tr className="hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-4 text-center">
+                                  <button
+                                    onClick={() => {
+                                      const newExpanded = new Set(expandedRows);
+                                      if (isExpanded) {
+                                        newExpanded.delete(item.id);
+                                      } else {
+                                        newExpanded.add(item.id);
+                                      }
+                                      setExpandedRows(newExpanded);
+                                    }}
+                                    className="text-gray-600 hover:text-red-600 transition-colors ml-6"
+                                  >
+                                    {isExpanded ? '▼' : '▶'}
+                                  </button>
+                                </td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.companyCode || '-'}</td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.noPo || '-'}</td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.alokasi || '-'}</td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap font-medium">{item.kdAkr}</td>
+                          <td className="px-4 py-4 text-gray-800">{item.kdAkunBiaya}</td>
+                          <td className="px-4 py-4 text-gray-600">{item.vendor}</td>
+                          <td className="px-4 py-4 text-gray-600 max-w-xs truncate" title={item.deskripsi}>{item.deskripsi}</td>
+                          <td className="px-4 py-4 text-gray-600 max-w-xs truncate" title={item.headerText || '-'}>{item.headerText || '-'}</td>
+                          <td className="px-4 py-4 text-center">
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                              {item.klasifikasi || '-'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
+                            {formatCurrency(item.totalAmount)}
+                          </td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.costCenter || '-'}</td>
+                          <td className="px-4 py-4 text-center text-gray-600 text-xs whitespace-nowrap">
+                            {formatDate(item.startDate)}
+                          </td>
+                          <td className="px-4 py-4 text-center text-gray-800 whitespace-nowrap">
+                            {item.jumlahPeriode} bulan
+                          </td>
+                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
+                            {formatCurrency(
+                              item.periodes?.reduce((sum, p) => {
+                                // Parse bulan periode (format: "Jan 2026")
+                                const [bulanName, tahunStr] = p.bulan.split(' ');
+                                const bulanMap: Record<string, number> = {
+                                  'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                                  'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+                                };
+                                const periodeBulan = bulanMap[bulanName];
+                                const periodeTahun = parseInt(tahunStr);
+                                
+                                // Tanggal 1 bulan periode tersebut
+                                const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+                                const today = new Date();
+                                
+                                // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+                                if (today >= periodeDate) {
+                                  return sum + p.amountAccrual;
+                                }
+                                return sum;
+                              }, 0) || 0
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap">
+                            {formatCurrency(
+                              item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap">
+                            {formatCurrency(
+                              item.totalAmount - (item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0)
+                            )}
+                          </td>
+                          <td className="px-4 py-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => handleDownloadAccrualReport(item)}
+                                className="text-green-600 hover:text-green-800 transition-colors p-1 hover:bg-green-50 rounded"
+                                title="Download Excel"
+                              >
+                                <Download size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleEdit(item)}
+                                className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
+                                title="Edit"
+                              >
+                                <Edit2 size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
+                                title="Hapus"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        
+                        {/* Expanded Row - Periode Details */}
+                        {isExpanded && item.periodes && item.periodes.length > 0 && (
+                          <tr className="bg-gray-50">
+                            <td colSpan={18} className="px-4 py-4">
+                              <div className="ml-8">
+                                <h4 className="text-sm font-semibold text-gray-700 mb-3">Detail Periode</h4>
+                                <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                                  <thead className="bg-white">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Periode</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Bulan</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Accrual</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Total Realisasi</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Saldo</th>
+                                      <th className="px-3 py-2 text-center font-semibold text-gray-700">Action</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="bg-white divide-y divide-gray-200">
+                                    {item.periodes.map((periode) => (
+                                      <tr key={periode.id} className="hover:bg-gray-50">
+                                        <td className="px-3 py-2 text-gray-700">Periode {periode.periodeKe}</td>
+                                        <td className="px-3 py-2 text-gray-700">{periode.bulan}</td>
+                                        <td className="px-3 py-2 text-right text-gray-800 font-medium">
+                                          {editingPeriodeId === periode.id ? (
+                                            <div className="flex items-center gap-1">
+                                              <input
+                                                type="number"
+                                                value={editPeriodeAmount}
+                                                onChange={(e) => setEditPeriodeAmount(e.target.value)}
+                                                min="0"
+                                                step="0.01"
+                                                className="w-28 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                autoFocus
+                                              />
+                                              <button
+                                                onClick={() => handleUpdatePeriodeAmount(periode.id, editPeriodeAmount)}
+                                                className="text-green-600 hover:text-green-800 p-1"
+                                                title="Simpan"
+                                              >
+                                                ✓
+                                              </button>
+                                              <button
+                                                onClick={() => {
+                                                  setEditingPeriodeId(null);
+                                                  setEditPeriodeAmount('');
+                                                }}
+                                                className="text-red-600 hover:text-red-800 p-1"
+                                                title="Batal"
+                                              >
+                                                ✕
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center justify-end gap-2">
+                                              {formatCurrency(periode.amountAccrual)}
+                                              {item.pembagianType === 'manual' && (
+                                                <button
+                                                  onClick={() => {
+                                                    setEditingPeriodeId(periode.id);
+                                                    setEditPeriodeAmount(periode.amountAccrual.toString());
+                                                  }}
+                                                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                                                  title="Edit Amount"
+                                                >
+                                                  <Edit2 size={12} />
+                                                </button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-blue-700">
+                                          {formatCurrency(periode.totalRealisasi || 0)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-gray-800 font-semibold">
+                                          {formatCurrency(periode.saldo || periode.amountAccrual)}
+                                        </td>
+                                        <td className="px-3 py-2 text-center">
+                                          <button
+                                            onClick={() => handleOpenRealisasiModal(periode)}
+                                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
+                                          >
+                                            Input Realisasi
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                            </React.Fragment>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
 
             {/* Empty State */}
-            {filteredData.length === 0 && (
+            {Object.keys(groupedByKodeAkun).length === 0 && (
               <div className="text-center py-12">
                 <p className="text-gray-500">Tidak ada data yang ditemukan</p>
               </div>
@@ -426,9 +1865,29 @@ export default function MonitoringAccrualPage() {
           <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">Tambah Data Accrual</h2>
+              <h2 className="text-xl font-bold text-white">{editingId ? 'Edit Data Accrual' : 'Tambah Data Accrual'}</h2>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingId(null);
+                  setFormData({
+                    companyCode: '',
+                    noPo: '',
+                    assignment: '',
+                    kdAkr: '',
+                    kdAkunBiaya: '',
+                    vendor: '',
+                    deskripsi: '',
+                    headerText: '',
+                    klasifikasi: '',
+                    totalAmount: '',
+                    costCenter: '',
+                    startDate: '',
+                    jumlahPeriode: '12',
+                    pembagianType: 'otomatis',
+                    periodeAmounts: [],
+                  });
+                }}
                 className="text-white hover:text-red-100 transition-colors rounded-full hover:bg-white/10 p-1"
               >
                 <X size={24} />
@@ -442,12 +1901,13 @@ export default function MonitoringAccrualPage() {
                 {/* Company Code */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Company Code
+                    Company Code <span className="text-red-600">*</span>
                   </label>
                   <select
                     name="companyCode"
                     value={formData.companyCode}
                     onChange={handleInputChange}
+                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   >
                     <option value="">Pilih Company Code</option>
@@ -459,13 +1919,14 @@ export default function MonitoringAccrualPage() {
                 {/* No PO */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    No PO
+                    No PO <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
                     name="noPo"
                     value={formData.noPo}
                     onChange={handleInputChange}
+                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan nomor PO"
                   />
@@ -474,13 +1935,14 @@ export default function MonitoringAccrualPage() {
                 {/* Assignment/Order */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Assignment/Order
+                    Assignment/Order <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
                     name="assignment"
                     value={formData.assignment}
                     onChange={handleInputChange}
+                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan assignment/order"
                   />
@@ -570,27 +2032,46 @@ export default function MonitoringAccrualPage() {
                   </label>
                   <input
                     type="number"
-                    name="amount"
-                    value={formData.amount}
+                    name="totalAmount"
+                    value={formData.totalAmount}
                     onChange={handleInputChange}
                     required
                     min="0"
                     step="0.01"
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                    placeholder="Masukkan jumlah amount"
+                    placeholder="Contoh: 50000000 (total)"
+                  />
+                </div>
+
+                {/* Jumlah Periode */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Jumlah Periode <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="jumlahPeriode"
+                    value={formData.jumlahPeriode}
+                    onChange={handleInputChange}
+                    required
+                    min="1"
+                    max="36"
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                    placeholder="Contoh: 12 (bulan)"
                   />
                 </div>
 
                 {/* Cost Center */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Cost Center
+                    Cost Center <span className="text-red-600">*</span>
                   </label>
                   <input
                     type="text"
                     name="costCenter"
                     value={formData.costCenter}
                     onChange={handleInputChange}
+                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan cost center"
                   />
@@ -611,19 +2092,39 @@ export default function MonitoringAccrualPage() {
                   />
                 </div>
 
-                {/* Periode */}
-                <div>
+                {/* Pembagian Type - Full Width */}
+                <div className="md:col-span-2">
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Periode
+                    Tipe Pembagian Periode <span className="text-red-600">*</span>
                   </label>
-                  <input
-                    type="text"
-                    name="periode"
-                    value={formData.periode}
-                    onChange={handleInputChange}
-                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                    placeholder="Contoh: 12 bulan"
-                  />
+                  <div className="flex gap-6">
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="radio"
+                        name="pembagianType"
+                        value="otomatis"
+                        checked={formData.pembagianType === 'otomatis'}
+                        onChange={handleInputChange}
+                        className="w-4 h-4 text-red-600 focus:ring-red-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">
+                        <strong>Otomatis</strong> - Dibagi rata per periode
+                      </span>
+                    </label>
+                    <label className="flex items-center cursor-pointer">
+                      <input
+                        type="radio"
+                        name="pembagianType"
+                        value="manual"
+                        checked={formData.pembagianType === 'manual'}
+                        onChange={handleInputChange}
+                        className="w-4 h-4 text-red-600 focus:ring-red-500"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">
+                        <strong>Manual</strong> - Tidak dibagi otomatis (isi 0 per periode, update manual nanti)
+                      </span>
+                    </label>
+                  </div>
                 </div>
 
                 {/* Deskripsi - Full Width */}
@@ -641,13 +2142,48 @@ export default function MonitoringAccrualPage() {
                     placeholder="Masukkan deskripsi accrual"
                   />
                 </div>
+
+                {/* Header Text - Full Width */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Header Text
+                  </label>
+                  <input
+                    type="text"
+                    name="headerText"
+                    value={formData.headerText}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                    placeholder="Masukkan header text untuk jurnal SAP (opsional)"
+                  />
+                </div>
               </div>
 
               {/* Form Actions */}
               <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 bg-white px-6 py-4 -mx-6 -mb-6 rounded-b-2xl">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingId(null);
+                    setFormData({
+                      companyCode: '',
+                      noPo: '',
+                      assignment: '',
+                      kdAkr: '',
+                      kdAkunBiaya: '',
+                      vendor: '',
+                      deskripsi: '',
+                      headerText: '',
+                      klasifikasi: '',
+                      totalAmount: '',
+                      costCenter: '',
+                      startDate: '',
+                      jumlahPeriode: '12',
+                      pembagianType: 'otomatis',
+                      periodeAmounts: [],
+                    });
+                  }}
                   className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
                   disabled={submitting}
                 >
@@ -658,10 +2194,324 @@ export default function MonitoringAccrualPage() {
                   disabled={submitting}
                   className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/30"
                 >
-                  {submitting ? 'Menyimpan...' : 'Simpan Data'}
+                  {submitting ? 'Menyimpan...' : editingId ? 'Update Data' : 'Simpan Data'}
                 </button>
               </div>
             </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Input Realisasi */}
+      {showRealisasiModal && selectedPeriode && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white">Input Realisasi</h2>
+                <p className="text-sm text-red-100 mt-1">
+                  {selectedPeriode.bulan} - Periode {selectedPeriode.periodeKe}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowRealisasiModal(false);
+                  setSelectedPeriode(null);
+                  setRealisasiData([]);
+                  setRealisasiForm({
+                    tanggalRealisasi: new Date().toISOString().split('T')[0],
+                    amount: '',
+                    keterangan: '',
+                  });
+                }}
+                className="text-white hover:text-red-100 transition-colors rounded-full hover:bg-white/10 p-1"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="overflow-y-auto p-6 bg-gray-50" style={{ maxHeight: 'calc(90vh - 180px)' }}>
+              {/* Info Periode */}
+              <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Accrual</p>
+                    <p className="text-lg font-bold text-gray-800">{formatCurrency(selectedPeriode.amountAccrual)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Total Realisasi</p>
+                    <p className="text-lg font-bold text-blue-700">{formatCurrency(selectedPeriode.totalRealisasi || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Saldo</p>
+                    <p className="text-lg font-bold text-red-700">{formatCurrency(selectedPeriode.saldo || selectedPeriode.amountAccrual)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Upload Excel */}
+              <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Import dari Excel</h3>
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 cursor-pointer">
+                    <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all">
+                      <Upload size={18} />
+                      <span className="text-sm font-medium">
+                        {uploadingExcel ? 'Mengupload...' : 'Upload File Excel'}
+                      </span>
+                    </div>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={handleExcelUpload}
+                      disabled={uploadingExcel}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  * Nilai realisasi akan diambil dari kolom J pada file Excel
+                </p>
+              </div>
+
+              {/* Form Input Realisasi */}
+              <form onSubmit={handleRealisasiSubmit} className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-4">Tambah Realisasi Manual</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Tanggal Realisasi <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      name="tanggalRealisasi"
+                      value={realisasiForm.tanggalRealisasi}
+                      onChange={handleRealisasiInputChange}
+                      required
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Amount <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="amount"
+                      value={realisasiForm.amount}
+                      onChange={handleRealisasiInputChange}
+                      required
+                      min="0"
+                      step="0.01"
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                      placeholder="Masukkan amount realisasi"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Keterangan
+                    </label>
+                    <textarea
+                      name="keterangan"
+                      value={realisasiForm.keterangan}
+                      onChange={handleRealisasiInputChange}
+                      rows={2}
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all resize-none"
+                      placeholder="Keterangan opsional"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  {editingRealisasiId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingRealisasiId(null);
+                        setRealisasiForm({
+                          tanggalRealisasi: new Date().toISOString().split('T')[0],
+                          amount: '',
+                          keterangan: '',
+                        });
+                      }}
+                      className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Batal
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={submittingRealisasi}
+                    className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/30"
+                  >
+                    {submittingRealisasi ? 'Menyimpan...' : editingRealisasiId ? 'Update Realisasi' : 'Simpan Realisasi'}
+                  </button>
+                </div>
+              </form>
+
+              {/* List Realisasi */}
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-700">History Realisasi</h3>
+                </div>
+                {realisasiData.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500 text-sm">
+                    Belum ada realisasi untuk periode ini
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Tanggal</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Keterangan</th>
+                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {realisasiData.map((realisasi) => (
+                          <tr key={realisasi.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-gray-700">{formatDate(realisasi.tanggalRealisasi)}</td>
+                            <td className="px-4 py-3 text-right text-gray-800 font-medium">{formatCurrency(realisasi.amount)}</td>
+                            <td className="px-4 py-3 text-gray-600">{realisasi.keterangan || '-'}</td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingRealisasiId(realisasi.id);
+                                    setRealisasiForm({
+                                      tanggalRealisasi: realisasi.tanggalRealisasi.split('T')[0],
+                                      amount: realisasi.amount.toString(),
+                                      keterangan: realisasi.keterangan || '',
+                                    });
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
+                                  title="Edit"
+                                >
+                                  <Edit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteRealisasi(realisasi.id)}
+                                  className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
+                                  title="Hapus"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-white px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowRealisasiModal(false);
+                  setSelectedPeriode(null);
+                  setRealisasiData([]);
+                  setEditingRealisasiId(null);
+                  setRealisasiForm({
+                    tanggalRealisasi: new Date().toISOString().split('T')[0],
+                    amount: '',
+                    keterangan: '',
+                  });
+                }}
+                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Import Realisasi Global */}
+      {showImportGlobalModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex justify-between items-center">
+                <h2 className="text-xl font-bold text-gray-800">Import Realisasi Global</h2>
+                <button
+                  onClick={() => setShowImportGlobalModal(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Instruksi Import</h3>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-gray-700">
+                  <ul className="list-disc list-inside space-y-2">
+                    <li>File Excel harus memiliki format yang sesuai</li>
+                    <li><strong>Kolom C (index 2):</strong> Nomor PO/PR</li>
+                    <li><strong>Kolom J (index 9):</strong> Amount Realisasi</li>
+                    <li>Sistem akan mencocokkan data berdasarkan <strong>Nomor PO</strong></li>
+                    <li>Realisasi akan ditambahkan ke periode yang aktif atau periode dengan saldo tersisa</li>
+                    <li>Baris dengan PO yang tidak ditemukan akan dilewati dan dilaporkan</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Upload File Excel</h3>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <Upload className="mx-auto mb-3 text-gray-400" size={48} />
+                  <p className="text-sm text-gray-600 mb-4">
+                    Pilih file Excel untuk import realisasi
+                  </p>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleGlobalExcelUpload}
+                    disabled={uploadingGlobalExcel}
+                    className="hidden"
+                    id="global-excel-upload"
+                  />
+                  <label
+                    htmlFor="global-excel-upload"
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
+                      uploadingGlobalExcel
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-purple-600 text-white hover:bg-purple-700'
+                    }`}
+                  >
+                    <Upload size={18} />
+                    {uploadingGlobalExcel ? 'Mengupload...' : 'Pilih File Excel'}
+                  </label>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
+                <p className="font-semibold mb-2">⚠️ Perhatian:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Pastikan nomor PO di file Excel sama persis dengan data accrual</li>
+                  <li>Import akan memproses semua baris yang memiliki PO dan amount valid</li>
+                  <li>Proses import mungkin memakan waktu untuk file besar</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowImportGlobalModal(false)}
+                disabled={uploadingGlobalExcel}
+                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-// GET - Fetch all accrual data with optional filtering
+// GET - Fetch all accrual data with periodes and realisasi
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const status = searchParams.get('status');
     const search = searchParams.get('search');
 
     const where: {
-      status?: string;
       OR?: { 
         kdAkr?: { contains: string; mode: 'insensitive' }; 
         kdAkunBiaya?: { contains: string; mode: 'insensitive' }; 
@@ -19,11 +17,6 @@ export async function GET(request: NextRequest) {
         noPo?: { contains: string; mode: 'insensitive' };
       }[];
     } = {};
-
-    // Filter by status
-    if (status && status !== 'All') {
-      where.status = status;
-    }
 
     // Filter by search term
     if (search) {
@@ -39,12 +32,35 @@ export async function GET(request: NextRequest) {
 
     const accruals = await prisma.accrual.findMany({
       where,
+      include: {
+        periodes: {
+          include: {
+            realisasis: true,
+          },
+          orderBy: {
+            periodeKe: 'asc',
+          },
+        },
+      },
       orderBy: {
         createdAt: 'desc',
       },
     });
 
-    return NextResponse.json(accruals);
+    // Calculate total realisasi and saldo for each periode
+    const accrualsWithCalculations = accruals.map(accrual => ({
+      ...accrual,
+      periodes: accrual.periodes.map(periode => {
+        const totalRealisasi = periode.realisasis.reduce((sum, r) => sum + r.amount, 0);
+        return {
+          ...periode,
+          totalRealisasi,
+          saldo: periode.amountAccrual - totalRealisasi,
+        };
+      }),
+    }));
+
+    return NextResponse.json(accrualsWithCalculations);
   } catch (error) {
     console.error('Error fetching accruals:', error);
     return NextResponse.json(
@@ -54,20 +70,50 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create new accrual entry
+// POST - Create new accrual entry with periodes
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { companyCode, noPo, kdAkr, alokasi, kdAkunBiaya, vendor, deskripsi, amount, costCenter, accrDate, periode, status, type } = body;
+    const { 
+      companyCode, noPo, kdAkr, alokasi, kdAkunBiaya, vendor, deskripsi, headerText, klasifikasi,
+      totalAmount, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
+    } = body;
 
     // Validate required fields
-    if (!kdAkr || !kdAkunBiaya || !vendor || !deskripsi || !amount || !accrDate) {
+    if (!kdAkr || !kdAkunBiaya || !vendor || !deskripsi || !totalAmount || !startDate || !jumlahPeriode) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
+    // Generate periodes data
+    const start = new Date(startDate);
+    const periodes = [];
+    
+    for (let i = 0; i < parseInt(jumlahPeriode); i++) {
+      const periodeDate = new Date(start);
+      periodeDate.setMonth(start.getMonth() + i);
+      
+      const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      const bulan = `${bulanNames[periodeDate.getMonth()]} ${periodeDate.getFullYear()}`;
+      
+      let amountAccrual;
+      if (pembagianType === 'otomatis') {
+        amountAccrual = parseFloat(totalAmount) / parseInt(jumlahPeriode);
+      } else {
+        amountAccrual = periodeAmounts && periodeAmounts[i] ? parseFloat(periodeAmounts[i]) : 0;
+      }
+      
+      periodes.push({
+        periodeKe: i + 1,
+        bulan,
+        tahun: periodeDate.getFullYear(),
+        amountAccrual,
+      });
+    }
+
+    // Create accrual with periodes
     const accrual = await prisma.accrual.create({
       data: {
         companyCode: companyCode || null,
@@ -77,12 +123,19 @@ export async function POST(request: NextRequest) {
         kdAkunBiaya,
         vendor,
         deskripsi,
-        amount: parseFloat(amount),
+        headerText: headerText || null,
+        klasifikasi: klasifikasi || null,
+        totalAmount: parseFloat(totalAmount),
         costCenter: costCenter || null,
-        accrDate: new Date(accrDate),
-        periode: periode || null,
-        status: status || 'Pending',
-        type: type || 'Linear',
+        startDate: new Date(startDate),
+        jumlahPeriode: parseInt(jumlahPeriode),
+        pembagianType: pembagianType || 'otomatis',
+        periodes: {
+          create: periodes,
+        },
+      },
+      include: {
+        periodes: true,
       },
     });
 
@@ -90,7 +143,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error creating accrual:', error);
     return NextResponse.json(
-      { error: 'Failed to create accrual' },
+      { error: 'Failed to create accrual', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -125,11 +178,12 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
-// PATCH - Update accrual entry
+// PATCH/PUT - Update accrual entry
 export async function PATCH(request: NextRequest) {
   try {
+    const searchParams = request.nextUrl.searchParams;
+    const id = searchParams.get('id');
     const body = await request.json();
-    const { id, ...updateData } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -138,27 +192,90 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Convert date and amount if provided
-    if (updateData.accrDate) {
-      updateData.accrDate = new Date(updateData.accrDate);
-    }
-    if (updateData.amount) {
-      updateData.amount = parseFloat(updateData.amount);
+    const { 
+      companyCode, noPo, kdAkr, alokasi, kdAkunBiaya, vendor, deskripsi, headerText, klasifikasi,
+      totalAmount, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
+    } = body;
+
+    // Validate required fields
+    if (!kdAkr || !kdAkunBiaya || !vendor || !deskripsi || !totalAmount || !startDate || !jumlahPeriode) {
+      return NextResponse.json(
+        { error: 'Missing required fields', details: 'kdAkr, kdAkunBiaya, vendor, deskripsi, totalAmount, startDate, dan jumlahPeriode harus diisi' },
+        { status: 400 }
+      );
     }
 
+    // Generate new periodes data
+    const start = new Date(startDate);
+    const periodes = [];
+    
+    for (let i = 0; i < parseInt(jumlahPeriode); i++) {
+      const periodeDate = new Date(start);
+      periodeDate.setMonth(start.getMonth() + i);
+      
+      const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      const bulan = `${bulanNames[periodeDate.getMonth()]} ${periodeDate.getFullYear()}`;
+      
+      let amountAccrual;
+      if (pembagianType === 'otomatis') {
+        amountAccrual = parseFloat(totalAmount) / parseInt(jumlahPeriode);
+      } else {
+        amountAccrual = periodeAmounts && periodeAmounts[i] ? parseFloat(periodeAmounts[i]) : 0;
+      }
+      
+      periodes.push({
+        periodeKe: i + 1,
+        bulan,
+        tahun: periodeDate.getFullYear(),
+        amountAccrual,
+      });
+    }
+
+    // Delete existing periodes and create new ones
+    await prisma.accrualPeriode.deleteMany({
+      where: {
+        accrualId: parseInt(id),
+      },
+    });
+
+    // Update accrual with new periodes
     const accrual = await prisma.accrual.update({
       where: {
         id: parseInt(id),
       },
-      data: updateData,
+      data: {
+        companyCode: companyCode || null,
+        noPo: noPo || null,
+        kdAkr,
+        alokasi: alokasi || null,
+        kdAkunBiaya,
+        vendor,
+        deskripsi,
+        headerText: headerText || null,
+        klasifikasi: klasifikasi || null,
+        totalAmount: parseFloat(totalAmount),
+        costCenter: costCenter || null,
+        startDate: new Date(startDate),
+        jumlahPeriode: parseInt(jumlahPeriode),
+        pembagianType,
+        periodes: {
+          create: periodes,
+        },
+      },
+      include: {
+        periodes: true,
+      },
     });
 
     return NextResponse.json(accrual);
   } catch (error) {
     console.error('Error updating accrual:', error);
     return NextResponse.json(
-      { error: 'Failed to update accrual' },
+      { error: 'Failed to update accrual', details: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
 }
+
+export const PUT = PATCH; // Alias PUT to PATCH
+

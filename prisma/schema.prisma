@@ -61,26 +61,65 @@ model MaterialData {
 }
 
 model Accrual {
-  id          Int      @id @default(autoincrement())
-  companyCode String?
-  noPo        String?
-  kdAkr       String
-  alokasi     String?
-  kdAkunBiaya String   @map("namaAkun")
-  vendor      String
-  deskripsi   String
-  amount      Float
-  costCenter  String?
-  accrDate    DateTime
-  periode     String?
-  status      String   @default("Pending")
-  type        String?  @default("Linear")
+  id             Int              @id @default(autoincrement())
+  companyCode    String?
+  noPo           String?
+  kdAkr          String
+  alokasi        String?
+  kdAkunBiaya    String           @map("namaAkun")
+  vendor         String
+  deskripsi      String
+  headerText     String?          // Header text untuk jurnal SAP
+  klasifikasi    String?
+  totalAmount    Float            // Total amount keseluruhan
+  costCenter     String?
+  startDate      DateTime         // Tanggal mulai periode pertama
+  jumlahPeriode  Int              // Berapa bulan/periode
+  pembagianType  String           @default("otomatis") // "otomatis" atau "manual"
   
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  periodes       AccrualPeriode[] // Relasi ke detail periode
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   @@map("accruals")
   @@index([kdAkr])
-  @@index([status])
-  @@index([accrDate])
+  @@index([startDate])
+}
+
+model AccrualPeriode {
+  id             Int                 @id @default(autoincrement())
+  accrualId      Int
+  accrual        Accrual             @relation(fields: [accrualId], references: [id], onDelete: Cascade)
+  
+  periodeKe      Int                 // 1, 2, 3, dst
+  bulan          String              // "Jan 2026", "Feb 2026"
+  tahun          Int                 // 2026
+  amountAccrual  Float               // Nilai accrual periode ini
+  
+  realisasis     AccrualRealisasi[]  // Relasi ke realisasi
+  
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@map("accrual_periodes")
+  @@index([accrualId])
+  @@index([bulan, tahun])
+}
+
+model AccrualRealisasi {
+  id                Int              @id @default(autoincrement())
+  accrualPeriodeId  Int
+  accrualPeriode    AccrualPeriode   @relation(fields: [accrualPeriodeId], references: [id], onDelete: Cascade)
+  
+  tanggalRealisasi  DateTime
+  amount            Float
+  keterangan        String?
+  
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@map("accrual_realisasis")
+  @@index([accrualPeriodeId])
+  @@index([tanggalRealisasi])
 }
