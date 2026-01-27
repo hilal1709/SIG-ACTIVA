@@ -34,12 +34,12 @@ export default function LoginPage() {
         localStorage.setItem('username', data.user.username);
         localStorage.setItem('userId', data.user.id);
         localStorage.setItem('userName', data.user.name);
-        
+
         // Trigger storage event manually for same window
         window.dispatchEvent(new Event('storage'));
-        
+
          // Redirect ke dashboard utama
-         window.location.href = '/monitoring-accrual';
+         router.push('/monitoring-accrual');
       } else {
         setError(data.error || 'Username atau password salah');
         setIsLoading(false);

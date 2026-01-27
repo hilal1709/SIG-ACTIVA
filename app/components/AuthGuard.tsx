@@ -29,12 +29,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoading) {
-      // Jika di halaman login dan sudah login, redirect ke dashboard
-      if (pathname === '/login' && isAuthenticated) {
-        router.replace('/monitoring-accrual');
-      }
-      // Jika di halaman login dan belum login, jangan redirect (biarkan tetap di login)
-      else if (pathname !== '/login' && !isAuthenticated) {
+      // Jika tidak di halaman login dan belum login, redirect ke login
+      if (pathname !== '/login' && !isAuthenticated) {
         router.replace('/login');
       }
     }
