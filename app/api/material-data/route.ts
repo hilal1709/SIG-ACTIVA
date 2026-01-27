@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    console.log('All dates after insert:', allUniqueDates.map(d => d.importDate));
+    console.log('All dates after insert:', allUniqueDates.map((d: any) => d.importDate));
 
     // If more than 2 unique dates, delete the old ones
     if (allUniqueDates.length > 2) {
