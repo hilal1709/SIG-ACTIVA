@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
         take: 2
       });
       
-      return NextResponse.json(dates.map(d => d.importDate));
+      return NextResponse.json(dates.map((d: any) => d.importDate));
     }
 
     // Get data for specific import date (default to latest)
