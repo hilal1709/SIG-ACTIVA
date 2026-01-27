@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { TrendingUp, CheckCircle, DollarSign, FileText } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import MetricCard from './components/MetricCard';
@@ -64,25 +65,25 @@ export default function DashboardPage() {
             <MetricCard
               title="Total Accrual"
               value={formatCurrency(stats.totalAccrual)}
-              icon="trending-up"
+              icon={<TrendingUp size={24} />}
               color="blue"
             />
             <MetricCard
               title="Total Realisasi"
               value={formatCurrency(stats.totalRealisasi)}
-              icon="check-circle"
+              icon={<CheckCircle size={24} />}
               color="green"
             />
             <MetricCard
               title="Total Saldo"
               value={formatCurrency(stats.totalSaldo)}
-              icon="dollar-sign"
+              icon={<DollarSign size={24} />}
               color="red"
             />
             <MetricCard
               title="Jumlah Accrual"
               value={stats.jumlahAccrual.toString()}
-              icon="file-text"
+              icon={<FileText size={24} />}
               color="purple"
             />
           </div>

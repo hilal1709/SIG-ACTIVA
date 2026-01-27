@@ -36,6 +36,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, isAuthenticated, isLoading, router]);
 
+  // Additional check for dashboard navigation
+  useEffect(() => {
+    if (pathname === '/' && localStorage.getItem('isAuthenticated') === 'true') {
+      // Ensure we stay on dashboard if authenticated
+      setIsAuthenticated(true);
+    }
+  }, [pathname]);
+
   // Tampilkan loading hanya sebentar saat initial check
   if (isLoading) {
     return (

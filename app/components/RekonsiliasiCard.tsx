@@ -2,66 +2,65 @@
 
 interface RekonsiliasiCardProps {
   title: string;
-  value?: string;
-  type?: 'number' | 'vertical' | 'horizontal';
-  data?: Array<{ name: string; value: number; maxValue: number }>;
+  description: string;
+  status: 'normal' | 'warning' | 'error';
+  percentage: number;
 }
 
-export default function RekonsiliasiCard({ title, value, type = 'number', data = [] }: RekonsiliasiCardProps) {
+export default function RekonsiliasiCard({ title, description, status, percentage }: RekonsiliasiCardProps) {
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'normal':
+        return 'text-green-600';
+      case 'warning':
+        return 'text-yellow-600';
+      case 'error':
+        return 'text-red-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
+  const getProgressColor = (status: string) => {
+    switch (status) {
+      case 'normal':
+        return 'bg-green-500';
+      case 'warning':
+        return 'bg-yellow-500';
+      case 'error':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 h-full">
-      <h4 className="text-sm font-medium text-gray-600 mb-4">{title}</h4>
-      
-      {/* Number Only Display */}
-      {type === 'number' && value && (
-        <div className="flex items-center justify-start h-32">
-          <p className="text-4xl font-bold text-red-600">{value}</p>
+    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <h4 className="text-lg font-semibold text-gray-800 mb-2">{title}</h4>
+          <p className="text-sm text-gray-600 mb-4">{description}</p>
         </div>
-      )}
+        <div className={`text-2xl font-bold ${getStatusColor(status)}`}>
+          {percentage}%
+        </div>
+      </div>
 
-      {/* Vertical Bar Chart */}
-      {type === 'vertical' && data.length > 0 && (
-        <div className="flex items-end justify-center gap-8 h-48 pt-4">
-          {data.map((item, index) => {
-            const heightPercentage = (item.value / item.maxValue) * 100;
-            return (
-              <div key={index} className="flex flex-col items-center justify-end h-full">
-                {/* Bar */}
-                <div className="flex items-end justify-center" style={{ height: '85%' }}>
-                  <div
-                    className="bg-red-600 rounded-t w-12 transition-all"
-                    style={{ height: `${heightPercentage}%` }}
-                  ></div>
-                </div>
-                {/* Label on bottom */}
-                <span className="text-xs text-gray-600 mt-2 whitespace-nowrap">{item.name}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Progress Bar */}
+      <div className="w-full bg-gray-200 rounded-full h-2">
+        <div
+          className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(status)}`}
+          style={{ width: `${percentage}%` }}
+        ></div>
+      </div>
 
-      {/* Horizontal Bar Chart */}
-      {type === 'horizontal' && data.length > 0 && (
-        <div className="space-y-3 mt-2">
-          {data.map((item, index) => {
-            const widthPercentage = (item.value / item.maxValue) * 100;
-            return (
-              <div key={index} className="flex items-center gap-3">
-                {/* Label on left */}
-                <span className="text-xs text-gray-600 w-20 text-right whitespace-nowrap">{item.name}</span>
-                {/* Bar container */}
-                <div className="flex-1 flex items-center">
-                  <div
-                    className="bg-red-600 h-6 rounded-r-sm transition-all"
-                    style={{ width: `${widthPercentage}%` }}
-                  ></div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* Status Text */}
+      <div className="mt-3 flex items-center justify-between text-sm">
+        <span className="text-gray-500">Status:</span>
+        <span className={`font-medium capitalize ${getStatusColor(status)}`}>
+          {status}
+        </span>
+      </div>
     </div>
   );
 }

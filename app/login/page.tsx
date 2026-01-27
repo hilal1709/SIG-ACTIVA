@@ -35,9 +35,6 @@ export default function LoginPage() {
         localStorage.setItem('userId', data.user.id);
         localStorage.setItem('userName', data.user.name);
 
-        // Trigger storage event manually for same window
-        window.dispatchEvent(new Event('storage'));
-
          // Redirect ke dashboard utama
          router.push('/');
       } else {
