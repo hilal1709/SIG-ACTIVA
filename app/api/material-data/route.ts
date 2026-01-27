@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Transform database format back to MaterialData format
-    const transformedData = data.map(item => ({
+    const transformedData = data.map((item: any) => ({
       materialId: item.materialId,
       materialName: item.materialName,
       location: item.location,
