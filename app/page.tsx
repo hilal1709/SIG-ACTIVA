@@ -1,9 +1,17 @@
 'use client';
 
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
-import MetricCard from './components/MetricCard';
-import { Package, TrendingUp, Clock, FileText } from 'lucide-react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function Home() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/login');
+  }, [router]);
+
+  return null;
+}
 import {
   LineChart,
   Line,
