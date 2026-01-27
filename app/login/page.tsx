@@ -38,8 +38,8 @@ export default function LoginPage() {
         // Trigger storage event manually for same window
         window.dispatchEvent(new Event('storage'));
         
-        // Redirect to dashboard
-        window.location.href = '/';
+         // Redirect ke dashboard utama
+         window.location.href = '/monitoring-accrual';
       } else {
         setError(data.error || 'Username atau password salah');
         setIsLoading(false);
