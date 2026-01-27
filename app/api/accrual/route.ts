@@ -48,10 +48,10 @@ export async function GET(request: NextRequest) {
     });
 
     // Calculate total realisasi and saldo for each periode
-    const accrualsWithCalculations = accruals.map(accrual => ({
+    const accrualsWithCalculations = accruals.map((accrual: any) => ({
       ...accrual,
-      periodes: accrual.periodes.map(periode => {
-        const totalRealisasi = periode.realisasis.reduce((sum, r) => sum + r.amount, 0);
+      periodes: accrual.periodes.map((periode: any) => {
+        const totalRealisasi = periode.realisasis.reduce((sum: number, r: any) => sum + r.amount, 0);
         return {
           ...periode,
           totalRealisasi,
