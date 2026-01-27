@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
       whereClause.type = type;
     }
 
-    // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
     const prepaids = await prisma.prepaid.findMany({
       where: whereClause,
       include: {
@@ -110,7 +109,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Simpan ke database
-    // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
     const prepaid = await prisma.prepaid.create({
       data: {
         companyCode,
@@ -162,7 +160,6 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
     await prisma.prepaid.delete({
       where: { id: parseInt(id) }
     });

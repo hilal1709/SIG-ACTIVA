@@ -14,7 +14,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
     const periode = await prisma.prepaidPeriode.update({
       where: { id: periodeId },
       data: {
@@ -24,7 +23,6 @@ export async function PUT(request: NextRequest) {
     });
 
     // Update remaining di prepaid utama
-    // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
     const prepaidPeriodes = await prisma.prepaidPeriode.findMany({
       where: { prepaidId: periode.prepaidId }
     });
@@ -33,13 +31,11 @@ export async function PUT(request: NextRequest) {
       .filter((p: any) => p.isAmortized)
       .reduce((sum: number, p: any) => sum + p.amountPrepaid, 0);
 
-    // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
     const prepaid = await prisma.prepaid.findUnique({
       where: { id: periode.prepaidId }
     });
 
     if (prepaid) {
-      // @ts-expect-error - Prisma model sudah di-generate, TypeScript cache belum update
       await prisma.prepaid.update({
         where: { id: periode.prepaidId },
         data: {
