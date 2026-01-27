@@ -192,8 +192,8 @@ export default function LaporanMaterialPage() {
   ], [dynamicStats]);
 
   const volumeSelisihPerFasilitas = useMemo(() => [
-    { name: 'Pabrik', value: dynamicStats.selisihPerFasilitas?.pabrik || 0 },
-    { name: 'Gudang', value: dynamicStats.selisihPerFasilitas?.gudang || 0 },
+    { name: 'Pabrik', value: 'selisihPerFasilitas' in dynamicStats ? (dynamicStats.selisihPerFasilitas?.pabrik || 0) : 0 },
+    { name: 'Gudang', value: 'selisihPerFasilitas' in dynamicStats ? (dynamicStats.selisihPerFasilitas?.gudang || 0) : 0 },
   ], [dynamicStats]);
 
   const volumeSelisihPerLokasi = useMemo(() => 

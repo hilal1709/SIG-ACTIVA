@@ -55,17 +55,17 @@ export async function exportToExcel(data: any[], filename: string) {
   // Style header rows
   const headerStyle = {
     font: { bold: true, size: 10 },
-    alignment: { vertical: 'middle', horizontal: 'center' },
+    alignment: { vertical: 'middle' as const, horizontal: 'center' as const },
     fill: {
-      type: 'pattern',
-      pattern: 'solid',
+      type: 'pattern' as const,
+      pattern: 'solid' as const,
       fgColor: { argb: 'FFF3F4F6' }
     },
     border: {
-      top: { style: 'thin' },
-      left: { style: 'thin' },
-      bottom: { style: 'thin' },
-      right: { style: 'thin' }
+      top: { style: 'thin' as const },
+      left: { style: 'thin' as const },
+      bottom: { style: 'thin' as const },
+      right: { style: 'thin' as const }
     }
   };
   
