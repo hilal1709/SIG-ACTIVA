@@ -10,18 +10,26 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check authentication status
-    const checkAuth = () => {
-      const auth = localStorage.getItem('isAuthenticated') === 'true';
-      setIsAuthenticated(auth);
-      setIsLoading(false);
-    };
+    // Check authentication status synchronously first
+    const auth = localStorage.getItem('isAuthenticated') === 'true';
+    setIsAuthenticated(auth);
 
-    checkAuth();
+    // If not authenticated and not on login page, redirect immediately
+    if (!auth && pathname !== '/login') {
+      router.replace('/login');
+      return;
+    }
+
+    setIsLoading(false);
 
     // Listen for storage changes (when login happens in another tab or component)
+    const checkAuth = () => {
+      const newAuth = localStorage.getItem('isAuthenticated') === 'true';
+      setIsAuthenticated(newAuth);
+    };
+
     window.addEventListener('storage', checkAuth);
-    
+
     return () => {
       window.removeEventListener('storage', checkAuth);
     };
@@ -35,14 +43,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
     }
   }, [pathname, isAuthenticated, isLoading, router]);
-
-  // Additional check for dashboard navigation
-  useEffect(() => {
-    if (pathname === '/' && localStorage.getItem('isAuthenticated') === 'true') {
-      // Ensure we stay on dashboard if authenticated
-      setIsAuthenticated(true);
-    }
-  }, [pathname]);
 
   // Tampilkan loading hanya sebentar saat initial check
   if (isLoading) {

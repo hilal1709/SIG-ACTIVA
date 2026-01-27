@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { TrendingUp, CheckCircle, DollarSign, FileText } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -8,6 +9,8 @@ import MetricCard from './components/MetricCard';
 import RekonsiliasiCard from './components/RekonsiliasiCard';
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [stats, setStats] = useState({
     totalAccrual: 0,
     totalRealisasi: 0,
@@ -16,8 +19,17 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
+    // Check authentication on client side
+    const auth = localStorage.getItem('isAuthenticated') === 'true';
+    setIsAuthenticated(auth);
+
+    if (!auth) {
+      router.replace('/login');
+      return;
+    }
+
     fetchDashboardStats();
-  }, []);
+  }, [router]);
 
   const fetchDashboardStats = async () => {
     try {
@@ -44,6 +56,11 @@ export default function DashboardPage() {
   const formatCurrency = (amount: number) => {
     return `Rp ${amount.toLocaleString('id-ID')}`;
   };
+
+  // Don't render if not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
