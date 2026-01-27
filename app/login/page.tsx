@@ -39,7 +39,7 @@ export default function LoginPage() {
         window.dispatchEvent(new Event('storage'));
 
          // Redirect ke dashboard utama
-         router.push('/monitoring-accrual');
+         router.push('/');
       } else {
         setError(data.error || 'Username atau password salah');
         setIsLoading(false);
