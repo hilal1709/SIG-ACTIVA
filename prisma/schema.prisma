@@ -123,3 +123,53 @@ model AccrualRealisasi {
   @@index([accrualPeriodeId])
   @@index([tanggalRealisasi])
 }
+
+model Prepaid {
+  id             Int              @id @default(autoincrement())
+  companyCode    String?
+  noPo           String?
+  kdAkr          String
+  alokasi        String
+  namaAkun       String
+  vendor         String
+  deskripsi      String?
+  headerText     String?          // Header text untuk jurnal SAP
+  klasifikasi    String?
+  totalAmount    Float            // Total amount keseluruhan
+  remaining      Float            // Sisa amount yang belum diamortisasi
+  costCenter     String?
+  startDate      DateTime         // Tanggal mulai periode pertama
+  period         Int              // Berapa bulan/periode
+  periodUnit     String           @default("bulan") // "bulan", "tahun", etc
+  type           String           @default("Linear") // "Linear" atau "Verbal"
+  pembagianType  String           @default("otomatis") // "otomatis" atau "manual"
+  
+  periodes       PrepaidPeriode[] // Relasi ke detail periode
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@map("prepaids")
+  @@index([kdAkr])
+  @@index([startDate])
+}
+
+model PrepaidPeriode {
+  id             Int                  @id @default(autoincrement())
+  prepaidId      Int
+  prepaid        Prepaid              @relation(fields: [prepaidId], references: [id], onDelete: Cascade)
+  
+  periodeKe      Int                  // 1, 2, 3, dst
+  bulan          String               // "Jan 2026", "Feb 2026"
+  tahun          Int                  // 2026
+  amountPrepaid  Float                // Nilai prepaid periode ini
+  isAmortized    Boolean              @default(false) // Sudah diamortisasi atau belum
+  amortizedDate  DateTime?            // Tanggal amortisasi
+  
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@map("prepaid_periodes")
+  @@index([prepaidId])
+  @@index([bulan, tahun])
+}

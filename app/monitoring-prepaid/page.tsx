@@ -1,31 +1,80 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Download, Plus, MoreVertical } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
-import { mockPrepaidData } from '../utils/mockData';
 import { exportToCSV } from '../utils/exportUtils';
+
+interface PrepaidPeriode {
+  id: number;
+  periodeKe: number;
+  bulan: string;
+  tahun: number;
+  amountPrepaid: number;
+  isAmortized: boolean;
+  amortizedDate?: Date;
+}
+
+interface Prepaid {
+  id: number;
+  kdAkr: string;
+  alokasi: string;
+  namaAkun: string;
+  vendor: string;
+  totalAmount: number;
+  remaining: number;
+  period: number;
+  periodUnit: string;
+  type: string;
+  periodes: PrepaidPeriode[];
+}
 
 export default function MonitoringPrepaidPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('All');
+  const [prepaidData, setPrepaidData] = useState<Prepaid[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch data dari API
+  useEffect(() => {
+    fetchPrepaidData();
+  }, [filterType]);
+
+  const fetchPrepaidData = async () => {
+    try {
+      setLoading(true);
+      const url = filterType === 'All' 
+        ? '/api/prepaid' 
+        : `/api/prepaid?type=${filterType}`;
+      
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setPrepaidData(data);
+      } else {
+        console.error('Failed to fetch prepaid data');
+      }
+    } catch (error) {
+      console.error('Error fetching prepaid data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calculate totals
-  const totalPrepaidValue = mockPrepaidData.reduce((sum, item) => sum + item.totalAmount, 0);
-  const totalRemaining = mockPrepaidData.reduce((sum, item) => sum + item.remaining, 0);
-  const activeItems = mockPrepaidData.length;
+  const totalPrepaidValue = prepaidData.reduce((sum, item) => sum + item.totalAmount, 0);
+  const totalRemaining = prepaidData.reduce((sum, item) => sum + item.remaining, 0);
+  const activeItems = prepaidData.length;
 
   // Filter data
-  const filteredData = mockPrepaidData.filter(item => {
+  const filteredData = prepaidData.filter(item => {
     const matchesSearch = searchTerm === '' || 
       item.kdAkr.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.namaAkun.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.vendor.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesType = filterType === 'All' || item.type === filterType;
-    
-    return matchesSearch && matchesType;
+    return matchesSearch;
   });
 
   const handleExport = () => {
@@ -140,78 +189,84 @@ export default function MonitoringPrepaidPage() {
 
           {/* Table */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
-                      Kd Akr dan Alokasi
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
-                      Nama Akun
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
-                      Vendor
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">
-                      Total Amount
-                    </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">
-                      Remaining
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
-                      Period
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
-                      Type
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredData.map((item) => (
-                    <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-4">
-                        <div className="font-medium text-gray-800">{item.kdAkr}</div>
-                        <div className="text-xs text-gray-500">{item.alokasi}</div>
-                      </td>
-                      <td className="px-4 py-4 text-gray-800">{item.namaAkun}</td>
-                      <td className="px-4 py-4 text-gray-600">{item.vendor}</td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-800">
-                        {formatCurrency(item.totalAmount)}
-                      </td>
-                      <td className="px-4 py-4 text-right font-medium text-gray-800">
-                        {formatCurrency(item.remaining)}
-                      </td>
-                      <td className="px-4 py-4 text-center text-gray-800">
-                        {item.period} {item.periodUnit}
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <span
-                          className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            item.type === 'Linear'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-purple-100 text-purple-700'
-                          }`}
-                        >
-                          {item.type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                          <MoreVertical size={18} />
-                        </button>
-                      </td>
+            {loading ? (
+              <div className="text-center py-12">
+                <p className="text-gray-500">Memuat data...</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
+                        Kd Akr dan Alokasi
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
+                        Nama Akun
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
+                        Vendor
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">
+                        Total Amount
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">
+                        Remaining
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
+                        Period
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
+                        Type
+                      </th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {filteredData.map((item) => (
+                      <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-4">
+                          <div className="font-medium text-gray-800">{item.kdAkr}</div>
+                          <div className="text-xs text-gray-500">{item.alokasi}</div>
+                        </td>
+                        <td className="px-4 py-4 text-gray-800">{item.namaAkun}</td>
+                        <td className="px-4 py-4 text-gray-600">{item.vendor}</td>
+                        <td className="px-4 py-4 text-right font-medium text-gray-800">
+                          {formatCurrency(item.totalAmount)}
+                        </td>
+                        <td className="px-4 py-4 text-right font-medium text-gray-800">
+                          {formatCurrency(item.remaining)}
+                        </td>
+                        <td className="px-4 py-4 text-center text-gray-800">
+                          {item.period} {item.periodUnit}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <span
+                            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                              item.type === 'Linear'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-purple-100 text-purple-700'
+                            }`}
+                          >
+                            {item.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                            <MoreVertical size={18} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* Empty State */}
-            {filteredData.length === 0 && (
+            {!loading && filteredData.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-gray-500">Tidak ada data yang ditemukan</p>
               </div>
