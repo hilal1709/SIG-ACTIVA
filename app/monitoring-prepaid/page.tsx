@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Search, Download, Plus, MoreVertical } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
+import PrepaidForm from '../components/PrepaidForm';
 import { exportToCSV } from '../utils/exportUtils';
 
 interface PrepaidPeriode {
@@ -18,14 +19,19 @@ interface PrepaidPeriode {
 
 interface Prepaid {
   id: number;
-  kdAkr: string;
+  companyCode?: string;
+  noPo?: string;
   alokasi: string;
+  kdAkr: string;
   namaAkun: string;
-  vendor: string;
+  deskripsi?: string;
+  klasifikasi?: string;
   totalAmount: number;
-  remaining: number;
+  startDate: string;
   period: number;
   periodUnit: string;
+  remaining: number;
+  vendor: string;
   type: string;
   periodes: PrepaidPeriode[];
 }
@@ -35,6 +41,7 @@ export default function MonitoringPrepaidPage() {
   const [filterType, setFilterType] = useState('All');
   const [prepaidData, setPrepaidData] = useState<Prepaid[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFormOpen, setIsFormOpen] = useState(false);
 
   // Fetch data dari API
   useEffect(() => {
@@ -179,7 +186,10 @@ export default function MonitoringPrepaidPage() {
                   <Download size={18} />
                   Export Laporan SAP
                 </button>
-                <button className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium">
+                <button 
+                  onClick={() => setIsFormOpen(true)}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                >
                   <Plus size={18} />
                   Tambah Data Prepaid
                 </button>
@@ -198,68 +208,114 @@ export default function MonitoringPrepaidPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
-                        Kd Akr dan Alokasi
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Company Code
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
-                        Nama Akun
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        No PO
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">
-                        Vendor
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Assignment/Order
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">
-                        Total Amount
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Kode Akun Prepaid
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">
-                        Remaining
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Kode Akun Biaya
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
-                        Period
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700">
+                        Deskripsi
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
-                        Type
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700">
+                        Klasifikasi
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700">
+                        Amount
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Start Date
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Finish Date
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700">
+                        Periode
+                      </th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Total Prepaid
+                      </th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
+                        Total Realisasi
+                      </th>
+                      <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700">
+                        Saldo
+                      </th>
+                      <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700">
                         Actions
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {filteredData.map((item) => (
-                      <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-4">
-                          <div className="font-medium text-gray-800">{item.kdAkr}</div>
-                          <div className="text-xs text-gray-500">{item.alokasi}</div>
-                        </td>
-                        <td className="px-4 py-4 text-gray-800">{item.namaAkun}</td>
-                        <td className="px-4 py-4 text-gray-600">{item.vendor}</td>
-                        <td className="px-4 py-4 text-right font-medium text-gray-800">
-                          {formatCurrency(item.totalAmount)}
-                        </td>
-                        <td className="px-4 py-4 text-right font-medium text-gray-800">
-                          {formatCurrency(item.remaining)}
-                        </td>
-                        <td className="px-4 py-4 text-center text-gray-800">
-                          {item.period} {item.periodUnit}
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <span
-                            className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                              item.type === 'Linear'
-                                ? 'bg-blue-100 text-blue-700'
-                                : 'bg-purple-100 text-purple-700'
-                            }`}
-                          >
-                            {item.type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <button className="text-gray-400 hover:text-gray-600 transition-colors">
-                            <MoreVertical size={18} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredData.map((item) => {
+                      const startDate = new Date(item.startDate);
+                      const finishDate = new Date(startDate);
+                      finishDate.setMonth(finishDate.getMonth() + item.period);
+                      
+                      const totalRealisasi = item.totalAmount - item.remaining;
+                      const saldo = item.remaining;
+                      
+                      return (
+                        <tr key={item.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-3 py-3 text-gray-800 whitespace-nowrap">
+                            {item.companyCode || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-gray-800 whitespace-nowrap">
+                            {item.noPo || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-gray-800">
+                            {item.alokasi}
+                          </td>
+                          <td className="px-3 py-3 text-gray-800 whitespace-nowrap">
+                            {item.kdAkr}
+                          </td>
+                          <td className="px-3 py-3 text-gray-800">
+                            {item.namaAkun}
+                          </td>
+                          <td className="px-3 py-3 text-gray-600">
+                            {item.deskripsi || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-gray-600">
+                            {item.klasifikasi || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-right font-medium text-gray-800">
+                            {formatCurrency(item.totalAmount)}
+                          </td>
+                          <td className="px-3 py-3 text-center text-gray-800 whitespace-nowrap">
+                            {startDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="px-3 py-3 text-center text-gray-800 whitespace-nowrap">
+                            {finishDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="px-3 py-3 text-center text-gray-800">
+                            {item.period} {item.periodUnit}
+                          </td>
+                          <td className="px-3 py-3 text-right font-medium text-gray-800">
+                            {formatCurrency(item.totalAmount)}
+                          </td>
+                          <td className="px-3 py-3 text-right font-medium text-gray-800">
+                            {formatCurrency(totalRealisasi)}
+                          </td>
+                          <td className="px-3 py-3 text-right font-medium text-gray-800">
+                            {formatCurrency(saldo)}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                              <MoreVertical size={18} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -274,6 +330,13 @@ export default function MonitoringPrepaidPage() {
           </div>
         </div>
       </div>
+
+      {/* Prepaid Form Modal */}
+      <PrepaidForm
+        isOpen={isFormOpen}
+        onClose={() => setIsFormOpen(false)}
+        onSuccess={fetchPrepaidData}
+      />
     </div>
   );
 }
