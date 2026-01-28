@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       startDate,
       period,
       periodUnit,
-      type,
+      type = 'Linear', // Default to Linear if not provided
       pembagianType,
       periodeAmounts // array untuk manual pembagian
     } = body;
@@ -176,7 +176,7 @@ export async function PUT(request: NextRequest) {
       startDate,
       period,
       periodUnit,
-      type,
+      type = 'Linear', // Default to Linear if not provided
     } = body;
 
     // Update prepaid data
