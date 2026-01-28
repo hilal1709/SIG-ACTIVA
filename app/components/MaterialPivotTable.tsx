@@ -157,31 +157,31 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
                 position: 'sticky', 
                 left: 0, 
                 zIndex: 70,
-                minWidth: '250px',
-                maxWidth: '250px',
-                width: '250px',
+                minWidth: '180px',
+                maxWidth: '180px',
+                width: '180px',
                 backgroundColor: '#f3f4f6',
                 boxShadow: '4px 0 8px rgba(0,0,0,0.1)'
-              }} className="px-3 py-3 text-left font-semibold text-black border-r-2 border-gray-400">
+              }} className="px-2 py-2 text-left font-semibold text-black border-r-2 border-gray-400">
                 Row Labels
               </th>
               {showStokAwal && (
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-black border-r border-gray-300 bg-blue-50 whitespace-nowrap">
+                <th colSpan={3} className="px-1 py-1.5 text-center font-semibold text-black border-r border-gray-300 bg-blue-50 whitespace-nowrap text-xs">
                   1 - Stok Awal
                 </th>
               )}
               {showProduksi && (
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-black border-r border-gray-300 bg-green-50 whitespace-nowrap">
+                <th colSpan={3} className="px-1 py-1.5 text-center font-semibold text-black border-r border-gray-300 bg-green-50 whitespace-nowrap text-xs">
                   2 - Produksi
                 </th>
               )}
               {showRilis && (
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-black border-r border-gray-300 bg-yellow-50 whitespace-nowrap">
+                <th colSpan={3} className="px-1 py-1.5 text-center font-semibold text-black border-r border-gray-300 bg-yellow-50 whitespace-nowrap text-xs">
                   3 - Rilis
                 </th>
               )}
               {showStokAkhir && (
-                <th colSpan={3} className="px-2 py-2 text-center font-semibold text-black border-r border-gray-300 bg-purple-50 whitespace-nowrap">
+                <th colSpan={3} className="px-1 py-1.5 text-center font-semibold text-black border-r border-gray-300 bg-purple-50 whitespace-nowrap text-xs">
                   4 - Stok Akhir
                 </th>
               )}
@@ -190,33 +190,33 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
               {/* Stok Awal */}
               {showStokAwal && (
                 <>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-blue-50 whitespace-nowrap">OPR</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-blue-50 whitespace-nowrap">SAP</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-300 bg-blue-50 whitespace-nowrap">Selisih</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-blue-50 whitespace-nowrap text-xs">OPR</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-blue-50 whitespace-nowrap text-xs">SAP</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-300 bg-blue-50 whitespace-nowrap text-xs">Selisih</th>
                 </>
               )}
               {/* Produksi */}
               {showProduksi && (
                 <>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-green-50 whitespace-nowrap">OPR</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-green-50 whitespace-nowrap">SAP</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-300 bg-green-50 whitespace-nowrap">Selisih</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-green-50 whitespace-nowrap text-xs">OPR</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-green-50 whitespace-nowrap text-xs">SAP</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-300 bg-green-50 whitespace-nowrap text-xs">Selisih</th>
                 </>
               )}
               {/* Rilis */}
               {showRilis && (
                 <>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-yellow-50 whitespace-nowrap">OPR</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-yellow-50 whitespace-nowrap">SAP</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-300 bg-yellow-50 whitespace-nowrap">Selisih</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-yellow-50 whitespace-nowrap text-xs">OPR</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-yellow-50 whitespace-nowrap text-xs">SAP</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-300 bg-yellow-50 whitespace-nowrap text-xs">Selisih</th>
                 </>
               )}
               {/* Stok Akhir */}
               {showStokAkhir && (
                 <>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-purple-50 whitespace-nowrap">OPR</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-200 bg-purple-50 whitespace-nowrap">SAP</th>
-                  <th className="px-2 py-2 text-center font-medium text-black border-r border-gray-300 bg-purple-50 whitespace-nowrap">Selisih</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-purple-50 whitespace-nowrap text-xs">OPR</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-200 bg-purple-50 whitespace-nowrap text-xs">SAP</th>
+                  <th className="px-1 py-1.5 text-center font-medium text-black border-r border-gray-300 bg-purple-50 whitespace-nowrap text-xs">Selisih</th>
                 </>
               )}
             </tr>
@@ -230,13 +230,13 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
                     position: 'sticky',
                     left: 0,
                     zIndex: 40,
-                    minWidth: '250px',
-                    maxWidth: '250px',
-                    width: '250px',
+                    minWidth: '180px',
+                    maxWidth: '180px',
+                    width: '180px',
                     backgroundColor: '#fff7ed',
                     boxShadow: '4px 0 8px rgba(0,0,0,0.15)',
                     fontWeight: 'bold'
-                  }} className="px-3 py-3 text-black text-sm border-r-2 border-gray-500">
+                  }} className="px-2 py-2 text-black text-xs border-r-2 border-gray-500">
                     {material.materialId} | {material.materialName}
                   </td>
                   {/* Empty cells for other columns to maintain table structure */}
@@ -254,20 +254,20 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
                       position: 'sticky',
                       left: 0,
                       zIndex: 30,
-                      minWidth: '250px',
-                      maxWidth: '250px',
-                      width: '250px',
+                      minWidth: '180px',
+                      maxWidth: '180px',
+                      width: '180px',
                       backgroundColor: 'white',
                       boxShadow: '4px 0 8px rgba(0,0,0,0.08)'
-                    }} className="px-3 py-2 text-black border-r-2 border-gray-400 pl-6 font-medium hover:bg-gray-50">
+                    }} className="px-2 py-1.5 text-black border-r-2 border-gray-400 pl-4 text-xs hover:bg-gray-50">
                       {loc.location}
                     </td>
                     {/* Stok Awal */}
                     {showStokAwal && (
                       <>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.stokAwal.opr)}</td>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.stokAwal.sap)}</td>
-                        <td className={`px-2 py-2 text-right border-r border-gray-300 whitespace-nowrap ${getCellClass(loc.stokAwal.selisih)}`}>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.stokAwal.opr)}</td>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.stokAwal.sap)}</td>
+                        <td className={`px-1 py-1.5 text-right border-r border-gray-300 whitespace-nowrap text-xs ${getCellClass(loc.stokAwal.selisih)}`}>
                           {formatSelisih(loc.stokAwal.selisih, loc.stokAwal.sap)}
                         </td>
                       </>
@@ -275,9 +275,9 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
                     {/* Produksi */}
                     {showProduksi && (
                       <>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.produksi.opr)}</td>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.produksi.sap)}</td>
-                        <td className={`px-2 py-2 text-right border-r border-gray-300 whitespace-nowrap ${getCellClass(loc.produksi.selisih)}`}>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.produksi.opr)}</td>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.produksi.sap)}</td>
+                        <td className={`px-1 py-1.5 text-right border-r border-gray-300 whitespace-nowrap text-xs ${getCellClass(loc.produksi.selisih)}`}>
                           {formatSelisih(loc.produksi.selisih, loc.produksi.sap, false)}
                         </td>
                       </>
@@ -285,9 +285,9 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
                     {/* Rilis */}
                     {showRilis && (
                       <>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.rilis.opr)}</td>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.rilis.sap)}</td>
-                        <td className={`px-2 py-2 text-right border-r border-gray-300 whitespace-nowrap ${getCellClass(loc.rilis.selisih)}`}>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.rilis.opr)}</td>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.rilis.sap)}</td>
+                        <td className={`px-1 py-1.5 text-right border-r border-gray-300 whitespace-nowrap text-xs ${getCellClass(loc.rilis.selisih)}`}>
                           {formatSelisih(loc.rilis.selisih, loc.rilis.sap, false)}
                         </td>
                       </>
@@ -295,9 +295,9 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
                     {/* Stok Akhir */}
                     {showStokAkhir && (
                       <>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.stokAkhir.opr)}</td>
-                        <td className="px-2 py-2 text-right border-r border-gray-200 whitespace-nowrap text-black">{formatNumber(loc.stokAkhir.sap)}</td>
-                        <td className={`px-2 py-2 text-right border-r border-gray-300 whitespace-nowrap ${getCellClass(loc.stokAkhir.selisih)}`}>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.stokAkhir.opr)}</td>
+                        <td className="px-1 py-1.5 text-right border-r border-gray-200 whitespace-nowrap text-black text-xs">{formatNumber(loc.stokAkhir.sap)}</td>
+                        <td className={`px-1 py-1.5 text-right border-r border-gray-300 whitespace-nowrap text-xs ${getCellClass(loc.stokAkhir.selisih)}`}>
                           {formatSelisih(loc.stokAkhir.selisih, loc.stokAkhir.sap)}
                         </td>
                       </>
