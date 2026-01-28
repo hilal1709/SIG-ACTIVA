@@ -244,14 +244,14 @@ export default function LaporanMaterialPage() {
         }
       }
       
-      // Filter by Selisih (check if any category has non-zero selisih)
+      // Filter by Selisih (check if any category has non-zero selisih AND non-zero OPR)
       let matchesSelisih = true;
       if (selectedSelisih === 'ada selisih') {
         matchesSelisih = (
-          (item.stokAwal?.selisih || 0) !== 0 ||
-          (item.produksi?.selisih || 0) !== 0 ||
-          (item.rilis?.selisih || 0) !== 0 ||
-          (item.stokAkhir?.selisih || 0) !== 0
+          ((item.stokAwal?.selisih || 0) !== 0 && (item.stokAwal?.opr || 0) !== 0) ||
+          ((item.produksi?.selisih || 0) !== 0 && (item.produksi?.opr || 0) !== 0) ||
+          ((item.rilis?.selisih || 0) !== 0 && (item.rilis?.opr || 0) !== 0) ||
+          ((item.stokAkhir?.selisih || 0) !== 0 && (item.stokAkhir?.opr || 0) !== 0)
         );
       }
       
