@@ -709,7 +709,7 @@ export default function MonitoringAccrualPage() {
             row2.getCell(11).numFmt = '0';
             row2.getCell(12).value = item.headerText || ''; // sgtxt
             row2.getCell(13).value = ''; // prctr
-            row2.getCell(14).value = item.costCenter || ''; // kostl
+            row2.getCell(14).value = ''; // kostl - kosongkan untuk akun accrual
             row2.getCell(15).value = ''; // empty
             row2.getCell(16).value = ''; // nplnr
             row2.getCell(17).value = ''; // aufnr
@@ -825,7 +825,7 @@ export default function MonitoringAccrualPage() {
               (-totalAccrual).toString(),
               item.headerText || '',
               '',
-              item.costCenter || '',
+              '', // Cost center kosong untuk akun accrual
               '',
               '',
               '',
