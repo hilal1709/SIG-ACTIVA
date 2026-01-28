@@ -70,8 +70,8 @@ export default function MaterialPivotTable({ data, selectedKategori = 'all' }: M
   }, {} as Record<string, { materialId: string; materialName: string; locations: MaterialData[] }>);
 
   const formatNumber = (num: number) => {
-    if (num === 0) return '0';
-    return num.toLocaleString('id-ID');
+    if (num === 0) return '0.0';
+    return num.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   };
 
   const getCellClass = (value: number) => {
