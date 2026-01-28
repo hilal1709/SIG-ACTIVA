@@ -217,6 +217,12 @@ export default function MonitoringAccrualPage() {
     
     // Calculate total outstanding
     const totalAccrual = item.periodes?.reduce((sum, p) => {
+      // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+      if (item.pembagianType === 'manual') {
+        return sum + p.amountAccrual;
+      }
+      
+      // Untuk otomatis, cek tanggal periode
       const [bulanName, tahunStr] = p.bulan.split(' ');
       const bulanMap: Record<string, number> = {
         'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
@@ -389,6 +395,12 @@ export default function MonitoringAccrualPage() {
           
           // Calculate total saldo (sum of all accrual amounts)
           const totalSaldo = item.periodes?.reduce((sum, p) => {
+            // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+            if (item.pembagianType === 'manual') {
+              return sum + p.amountAccrual;
+            }
+            
+            // Untuk otomatis, cek tanggal periode
             // Parse bulan periode (format: "Jan 2026")
             const [bulanName, tahunStr] = p.bulan.split(' ');
             const bulanMap: Record<string, number> = {
@@ -610,6 +622,12 @@ export default function MonitoringAccrualPage() {
         items.forEach((item) => {
           // Calculate total accrual for this item (only periods that have passed)
           const totalAccrual = item.periodes?.reduce((sum, p) => {
+            // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+            if (item.pembagianType === 'manual') {
+              return sum + p.amountAccrual;
+            }
+            
+            // Untuk otomatis, cek tanggal periode
             // Parse bulan periode (format: "Jan 2026")
             const [bulanName, tahunStr] = p.bulan.split(' ');
             const bulanMap: Record<string, number> = {
@@ -739,6 +757,12 @@ export default function MonitoringAccrualPage() {
         items.forEach((item) => {
           // Calculate total accrual for this item (only periods that have passed)
           const totalAccrual = item.periodes?.reduce((sum, p) => {
+            // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+            if (item.pembagianType === 'manual') {
+              return sum + p.amountAccrual;
+            }
+            
+            // Untuk otomatis, cek tanggal periode
             // Parse bulan periode (format: "Jan 2026")
             const [bulanName, tahunStr] = p.bulan.split(' ');
             const bulanMap: Record<string, number> = {
@@ -1684,6 +1708,12 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
                             {formatCurrency(
                               item.periodes?.reduce((sum, p) => {
+                                // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+                                if (item.pembagianType === 'manual') {
+                                  return sum + p.amountAccrual;
+                                }
+                                
+                                // Untuk otomatis, cek tanggal periode
                                 // Parse bulan periode (format: "Jan 2026")
                                 const [bulanName, tahunStr] = p.bulan.split(' ');
                                 const bulanMap: Record<string, number> = {
