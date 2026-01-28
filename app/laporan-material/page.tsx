@@ -128,7 +128,7 @@ export default function LaporanMaterialPage() {
     };
 
     importedData.forEach(item => {
-      // Sum all selisih values
+      // Sum all selisih values for visualizations and metrics
       const stokAwalSelisih = item.stokAwal?.selisih || 0;
       const produksiSelisih = item.produksi?.selisih || 0;
       const rilisSelisih = item.rilis?.selisih || 0;
@@ -217,42 +217,84 @@ export default function LaporanMaterialPage() {
         item.materialName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.location?.toLowerCase().includes(searchTerm.toLowerCase());
       
-      const matchesLokasi = selectedLokasi === 'All' || item.location === selectedLokasi;
+      // Filter by Lokasi - when specific location is selected, also check for valid selisih
+      let matchesLokasi = true;
+      if (selectedLokasi !== 'All') {
+        matchesLokasi = item.location === selectedLokasi && (
+          (Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0) ||
+          (Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0) ||
+          (Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0) ||
+          (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
+        );
+      }
       
       // Filter by Fasilitas (based on location name pattern)
       let matchesFasilitas = true;
       if (selectedFasilitas !== 'all') {
         const locationLower = (item.location || '').toLowerCase();
         if (selectedFasilitas === 'pabrik') {
-          matchesFasilitas = locationLower.includes('pl') || locationLower.includes('cp');
+          matchesFasilitas = (locationLower.includes('pl') || locationLower.includes('cp')) && (
+            (Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0) ||
+            (Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0) ||
+            (Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0) ||
+            (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
+          );
         } else if (selectedFasilitas === 'gudang') {
-          matchesFasilitas = !locationLower.includes('pl') && !locationLower.includes('cp');
+          matchesFasilitas = (!locationLower.includes('pl') && !locationLower.includes('cp')) && (
+            (Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0) ||
+            (Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0) ||
+            (Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0) ||
+            (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
+          );
         }
       }
       
-      // Filter by Kategori (check if the selected category has non-zero values)
+      // Filter by Kategori (check if the selected category has selisih >= 1 AND non-zero OPR)
       let matchesKategori = true;
       if (selectedKategori !== 'all') {
         if (selectedKategori === 'stok awal') {
-          matchesKategori = (item.stokAwal?.selisih || 0) !== 0;
+          matchesKategori = Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0;
         } else if (selectedKategori === 'produksi') {
-          matchesKategori = (item.produksi?.selisih || 0) !== 0;
+          matchesKategori = Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0;
         } else if (selectedKategori === 'rilis') {
-          matchesKategori = (item.rilis?.selisih || 0) !== 0;
+          matchesKategori = Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0;
         } else if (selectedKategori === 'stok akhir') {
-          matchesKategori = (item.stokAkhir?.selisih || 0) !== 0;
+          matchesKategori = Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0;
         }
-      }
-      
-      // Filter by Selisih (check if any category has selisih >= 1 AND non-zero OPR)
-      let matchesSelisih = true;
-      if (selectedSelisih === 'ada selisih') {
-        matchesSelisih = (
+      } else {
+        // When kategori = 'all', check if ANY category has valid selisih
+        matchesKategori = (
           (Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0) ||
           (Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0) ||
           (Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0) ||
           (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
         );
+      }
+      
+      // Filter by Selisih (check based on selected category)
+      let matchesSelisih = true;
+      if (selectedSelisih === 'ada selisih') {
+        if (selectedKategori === 'stok awal') {
+          // When filtering by stok awal category, only check stok awal selisih
+          matchesSelisih = Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0;
+        } else if (selectedKategori === 'produksi') {
+          // When filtering by produksi category, only check produksi selisih
+          matchesSelisih = Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0;
+        } else if (selectedKategori === 'rilis') {
+          // When filtering by rilis category, only check rilis selisih
+          matchesSelisih = Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0;
+        } else if (selectedKategori === 'stok akhir') {
+          // When filtering by stok akhir category, only check stok akhir selisih
+          matchesSelisih = Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0;
+        } else {
+          // When kategori = 'all', check ANY category has selisih
+          matchesSelisih = (
+            (Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0) ||
+            (Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0) ||
+            (Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0) ||
+            (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
+          );
+        }
       }
       
       return matchesSearch && matchesLokasi && matchesFasilitas && matchesKategori && matchesSelisih;
