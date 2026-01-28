@@ -147,6 +147,73 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// PUT - Update prepaid
+export async function PUT(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Prepaid ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const body = await request.json();
+    const {
+      companyCode,
+      noPo,
+      kdAkr,
+      alokasi,
+      namaAkun,
+      vendor,
+      deskripsi,
+      headerText,
+      klasifikasi,
+      totalAmount,
+      costCenter,
+      startDate,
+      period,
+      periodUnit,
+      type,
+    } = body;
+
+    // Update prepaid data
+    const prepaid = await prisma.prepaid.update({
+      where: { id: parseInt(id) },
+      data: {
+        companyCode,
+        noPo,
+        kdAkr,
+        alokasi,
+        namaAkun,
+        vendor,
+        deskripsi,
+        headerText,
+        klasifikasi,
+        totalAmount,
+        costCenter,
+        startDate: new Date(startDate),
+        period,
+        periodUnit,
+        type,
+      },
+      include: {
+        periodes: true
+      }
+    });
+
+    return NextResponse.json(prepaid);
+  } catch (error) {
+    console.error('Error updating prepaid:', error);
+    return NextResponse.json(
+      { error: 'Failed to update prepaid' },
+      { status: 500 }
+    );
+  }
+}
+
 // DELETE - Menghapus prepaid
 export async function DELETE(request: NextRequest) {
   try {

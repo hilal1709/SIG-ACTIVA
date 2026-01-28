@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Download, Plus, MoreVertical } from 'lucide-react';
+import { Search, Download, Plus, MoreVertical, Edit, Trash2, FileDown } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import PrepaidForm from '../components/PrepaidForm';
@@ -38,24 +38,35 @@ interface Prepaid {
 
 export default function MonitoringPrepaidPage() {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState('All');
   const [prepaidData, setPrepaidData] = useState<Prepaid[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editMode, setEditMode] = useState<'create' | 'edit'>('create');
+  const [editData, setEditData] = useState<Prepaid | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<number | null>(null);
 
   // Fetch data dari API
   useEffect(() => {
     fetchPrepaidData();
-  }, [filterType]);
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (openDropdown !== null) {
+        setOpenDropdown(null);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [openDropdown]);
 
   const fetchPrepaidData = async () => {
     try {
       setLoading(true);
-      const url = filterType === 'All' 
-        ? '/api/prepaid' 
-        : `/api/prepaid?type=${filterType}`;
+      const response = await fetch('/api/prepaid');
       
-      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setPrepaidData(data);
@@ -89,17 +100,59 @@ export default function MonitoringPrepaidPage() {
     exportToCSV(filteredData, 'Monitoring_Prepaid.csv', headers);
   };
 
+  const handleEdit = (item: Prepaid) => {
+    setEditData(item);
+    setEditMode('edit');
+    setIsFormOpen(true);
+    setOpenDropdown(null);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus data prepaid ini?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/prepaid?id=${id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        alert('Data prepaid berhasil dihapus!');
+        fetchPrepaidData();
+      } else {
+        alert('Gagal menghapus data prepaid');
+      }
+    } catch (error) {
+      console.error('Error deleting prepaid:', error);
+      alert('Terjadi kesalahan saat menghapus data');
+    }
+    setOpenDropdown(null);
+  };
+
+  const handleExportSingle = (item: Prepaid) => {
+    const headers = ['companyCode', 'noPo', 'alokasi', 'kdAkr', 'namaAkun', 'deskripsi', 'klasifikasi', 'totalAmount', 'startDate', 'period', 'remaining'];
+    exportToCSV([item], `Prepaid_${item.kdAkr}.csv`, headers);
+    setOpenDropdown(null);
+  };
+
+  const handleAddNew = () => {
+    setEditData(null);
+    setEditMode('create');
+    setIsFormOpen(true);
+  };
+
   const formatCurrency = (amount: number) => {
     return `Rp ${amount.toLocaleString('id-ID')}`;
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
       <Sidebar />
 
       {/* Main Content */}
-      <div className="ml-64 flex-1">
+      <div className="ml-64 flex-1 flex flex-col h-screen overflow-hidden">
         {/* Header */}
         <Header
           title="Monitoring Prepaid"
@@ -107,7 +160,7 @@ export default function MonitoringPrepaidPage() {
         />
 
         {/* Content Area */}
-        <div className="p-8">
+        <div className="p-8 flex-1 overflow-y-auto">
           {/* Metric Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -143,40 +196,6 @@ export default function MonitoringPrepaidPage() {
                 />
               </div>
 
-              {/* Filter Buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setFilterType('All')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    filterType === 'All'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setFilterType('Linear')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    filterType === 'Linear'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  Linear
-                </button>
-                <button
-                  onClick={() => setFilterType('Verbal')}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    filterType === 'Verbal'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  Verbal
-                </button>
-              </div>
-
               {/* Action Buttons */}
               <div className="flex gap-2 ml-auto">
                 <button
@@ -187,7 +206,7 @@ export default function MonitoringPrepaidPage() {
                   Export Laporan SAP
                 </button>
                 <button 
-                  onClick={() => setIsFormOpen(true)}
+                  onClick={handleAddNew}
                   className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Plus size={18} />
@@ -198,14 +217,14 @@ export default function MonitoringPrepaidPage() {
           </div>
 
           {/* Table */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border border-gray-200">
             {loading ? (
               <div className="text-center py-12">
                 <p className="text-gray-500">Memuat data...</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto max-w-full bg-white" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+                <table className="w-full text-sm bg-white min-w-max">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
@@ -308,10 +327,43 @@ export default function MonitoringPrepaidPage() {
                           <td className="px-3 py-3 text-right font-medium text-gray-800">
                             {formatCurrency(saldo)}
                           </td>
-                          <td className="px-3 py-3 text-center">
-                            <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                          <td className="px-3 py-3 text-center relative">
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenDropdown(openDropdown === item.id ? null : item.id);
+                              }}
+                              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
+                            >
                               <MoreVertical size={18} />
                             </button>
+                            
+                            {/* Dropdown Menu */}
+                            {openDropdown === item.id && (
+                              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  <Edit size={16} />
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleExportSingle(item)}
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  <FileDown size={16} />
+                                  Export
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(item.id)}
+                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-b-lg"
+                                >
+                                  <Trash2 size={16} />
+                                  Hapus
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
@@ -334,8 +386,14 @@ export default function MonitoringPrepaidPage() {
       {/* Prepaid Form Modal */}
       <PrepaidForm
         isOpen={isFormOpen}
-        onClose={() => setIsFormOpen(false)}
+        onClose={() => {
+          setIsFormOpen(false);
+          setEditData(null);
+          setEditMode('create');
+        }}
         onSuccess={fetchPrepaidData}
+        mode={editMode}
+        editData={editData}
       />
     </div>
   );

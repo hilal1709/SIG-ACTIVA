@@ -1,17 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+
+interface PrepaidData {
+  id?: number;
+  companyCode: string;
+  noPo: string;
+  alokasi: string;
+  kdAkr: string;
+  namaAkun: string;
+  deskripsi: string;
+  klasifikasi: string;
+  totalAmount: string;
+  startDate: string;
+  period: string;
+  periodUnit: string;
+  type: string;
+  vendor: string;
+  costCenter: string;
+  headerText: string;
+}
 
 interface PrepaidFormProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  editData?: any;
+  mode?: 'create' | 'edit';
 }
 
-export default function PrepaidForm({ isOpen, onClose, onSuccess }: PrepaidFormProps) {
+export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode = 'create' }: PrepaidFormProps) {
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<PrepaidData>({
     companyCode: '',
     noPo: '',
     alokasi: '',
@@ -29,6 +50,49 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess }: PrepaidFormP
     headerText: ''
   });
 
+  // Load data when in edit mode
+  useEffect(() => {
+    if (mode === 'edit' && editData) {
+      setFormData({
+        id: editData.id,
+        companyCode: editData.companyCode || '',
+        noPo: editData.noPo || '',
+        alokasi: editData.alokasi || '',
+        kdAkr: editData.kdAkr || '',
+        namaAkun: editData.namaAkun || '',
+        deskripsi: editData.deskripsi || '',
+        klasifikasi: editData.klasifikasi || '',
+        totalAmount: editData.totalAmount?.toString() || '',
+        startDate: editData.startDate?.split('T')[0] || '',
+        period: editData.period?.toString() || '',
+        periodUnit: editData.periodUnit || 'bulan',
+        type: editData.type || 'Linear',
+        vendor: editData.vendor || '',
+        costCenter: editData.costCenter || '',
+        headerText: editData.headerText || ''
+      });
+    } else {
+      // Reset form for create mode
+      setFormData({
+        companyCode: '',
+        noPo: '',
+        alokasi: '',
+        kdAkr: '',
+        namaAkun: '',
+        deskripsi: '',
+        klasifikasi: '',
+        totalAmount: '',
+        startDate: '',
+        period: '',
+        periodUnit: 'bulan',
+        type: 'Linear',
+        vendor: '',
+        costCenter: '',
+        headerText: ''
+      });
+    }
+  }, [mode, editData, isOpen]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
@@ -42,8 +106,14 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess }: PrepaidFormP
     setLoading(true);
 
     try {
-      const response = await fetch('/api/prepaid', {
-        method: 'POST',
+      const url = mode === 'edit' && formData.id 
+        ? `/api/prepaid?id=${formData.id}` 
+        : '/api/prepaid';
+      
+      const method = mode === 'edit' ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -55,34 +125,16 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess }: PrepaidFormP
       });
 
       if (response.ok) {
-        alert('Data prepaid berhasil ditambahkan!');
+        alert(`Data prepaid berhasil ${mode === 'edit' ? 'diupdate' : 'ditambahkan'}!`);
         onSuccess();
         onClose();
-        // Reset form
-        setFormData({
-          companyCode: '',
-          noPo: '',
-          alokasi: '',
-          kdAkr: '',
-          namaAkun: '',
-          deskripsi: '',
-          klasifikasi: '',
-          totalAmount: '',
-          startDate: '',
-          period: '',
-          periodUnit: 'bulan',
-          type: 'Linear',
-          vendor: '',
-          costCenter: '',
-          headerText: ''
-        });
       } else {
         const error = await response.json();
-        alert(`Error: ${error.error || 'Gagal menambahkan data'}`);
+        alert(`Error: ${error.error || 'Gagal menyimpan data'}`);
       }
     } catch (error) {
       console.error('Error submitting form:', error);
-      alert('Terjadi kesalahan saat menambahkan data');
+      alert('Terjadi kesalahan saat menyimpan data');
     } finally {
       setLoading(false);
     }
@@ -95,7 +147,9 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess }: PrepaidFormP
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
-          <h2 className="text-xl font-bold text-gray-800">Tambah Data Prepaid</h2>
+          <h2 className="text-xl font-bold text-gray-800">
+            {mode === 'edit' ? 'Edit Data Prepaid' : 'Tambah Data Prepaid'}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
