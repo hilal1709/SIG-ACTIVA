@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import PrepaidForm from '../components/PrepaidForm';
 import { exportToCSV } from '../utils/exportUtils';
+import ExcelJS from 'exceljs';
 
 interface PrepaidPeriode {
   id: number;
@@ -33,6 +34,8 @@ interface Prepaid {
   remaining: number;
   vendor: string;
   type: string;
+  headerText?: string;
+  costCenter?: string;
   periodes: PrepaidPeriode[];
 }
 
@@ -94,6 +97,423 @@ export default function MonitoringPrepaidPage() {
     
     return matchesSearch;
   });
+
+  const handleDownloadGlobalReport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Laporan Prepaid');
+    
+    // Title
+    worksheet.mergeCells('A1:N1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'LAPORAN PREPAID';
+    titleCell.font = { name: 'Calibri', size: 14, bold: true };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    titleCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF404040' }
+    };
+    titleCell.font = { ...titleCell.font, color: { argb: 'FFFFFFFF' } };
+    
+    // Headers
+    worksheet.getRow(2).height = 30;
+    const headers = [
+      'Company Code',
+      'No PO',
+      'Assignment/Order',
+      'Kode Akun Prepaid',
+      'Kode Akun Biaya',
+      'Deskripsi',
+      'Klasifikasi',
+      'Amount',
+      'Start Date',
+      'Finish Date',
+      'Periode',
+      'Total Prepaid',
+      'Total Realisasi',
+      'Saldo'
+    ];
+    
+    worksheet.getRow(2).values = headers;
+    worksheet.getRow(2).eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF404040' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+    
+    // Column widths
+    worksheet.columns = [
+      { width: 12 },  // Company Code
+      { width: 15 },  // No PO
+      { width: 18 },  // Assignment/Order
+      { width: 16 },  // Kode Akun Prepaid
+      { width: 16 },  // Kode Akun Biaya
+      { width: 35 },  // Deskripsi
+      { width: 15 },  // Klasifikasi
+      { width: 15 },  // Amount
+      { width: 12 },  // Start Date
+      { width: 12 },  // Finish Date
+      { width: 10 },  // Periode
+      { width: 15 },  // Total Prepaid
+      { width: 15 },  // Total Realisasi
+      { width: 15 }   // Saldo
+    ];
+    
+    let currentRow = 3;
+    
+    // Data rows
+    filteredData.forEach((item) => {
+      // Calculate totals
+      const totalPrepaid = item.periodes?.reduce((sum, p) => {
+        const [bulanName, tahunStr] = p.bulan.split(' ');
+        const bulanMap: Record<string, number> = {
+          'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+          'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+        };
+        const periodeBulan = bulanMap[bulanName];
+        const periodeTahun = parseInt(tahunStr);
+        const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+        const today = new Date();
+        if (today >= periodeDate) {
+          return sum + p.amountPrepaid;
+        }
+        return sum;
+      }, 0) || 0;
+      
+      const totalAmortized = item.periodes?.filter(p => p.isAmortized).reduce((sum, p) => sum + p.amountPrepaid, 0) || 0;
+      const saldo = totalPrepaid - totalAmortized;
+      
+      const row = worksheet.getRow(currentRow);
+      
+      // Start Date
+      const startDate = new Date(item.startDate);
+      const startDateStr = `${startDate.getDate().toString().padStart(2, '0')}/${(startDate.getMonth() + 1).toString().padStart(2, '0')}/${startDate.getFullYear()}`;
+      
+      // Finish Date
+      const finishDate = new Date(item.startDate);
+      finishDate.setMonth(finishDate.getMonth() + item.period);
+      const finishDateStr = `${finishDate.getDate().toString().padStart(2, '0')}/${(finishDate.getMonth() + 1).toString().padStart(2, '0')}/${finishDate.getFullYear()}`;
+      
+      row.getCell(1).value = item.companyCode || '';
+      row.getCell(2).value = item.noPo || '';
+      row.getCell(3).value = item.alokasi || '';
+      row.getCell(4).value = item.kdAkr;
+      row.getCell(5).value = item.namaAkun;
+      row.getCell(6).value = item.deskripsi || '';
+      row.getCell(7).value = item.klasifikasi || '';
+      row.getCell(8).value = item.totalAmount;
+      row.getCell(8).numFmt = '#,##0.0';
+      row.getCell(9).value = startDateStr;
+      row.getCell(10).value = finishDateStr;
+      row.getCell(11).value = `${item.period} ${item.periodUnit}`;
+      row.getCell(12).value = totalPrepaid;
+      row.getCell(12).numFmt = '#,##0.0';
+      row.getCell(13).value = totalAmortized;
+      row.getCell(13).numFmt = '#,##0.0';
+      row.getCell(14).value = saldo;
+      row.getCell(14).numFmt = '#,##0.0';
+      
+      // Apply borders and styling
+      for (let col = 1; col <= 14; col++) {
+        const cell = row.getCell(col);
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        
+        if (col === 8 || col === 12 || col === 13 || col === 14) {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+      }
+      
+      currentRow++;
+    });
+    
+    // Generate and download file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Laporan_Prepaid_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadJurnalSAP = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Jurnal SAP');
+    
+    // Headers row 1 (field names)
+    worksheet.getRow(1).height = 15;
+    const headers1 = [
+      'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
+      'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+    ];
+    
+    // Kolom dengan warna #FFFF00: kursf (7), zuonr (9), prctr (13), nplnr (16), aufnr (17), valut (18)
+    const yellowColumns = [7, 9, 13, 16, 17, 18];
+    
+    worksheet.getRow(1).values = headers1;
+    worksheet.getRow(1).eachCell((cell, colNumber) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: yellowColumns.includes(colNumber) ? 'FFFFFF00' : 'FFFFE699' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+    });
+    
+    // Headers row 2 (descriptions)
+    worksheet.getRow(2).height = 15;
+    const headers2 = [
+      'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
+      'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
+      'cost center', '', 'Network', 'order numi', 'value date', ''
+    ];
+    
+    worksheet.getRow(2).values = headers2;
+    worksheet.getRow(2).eachCell((cell, colNumber) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: yellowColumns.includes(colNumber) ? 'FFFFFF00' : 'FFFFE699' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true };
+      cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+    });
+    
+    // Column widths
+    worksheet.columns = [
+      { width: 12 },  // xblnr
+      { width: 10 },  // bukrs
+      { width: 9 },   // blart
+      { width: 9 },   // bldat
+      { width: 12 },  // budat
+      { width: 10 },  // waers
+      { width: 8 },   // kursf
+      { width: 30 },  // bktxt
+      { width: 12 },  // zuonr
+      { width: 12 },  // hkont
+      { width: 15 },  // wrbtr
+      { width: 30 },  // sgtxt
+      { width: 12 },  // prctr
+      { width: 12 },  // kostl
+      { width: 3 },   // empty
+      { width: 10 },  // nplnr
+      { width: 12 },  // aufnr
+      { width: 12 },  // valut
+      { width: 5 }    // flag
+    ];
+    
+    let currentRow = 3;
+    
+    // Generate jurnal entries untuk setiap prepaid item
+    filteredData.forEach((item) => {
+      // Calculate total amortized yang sudah lewat tanggalnya
+      const totalAmortized = item.periodes?.reduce((sum, p) => {
+        if (p.isAmortized) {
+          return sum + p.amountPrepaid;
+        }
+        return sum;
+      }, 0) || 0;
+      
+      if (totalAmortized > 0) {
+        // Parse tanggal from start date
+        const startDate = new Date(item.startDate);
+        const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+        
+        // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+        const row1 = worksheet.getRow(currentRow);
+        row1.height = 15;
+        
+        row1.getCell(1).value = ''; // xblnr - kosong
+        row1.getCell(2).value = item.companyCode || ''; // bukrs
+        row1.getCell(3).value = 'SA'; // blart
+        row1.getCell(4).value = docDate; // bldat
+        row1.getCell(5).value = docDate; // budat
+        row1.getCell(6).value = 'IDR'; // waers
+        row1.getCell(7).value = ''; // kursf
+        row1.getCell(8).value = item.headerText || ''; // bktxt
+        row1.getCell(9).value = ''; // zuonr
+        row1.getCell(10).value = item.namaAkun; // hkont (expense account)
+        row1.getCell(11).value = totalAmortized; // wrbtr (positive)
+        row1.getCell(11).numFmt = '0';
+        row1.getCell(12).value = item.headerText || ''; // sgtxt
+        row1.getCell(13).value = ''; // prctr
+        row1.getCell(14).value = ''; // kostl - kosongkan untuk akun biaya
+        row1.getCell(15).value = ''; // empty
+        row1.getCell(16).value = ''; // nplnr
+        row1.getCell(17).value = ''; // aufnr
+        row1.getCell(18).value = ''; // valut
+        row1.getCell(19).value = 'G'; // flag
+        
+        // Apply font and alignment to all cells (NO BORDERS)
+        for (let col = 1; col <= 19; col++) {
+          const cell = row1.getCell(col);
+          cell.font = { name: 'Aptos Narrow', size: 12 };
+          if (col === 11) {
+            cell.alignment = { horizontal: 'right', vertical: 'bottom' };
+          } else {
+            cell.alignment = { horizontal: 'left', vertical: 'bottom' };
+          }
+        }
+        
+        currentRow++;
+        
+        // Entry 2: KREDIT - Kode Akun Prepaid (negative amount)
+        const row2 = worksheet.getRow(currentRow);
+        row2.height = 15;
+        
+        row2.getCell(1).value = ''; // xblnr - kosong
+        row2.getCell(2).value = item.companyCode || ''; // bukrs
+        row2.getCell(3).value = 'SA'; // blart
+        row2.getCell(4).value = docDate; // bldat
+        row2.getCell(5).value = docDate; // budat
+        row2.getCell(6).value = 'IDR'; // waers
+        row2.getCell(7).value = ''; // kursf
+        row2.getCell(8).value = item.headerText || ''; // bktxt
+        row2.getCell(9).value = ''; // zuonr
+        row2.getCell(10).value = item.kdAkr; // hkont (prepaid account)
+        row2.getCell(11).value = -totalAmortized; // wrbtr (negative)
+        row2.getCell(11).numFmt = '0';
+        row2.getCell(12).value = item.headerText || ''; // sgtxt
+        row2.getCell(13).value = ''; // prctr
+        row2.getCell(14).value = item.alokasi || ''; // kostl - isi cost center untuk realisasi prepaid
+        row2.getCell(15).value = ''; // empty
+        row2.getCell(16).value = ''; // nplnr
+        row2.getCell(17).value = ''; // aufnr
+        row2.getCell(18).value = ''; // valut
+        row2.getCell(19).value = 'G'; // flag
+        
+        // Apply font and alignment to all cells (NO BORDERS)
+        for (let col = 1; col <= 19; col++) {
+          const cell = row2.getCell(col);
+          cell.font = { name: 'Aptos Narrow', size: 12 };
+          if (col === 11) {
+            cell.alignment = { horizontal: 'right', vertical: 'bottom' };
+          } else {
+            cell.alignment = { horizontal: 'left', vertical: 'bottom' };
+          }
+        }
+        
+        currentRow++;
+      }
+    });
+    
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_Prepaid_${new Date().getFullYear()}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadJurnalSAPTxt = () => {
+    // Build TXT content (tab-separated)
+    const rows: string[][] = [];
+    
+    // Generate jurnal entries (no headers)
+    filteredData.forEach((item) => {
+      // Calculate total amortized yang sudah lewat tanggalnya
+      const totalAmortized = item.periodes?.reduce((sum, p) => {
+        if (p.isAmortized) {
+          return sum + p.amountPrepaid;
+        }
+        return sum;
+      }, 0) || 0;
+      
+      if (totalAmortized > 0) {
+        const startDate = new Date(item.startDate);
+        const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+        
+        // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+        rows.push([
+          '',
+          item.companyCode || '',
+          'SA',
+          docDate,
+          docDate,
+          'IDR',
+          '',
+          item.headerText || '',
+          '',
+          item.namaAkun,
+          totalAmortized.toString(),
+          item.headerText || '',
+          '',
+          '', // Cost center kosong untuk akun biaya
+          '',
+          '',
+          '',
+          '',
+          'G'
+        ]);
+        
+        // Entry 2: KREDIT - Kode Akun Prepaid (negative amount)
+        rows.push([
+          '',
+          item.companyCode || '',
+          'SA',
+          docDate,
+          docDate,
+          'IDR',
+          '',
+          item.headerText || '',
+          '',
+          item.kdAkr,
+          (-totalAmortized).toString(),
+          item.headerText || '',
+          '',
+          item.alokasi || '', // Cost center untuk realisasi prepaid
+          '',
+          '',
+          '',
+          '',
+          'G'
+        ]);
+      }
+    });
+    
+    // Convert to TXT string (tab-separated)
+    const txtContent = rows.map(row => row.join('\t')).join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_Prepaid_${new Date().getFullYear()}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const handleExport = () => {
     const headers = ['kdAkr', 'namaAkun', 'alokasi', 'vendor', 'totalAmount', 'remaining', 'period', 'type'];
@@ -199,11 +619,11 @@ export default function MonitoringPrepaidPage() {
               {/* Action Buttons */}
               <div className="flex gap-2 ml-auto">
                 <button
-                  onClick={handleExport}
+                  onClick={handleDownloadGlobalReport}
                   className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Download size={18} />
-                  Export Laporan SAP
+                  Export Laporan Prepaid
                 </button>
                 <button 
                   onClick={handleAddNew}
@@ -269,6 +689,9 @@ export default function MonitoringPrepaidPage() {
                       <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700">
                         Saldo
                       </th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700">
+                        Header Text
+                      </th>
                       <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700">
                         Actions
                       </th>
@@ -327,6 +750,9 @@ export default function MonitoringPrepaidPage() {
                           <td className="px-3 py-3 text-right font-medium text-gray-800">
                             {formatCurrency(saldo)}
                           </td>
+                          <td className="px-3 py-3 text-gray-600">
+                            {item.headerText || '-'}
+                          </td>
                           <td className="px-3 py-3 text-center relative">
                             <button 
                               onClick={(e) => {
@@ -347,13 +773,6 @@ export default function MonitoringPrepaidPage() {
                                 >
                                   <Edit size={16} />
                                   Edit
-                                </button>
-                                <button
-                                  onClick={() => handleExportSingle(item)}
-                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                                >
-                                  <FileDown size={16} />
-                                  Export
                                 </button>
                                 <button
                                   onClick={() => handleDelete(item.id)}
