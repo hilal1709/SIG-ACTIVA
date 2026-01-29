@@ -191,6 +191,7 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
                 <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-gray-800">Notifikasi</h3>
                   <div className="flex items-center gap-2">
                     {notificationCount > 0 && (
                       <>
@@ -205,8 +206,7 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
                         </button>
                       </>
                     )}
-                  </div></span>
-                  )}
+                  </div>
                 </div>
               </div>
 
@@ -214,7 +214,17 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
               <div className="overflow-y-auto flex-1">
                 {loadingNotifications ? (
                   <div className="p-4 text-center text-gray-500">
-                    <div className="animate-spin r{
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
+                    <p className="mt-2 text-sm">Memuat notifikasi...</p>
+                  </div>
+                ) : notifications.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <Bell size={32} className="mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">Tidak ada notifikasi</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {notifications.map((notif) => {
                       const isRead = readNotifications.has(notif.id);
                       return (
                         <button
@@ -249,17 +259,7 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
                           </div>
                         </button>
                       );
-                    }       <p className="text-xs text-gray-400 mt-1">
-                              {new Date(notif.createdAt).toLocaleDateString('id-ID', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric'
-                              })}
-                            </p>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
+                    })}
                   </div>
                 )}
               </div>
