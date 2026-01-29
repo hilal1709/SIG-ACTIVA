@@ -295,7 +295,7 @@ export default function DashboardPage() {
           )}
 
           {/* Rekonsiliasi Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn delay-300">{
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn delay-300">
             <RekonsiliasiCard
               title="Rekonsiliasi Accrual vs Realisasi"
               description="Monitoring selisih antara accrual yang dicatat dengan realisasi pembayaran"
