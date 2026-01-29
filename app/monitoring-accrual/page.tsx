@@ -2466,21 +2466,21 @@ export default function MonitoringAccrualPage() {
 
       {/* Modal Import Realisasi Global */}
       {showImportGlobalModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-gray-200">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-gray-800">Import Realisasi Global</h2>
-                <button
-                  onClick={() => setShowImportGlobalModal(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <X size={24} />
-                </button>
-              </div>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Import Realisasi Global</h2>
+              <button
+                onClick={() => setShowImportGlobalModal(false)}
+                className="text-white/80 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
             </div>
 
-            <div className="p-6">
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 140px)' }}>
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Instruksi Import</h3>
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-gray-700">
@@ -2515,7 +2515,7 @@ export default function MonitoringAccrualPage() {
                     className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
                       uploadingGlobalExcel
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-purple-600 text-white hover:bg-purple-700'
+                        : 'bg-red-600 text-white hover:bg-red-700'
                     }`}
                   >
                     <Upload size={18} />
@@ -2534,11 +2534,12 @@ export default function MonitoringAccrualPage() {
               </div>
             </div>
 
-            <div className="p-6 border-t border-gray-200 flex justify-end">
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-white px-6 py-4 border-t border-gray-200 flex justify-end">
               <button
                 onClick={() => setShowImportGlobalModal(false)}
                 disabled={uploadingGlobalExcel}
-                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Tutup
               </button>

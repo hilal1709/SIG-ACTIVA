@@ -162,12 +162,13 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               {/* Company Code */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Company Code
+                  Company Code <span className="text-red-600">*</span>
                 </label>
                 <select
                   name="companyCode"
                   value={formData.companyCode}
                   onChange={handleChange}
+                  required
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                 >
                   <option value="">Pilih company code</option>
@@ -179,13 +180,14 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               {/* No PO */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  No PO
+                  No PO <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
                   name="noPo"
                   value={formData.noPo}
                   onChange={handleChange}
+                  required
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   placeholder="Masukkan no PO"
                 />
@@ -261,13 +263,14 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               {/* Klasifikasi */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Klasifikasi
+                  Klasifikasi <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
                   name="klasifikasi"
                   value={formData.klasifikasi}
                   onChange={handleChange}
+                  required
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   placeholder="Contoh: Insurance, Rent, Service"
                 />
@@ -337,13 +340,14 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               {/* Cost Center */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Cost Center
+                  Cost Center <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
                   name="costCenter"
                   value={formData.costCenter}
                   onChange={handleChange}
+                  required
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   placeholder="Contoh: CC-001"
                 />
@@ -352,13 +356,14 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               {/* Header Text */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Header Text (untuk jurnal SAP)
+                  Header Text (untuk jurnal SAP) <span className="text-red-600">*</span>
                 </label>
                 <input
                   type="text"
                   name="headerText"
                   value={formData.headerText}
                   onChange={handleChange}
+                  required
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   placeholder="Header text untuk jurnal SAP"
                 />
@@ -367,12 +372,13 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               {/* Deskripsi */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Deskripsi
+                  Deskripsi <span className="text-red-600">*</span>
                 </label>
                 <textarea
                   name="deskripsi"
                   value={formData.deskripsi}
                   onChange={handleChange}
+                  required
                   rows={3}
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none text-sm transition-all"
                   placeholder="Deskripsi prepaid"

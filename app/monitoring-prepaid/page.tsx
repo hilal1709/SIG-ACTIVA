@@ -620,10 +620,17 @@ export default function MonitoringPrepaidPage() {
               <div className="flex gap-2 ml-auto">
                 <button
                   onClick={handleDownloadGlobalReport}
-                  className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Download size={18} />
                   Export Laporan Prepaid
+                </button>
+                <button
+                  onClick={handleDownloadJurnalSAP}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                >
+                  <Download size={18} />
+                  Export Jurnal SAP
                 </button>
                 <button 
                   onClick={handleAddNew}
@@ -666,6 +673,9 @@ export default function MonitoringPrepaidPage() {
                         Deskripsi
                       </th>
                       <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700">
+                        Header Text
+                      </th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700">
                         Klasifikasi
                       </th>
                       <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700">
@@ -688,9 +698,6 @@ export default function MonitoringPrepaidPage() {
                       </th>
                       <th className="px-3 py-3 text-right text-xs font-semibold text-gray-700">
                         Saldo
-                      </th>
-                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-700">
-                        Header Text
                       </th>
                       <th className="px-3 py-3 text-center text-xs font-semibold text-gray-700">
                         Actions
@@ -727,6 +734,9 @@ export default function MonitoringPrepaidPage() {
                             {item.deskripsi || '-'}
                           </td>
                           <td className="px-3 py-3 text-gray-600">
+                            {item.headerText || '-'}
+                          </td>
+                          <td className="px-3 py-3 text-gray-600">
                             {item.klasifikasi || '-'}
                           </td>
                           <td className="px-3 py-3 text-right font-medium text-gray-800">
@@ -749,9 +759,6 @@ export default function MonitoringPrepaidPage() {
                           </td>
                           <td className="px-3 py-3 text-right font-medium text-gray-800">
                             {formatCurrency(saldo)}
-                          </td>
-                          <td className="px-3 py-3 text-gray-600">
-                            {item.headerText || '-'}
                           </td>
                           <td className="px-3 py-3 text-center relative">
                             <button 
