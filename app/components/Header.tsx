@@ -27,6 +27,7 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [userName, setUserName] = useState('User');
   const [userRole, setUserRole] = useState('');
+  const [readNotifications, setReadNotifications] = useState<Set<string>>(new Set());
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notificationRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +37,12 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
     const role = localStorage.getItem('userRole') || '';
     setUserName(name);
     setUserRole(role);
+
+    // Load read notifications from localStorage
+    const readIds = localStorage.getItem('readNotifications');
+    if (readIds) {
+      setReadNotifications(new Set(JSON.parse(readIds)));
+    }
 
     // Load notifications
     fetchNotifications();
@@ -52,13 +59,40 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
       if (response.ok) {
         const data = await response.json();
         setNotifications(data.notifications || []);
-        setNotificationCount(data.count || 0);
+        
+        // Get read notifications from localStorage
+        const readIds = localStorage.getItem('readNotifications');
+        const readSet = readIds ? new Set(JSON.parse(readIds)) : new Set();
+        
+        // Count only unread notifications
+        const unreadCount = data.notifications.filter((n: Notification) => !readSet.has(n.id)).length;
+        setNotificationCount(unreadCount);
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);
     } finally {
       setLoadingNotifications(false);
     }
+  };
+
+  const markAsRead = (notificationId: string) => {
+    const newReadSet = new Set(readNotifications);
+    newReadSet.add(notificationId);
+    setReadNotifications(newReadSet);
+    
+    // Save to localStorage
+    localStorage.setItem('readNotifications', JSON.stringify([...newReadSet]));
+    
+    // Update count
+    const unreadCount = notifications.filter(n => !newReadSet.has(n.id)).length;
+    setNotificationCount(unreadCount);
+  };
+
+  const markAllAsRead = () => {
+    const allIds = new Set(notifications.map(n => n.id));
+    setReadNotifications(allIds);
+    localStorage.setItem('readNotifications', JSON.stringify([...allIds]));
+    setNotificationCount(0);
   };
 
   const handleLogout = () => {
@@ -113,9 +147,10 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
     }
   };
 
-  const handleNotificationClick = (link: string) => {
+  const handleNotificationClick = (notif: Notification) => {
+    markAsRead(notif.id);
     setShowNotifications(false);
-    window.location.href = link;
+    window.location.href = notif.link;
   };
 
   return (
@@ -156,11 +191,21 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
               {/* Header */}
               <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-800">Notifikasi</h3>
-                  {notificationCount > 0 && (
-                    <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
-                      {notificationCount} Baru
-                    </span>
+                  <div className="flex items-center gap-2">
+                    {notificationCount > 0 && (
+                      <>
+                        <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">
+                          {notificationCount} Baru
+                        </span>
+                        <button
+                          onClick={markAllAsRead}
+                          className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                        >
+                          Tandai Semua
+                        </button>
+                      </>
+                    )}
+                  </div></span>
                   )}
                 </div>
               </div>
@@ -169,34 +214,42 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
               <div className="overflow-y-auto flex-1">
                 {loadingNotifications ? (
                   <div className="p-4 text-center text-gray-500">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
-                    <p className="mt-2 text-sm">Memuat notifikasi...</p>
-                  </div>
-                ) : notifications.length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">
-                    <Bell size={32} className="mx-auto mb-2 text-gray-300" />
-                    <p className="text-sm">Tidak ada notifikasi</p>
-                  </div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {notifications.map((notif) => (
-                      <button
-                        key={notif.id}
-                        onClick={() => handleNotificationClick(notif.link)}
-                        className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${getPriorityColor(notif.priority)}`}
-                      >
-                        <div className="flex gap-3">
-                          <div className="flex-shrink-0 mt-1">
-                            {getNotificationIcon(notif.type)}
+                    <div className="animate-spin r{
+                      const isRead = readNotifications.has(notif.id);
+                      return (
+                        <button
+                          key={notif.id}
+                          onClick={() => handleNotificationClick(notif)}
+                          className={`w-full text-left p-4 hover:bg-gray-50 transition-colors ${getPriorityColor(notif.priority)} ${isRead ? 'opacity-60' : ''}`}
+                        >
+                          <div className="flex gap-3">
+                            <div className="flex-shrink-0 mt-1">
+                              {getNotificationIcon(notif.type)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className={`text-sm font-semibold text-gray-800 ${!isRead ? 'font-bold' : ''}`}>
+                                  {notif.title}
+                                </p>
+                                {!isRead && (
+                                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-600 line-clamp-2">
+                                {notif.message}
+                              </p>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {new Date(notif.createdAt).toLocaleDateString('id-ID', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800 mb-1">
-                              {notif.title}
-                            </p>
-                            <p className="text-xs text-gray-600 line-clamp-2">
-                              {notif.message}
-                            </p>
-                            <p className="text-xs text-gray-400 mt-1">
+                        </button>
+                      );
+                    }       <p className="text-xs text-gray-400 mt-1">
                               {new Date(notif.createdAt).toLocaleDateString('id-ID', {
                                 day: 'numeric',
                                 month: 'short',
