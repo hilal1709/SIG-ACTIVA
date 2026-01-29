@@ -50,7 +50,8 @@ export async function GET(request: NextRequest) {
       orderBy: [
         { materialId: 'asc' },
         { location: 'asc' }
-      ]
+      ],
+      take: 5000
     });
 
     // Transform database format back to MaterialData format

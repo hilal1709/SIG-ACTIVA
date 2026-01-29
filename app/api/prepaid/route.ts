@@ -14,16 +14,43 @@ export async function GET(request: NextRequest) {
 
     const prepaids = await prisma.prepaid.findMany({
       where: whereClause,
-      include: {
+      select: {
+        id: true,
+        companyCode: true,
+        noPo: true,
+        alokasi: true,
+        kdAkr: true,
+        namaAkun: true,
+        deskripsi: true,
+        klasifikasi: true,
+        totalAmount: true,
+        startDate: true,
+        period: true,
+        periodUnit: true,
+        vendor: true,
+        type: true,
+        headerText: true,
+        costCenter: true,
         periodes: {
+          select: {
+            id: true,
+            periodeKe: true,
+            bulan: true,
+            tahun: true,
+            amountPrepaid: true,
+            isAmortized: true,
+            amortizedDate: true
+          },
           orderBy: {
             periodeKe: 'asc'
-          }
+          },
+          take: 100
         }
       },
       orderBy: {
         startDate: 'desc'
-      }
+      },
+      take: 1000
     });
 
     // Hitung remaining untuk setiap prepaid

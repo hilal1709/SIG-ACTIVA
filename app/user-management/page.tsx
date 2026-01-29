@@ -289,146 +289,149 @@ export default function UserManagementPage() {
         {/* Modal */}
         {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scaleIn">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden animate-scaleIn">
               {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                <h2 className="text-2xl font-bold text-gray-800">
+              <div className="bg-gradient-to-r from-red-600 to-red-700 px-6 py-6 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white">
                   {isEditing ? 'Edit User' : 'Tambah User Baru'}
                 </h2>
                 <button
                   onClick={handleCloseModal}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="text-white hover:text-red-100 transition-colors rounded-full hover:bg-white/10 p-1"
                 >
-                  <X size={24} className="text-gray-500" />
+                  <X size={24} />
                 </button>
               </div>
 
               {/* Modal Body */}
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                {/* Username */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Username
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <User size={18} className="text-gray-400" />
+              <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 140px)' }}>
+                <form onSubmit={handleSubmit} className="p-6 bg-gray-50">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    {/* Username */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Username <span className="text-red-600">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <User size={18} className="text-gray-400" />
+                        </div>
+                        <input
+                          type="text"
+                          value={formData.username}
+                          onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                          placeholder="Masukkan username"
+                          required
+                        />
+                      </div>
                     </div>
-                    <input
-                      type="text"
-                      value={formData.username}
-                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                      required
-                    />
-                  </div>
-                </div>
 
-                {/* Email */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Mail size={18} className="text-gray-400" />
+                    {/* Email */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Email <span className="text-red-600">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Mail size={18} className="text-gray-400" />
+                        </div>
+                        <input
+                          type="email"
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                          placeholder="Masukkan email"
+                          required
+                        />
+                      </div>
                     </div>
-                    <input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                      required
-                    />
+
+                    {/* Name */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Nama Lengkap <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                        placeholder="Masukkan nama lengkap"
+                        required
+                      />
+                    </div>
+
+                    {/* Role */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Role <span className="text-red-600">*</span>
+                      </label>
+                      <select
+                        value={formData.role}
+                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                        required
+                      >
+                        {ROLES.map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label} - {role.description}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Password */}
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Password {isEditing && <span className="text-gray-500 font-normal">(kosongkan jika tidak ingin mengubah)</span>}
+                        {!isEditing && <span className="text-red-600">*</span>}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={formData.password}
+                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                          className="w-full pr-12 px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                          placeholder={isEditing ? 'Opsional' : 'Minimal 6 karakter'}
+                          required={!isEditing}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                {/* Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nama Lengkap
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                    style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                    required
-                  />
-                </div>
+                  {/* Error Message */}
+                  {error && (
+                    <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-6">
+                      {error}
+                    </div>
+                  )}
 
-                {/* Role */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Role
-                  </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                    style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                    required
-                  >
-                    {ROLES.map((role) => (
-                      <option key={role.value} value={role.value}>
-                        {role.label} - {role.description}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Password */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Password {isEditing && '(kosongkan jika tidak ingin mengubah)'}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="w-full pr-12 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                      placeholder={isEditing ? 'Opsional' : 'Minimal 6 karakter'}
-                      required={!isEditing}
-                    />
+                  {/* Modal Footer */}
+                  <div className="flex gap-3 pt-4 border-t border-gray-200">
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                      onClick={handleCloseModal}
+                      className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium"
                     >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium shadow-lg hover:shadow-xl"
+                    >
+                      {isEditing ? 'Update User' : 'Tambah User'}
                     </button>
                   </div>
-                </div>
-
-                {/* Error Message */}
-                {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-                    {error}
-                  </div>
-                )}
-
-                {/* Modal Footer */}
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                  >
-                    {isEditing ? 'Update User' : 'Tambah User'}
-                  </button>
-                </div>
-              </form>
+                </form>
+              </div>
             </div>
           </div>
         )}

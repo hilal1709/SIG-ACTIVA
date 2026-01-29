@@ -3,14 +3,49 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
-    // Material Data Summary
-    const materialData = await prisma.materialData.findMany({
-      select: {
-        location: true,
-        grandTotal: true,
-        materialId: true,
-      },
-    });
+    // Parallel fetching for better performance
+    const [materialData, prepaidData, accrualData] = await Promise.all([
+      // Material Data Summary - Only fetch needed fields
+      prisma.materialData.findMany({
+        select: {
+          location: true,
+          grandTotal: true,
+          materialId: true,
+        },
+        take: 1000, // Limit for performance
+      }),
+      
+      // Prepaid Summary - Only fetch needed fields
+      prisma.prepaid.findMany({
+        select: {
+          vendor: true,
+          totalAmount: true,
+          remaining: true,
+          periodes: {
+            select: {
+              isAmortized: true,
+            },
+          },
+        },
+      }),
+      
+      // Accrual Summary - Only fetch needed fields
+      prisma.accrual.findMany({
+        select: {
+          vendor: true,
+          totalAmount: true,
+          periodes: {
+            select: {
+              realisasis: {
+                select: {
+                  amount: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
     // Group by location
     const materialByLocation = materialData.reduce((acc: Record<string, { total: number; count: number }>, item) => {
@@ -23,11 +58,13 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {});
 
-    const materialSummary = Object.entries(materialByLocation).map(([location, data]) => ({
-      label: location,
-      value: data.count,
-      amount: data.total,
-    }));
+    const materialSummary = Object.entries(materialByLocation)
+      .map(([location, data]) => ({
+        label: location,
+        value: data.count,
+        amount: data.total,
+      }))
+      .slice(0, 5); // Top 5 only
 
     // Material by ID prefix (first 2 chars as type)
     const materialByType = materialData.reduce((acc: Record<string, number>, item) => {
@@ -39,17 +76,12 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {});
 
-    const materialTypeData = Object.entries(materialByType).map(([type, count]) => ({
-      label: `Tipe ${type}`,
-      value: count,
-    }));
-
-    // Prepaid Summary
-    const prepaidData = await prisma.prepaid.findMany({
-      include: {
-        periodes: true,
-      },
-    });
+    const materialTypeData = Object.entries(materialByType)
+      .map(([type, count]) => ({
+        label: `Tipe ${type}`,
+        value: count,
+      }))
+      .slice(0, 5); // Top 5 only
 
     // Calculate prepaid status (based on remaining amount)
     const prepaidStatus = {
@@ -80,21 +112,10 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Accrual Summary
-    const accrualData = await prisma.accrual.findMany({
-      include: {
-        periodes: {
-          include: {
-            realisasis: true,
-          },
-        },
-      },
-    });
-
     // Calculate accrual totals and status
     const accrualWithCalculations = accrualData.map((accrual) => {
-      const totalRealized = accrual.periodes.reduce((sum, periode) => {
-        return sum + periode.realisasis.reduce((rSum, realisasi) => rSum + realisasi.amount, 0);
+      const totalRealized = accrual.periodes.reduce((sum: number, periode) => {
+        return sum + periode.realisasis.reduce((rSum: number, realisasi) => rSum + realisasi.amount, 0);
       }, 0);
       const remaining = accrual.totalAmount - totalRealized;
       return {
@@ -132,22 +153,11 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Recent Activity
-    const recentMaterialImports = await prisma.materialData.findMany({
-      orderBy: { importDate: 'desc' },
-      take: 5,
-      select: {
-        importDate: true,
-        location: true,
-      },
-    });
-
     return NextResponse.json({
       material: {
         summary: materialSummary,
         byType: materialTypeData,
         total: materialData.length,
-        recentImports: recentMaterialImports,
       },
       prepaid: {
         status: prepaidStatus,

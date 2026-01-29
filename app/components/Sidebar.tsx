@@ -70,9 +70,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
               <span className="text-white font-bold text-lg">SI</span>
             </div>
             <div>
-              <h2 className="font-bold text-gray-800 text-sm">PT Semen</h2>
-              <h2 className="font-bold text-gray-800 text-sm">Indonesia Grup</h2>
-              <p className="text-xs text-gray-500">Accounting System</p>
+              <h2 className="font-bold text-gray-800 text-base">SIG ACTIVA</h2>
             </div>
           </div>
         </div>

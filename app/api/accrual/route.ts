@@ -32,19 +32,50 @@ export async function GET(request: NextRequest) {
 
     const accruals = await prisma.accrual.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        companyCode: true,
+        noPo: true,
+        kdAkr: true,
+        alokasi: true,
+        kdAkunBiaya: true,
+        vendor: true,
+        deskripsi: true,
+        headerText: true,
+        klasifikasi: true,
+        totalAmount: true,
+        costCenter: true,
+        startDate: true,
+        jumlahPeriode: true,
+        pembagianType: true,
+        createdAt: true,
         periodes: {
-          include: {
-            realisasis: true,
+          select: {
+            id: true,
+            periodeKe: true,
+            bulan: true,
+            tahun: true,
+            amountAccrual: true,
+            realisasis: {
+              select: {
+                id: true,
+                tanggalRealisasi: true,
+                amount: true,
+                keterangan: true
+              },
+              take: 50
+            }
           },
           orderBy: {
             periodeKe: 'asc',
           },
+          take: 100
         },
       },
       orderBy: {
         createdAt: 'desc',
       },
+      take: 1000
     });
 
     // Calculate total realisasi and saldo for each periode
