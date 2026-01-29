@@ -15,22 +15,31 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log('Starting seed...');
 
-  // Hash password untuk admin
-  const hashedPassword = await bcrypt.hash('admin123', 10);
+  // Hash password untuk admin sistem
+  const hashedPasswordAdmin = await bcrypt.hash('admin123', 10);
 
-  // Create admin user
-  const admin = await prisma.user.upsert({
+  // Create Admin System user
+  const adminSystem = await prisma.user.upsert({
     where: { username: 'admin' },
-    update: {},
+    update: {
+      email: 'admin@semenindonesia.com',
+      role: 'ADMIN_SYSTEM',
+    },
     create: {
       username: 'admin',
-      password: hashedPassword,
-      name: 'Admin Akuntansi',
-      role: 'admin',
+      email: 'admin@semenindonesia.com',
+      password: hashedPasswordAdmin,
+      name: 'Administrator Sistem',
+      role: 'ADMIN_SYSTEM',
     },
   });
 
-  console.log('Admin user created:', { id: admin.id, username: admin.username, name: admin.name });
+  console.log('Admin System user created:', { 
+    id: adminSystem.id, 
+    username: adminSystem.username, 
+    name: adminSystem.name,
+    role: adminSystem.role 
+  });
 
   // Clear existing prepaid data
   console.log('Clearing existing prepaid data...');

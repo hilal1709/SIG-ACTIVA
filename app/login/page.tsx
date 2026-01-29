@@ -1,16 +1,25 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Lock, User, Eye, EyeOff } from 'lucide-react';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get('registered') === 'true') {
+      setSuccessMessage('Registrasi berhasil! Silakan login dengan akun Anda.');
+    }
+  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +43,7 @@ export default function LoginPage() {
         localStorage.setItem('username', data.user.username);
         localStorage.setItem('userId', data.user.id);
         localStorage.setItem('userName', data.user.name);
+        localStorage.setItem('userRole', data.user.role);
 
          // Redirect ke dashboard utama
          router.push('/');
@@ -122,6 +132,13 @@ export default function LoginPage() {
               </div>
             </div>
 
+            {/* Success Message */}
+            {successMessage && (
+              <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-lg text-sm">
+                {successMessage}
+              </div>
+            )}
+
             {/* Error Message */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
@@ -150,6 +167,19 @@ export default function LoginPage() {
                 <span className="font-semibold">Password:</span> admin123
               </p>
             </div>
+          </div>
+
+          {/* Register Link */}
+          <div className="mt-4">
+            <p className="text-center text-sm text-gray-600">
+              Belum punya akun?{' '}
+              <Link 
+                href="/register" 
+                className="text-red-600 hover:text-red-700 font-semibold"
+              >
+                Daftar di sini
+              </Link>
+            </p>
           </div>
         </div>
 

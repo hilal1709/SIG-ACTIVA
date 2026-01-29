@@ -2,11 +2,40 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 
+// GET all users
+export async function GET(request: NextRequest) {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return NextResponse.json({ success: true, users });
+  } catch (error) {
+    console.error('Get users error:', error);
+    return NextResponse.json(
+      { error: 'Gagal mengambil data users' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST create new user
 export async function POST(request: NextRequest) {
   try {
-    const { username, email, password, name } = await request.json();
+    const { username, email, password, name, role } = await request.json();
 
-    if (!username || !email || !password || !name) {
+    if (!username || !email || !password || !name || !role) {
       return NextResponse.json(
         { error: 'Semua field harus diisi' },
         { status: 400 }
@@ -56,22 +85,24 @@ export async function POST(request: NextRequest) {
         email,
         password: hashedPassword,
         name,
-        role: 'admin',
+        role,
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        role: true,
+        createdAt: true,
       },
     });
 
     return NextResponse.json({
       success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
+      user,
     });
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error('Create user error:', error);
     return NextResponse.json(
       { error: 'Terjadi kesalahan server' },
       { status: 500 }

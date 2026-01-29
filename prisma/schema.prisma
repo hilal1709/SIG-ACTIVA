@@ -9,12 +9,21 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  ADMIN_SYSTEM
+  STAFF_ACCOUNTING
+  SUPERVISOR_ACCOUNTING
+  AUDITOR_INTERNAL
+  STAFF_PRODUCTION
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   username  String   @unique
+  email     String   @unique
   password  String
   name      String
-  role      String   @default("admin")
+  role      UserRole @default(STAFF_ACCOUNTING)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

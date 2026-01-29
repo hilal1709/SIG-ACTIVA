@@ -1,0 +1,438 @@
+'use client';
+
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Users, Plus, Edit2, Trash2, Shield, Mail, User, X, Eye, EyeOff } from 'lucide-react';
+import AuthGuard from '../components/AuthGuard';
+import Header from '../components/Header';
+import Sidebar from '../components/Sidebar';
+import TableSkeleton from '../components/TableSkeleton';
+
+interface User {
+  id: number;
+  username: string;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface UserFormData {
+  username: string;
+  email: string;
+  name: string;
+  role: string;
+  password: string;
+}
+
+const ROLES = [
+  { value: 'ADMIN_SYSTEM', label: 'Admin System', description: 'Kelola user, data, dan sistem' },
+  { value: 'STAFF_ACCOUNTING', label: 'Staff Accounting', description: 'Kelola data, input, update, edit, hapus data, dan generate laporan' },
+  { value: 'SUPERVISOR_ACCOUNTING', label: 'Supervisor Accounting', description: 'Monitoring data, review laporan, dan verifikasi hasil pencatatan' },
+  { value: 'AUDITOR_INTERNAL', label: 'Auditor Internal', description: 'Akses baca untuk keperluan audit dan penelusuran data historis' },
+  { value: 'STAFF_PRODUCTION', label: 'Staff Production', description: 'Mengakses dashboard dan laporan material' },
+];
+
+export default function UserManagementPage() {
+  const [users, setUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [formData, setFormData] = useState<UserFormData>({
+    username: '',
+    email: '',
+    name: '',
+    role: 'STAFF_ACCOUNTING',
+    password: '',
+  });
+  const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await fetch('/api/users');
+      const data = await response.json();
+      if (data.success) {
+        setUsers(data.users);
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleOpenModal = (user?: User) => {
+    if (user) {
+      setIsEditing(true);
+      setSelectedUser(user);
+      setFormData({
+        username: user.username,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        password: '',
+      });
+    } else {
+      setIsEditing(false);
+      setSelectedUser(null);
+      setFormData({
+        username: '',
+        email: '',
+        name: '',
+        role: 'STAFF_ACCOUNTING',
+        password: '',
+      });
+    }
+    setError('');
+    setShowModal(true);
+  };
+
+  const handleCloseModal = () => {
+    setShowModal(false);
+    setIsEditing(false);
+    setSelectedUser(null);
+    setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    try {
+      let response;
+      if (isEditing && selectedUser) {
+        response = await fetch(`/api/users/${selectedUser.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+      } else {
+        if (!formData.password) {
+          setError('Password harus diisi');
+          return;
+        }
+        response = await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+      }
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccessMessage(isEditing ? 'User berhasil diupdate' : 'User berhasil ditambahkan');
+        setTimeout(() => setSuccessMessage(''), 3000);
+        handleCloseModal();
+        fetchUsers();
+      } else {
+        setError(data.error || 'Terjadi kesalahan');
+      }
+    } catch (error) {
+      console.error('Error saving user:', error);
+      setError('Terjadi kesalahan server');
+    }
+  };
+
+  const handleDelete = async (userId: number) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus user ini?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccessMessage('User berhasil dihapus');
+        setTimeout(() => setSuccessMessage(''), 3000);
+        fetchUsers();
+      } else {
+        setError(data.error || 'Gagal menghapus user');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      setError('Terjadi kesalahan server');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const getRoleLabel = (roleValue: string) => {
+    const role = ROLES.find(r => r.value === roleValue);
+    return role ? role.label : roleValue;
+  };
+
+  const getRoleBadgeColor = (role: string) => {
+    const colors: { [key: string]: string } = {
+      'ADMIN_SYSTEM': 'bg-red-100 text-red-700',
+      'STAFF_ACCOUNTING': 'bg-blue-100 text-blue-700',
+      'SUPERVISOR_ACCOUNTING': 'bg-purple-100 text-purple-700',
+      'AUDITOR_INTERNAL': 'bg-yellow-100 text-yellow-700',
+      'STAFF_PRODUCTION': 'bg-green-100 text-green-700',
+    };
+    return colors[role] || 'bg-gray-100 text-gray-700';
+  };
+
+  return (
+    <AuthGuard>
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-gray-100">
+        <Header 
+          title="User Management" 
+          subtitle="Kelola pengguna dan hak akses sistem" 
+          onMenuClick={() => setIsSidebarOpen(true)}
+        />
+        <div className="flex">
+          <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+          <main className="flex-1 p-4 md:p-8 lg:ml-64">
+            <div className="max-w-7xl mx-auto animate-fadeIn">
+              {/* Header Section */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-8 gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-600 p-2 md:p-3 rounded-xl shadow-lg">
+                    <Users size={24} className="md:w-8 md:h-8 text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800">User Management</h1>
+                    <p className="text-sm md:text-base text-gray-600 mt-1">Kelola pengguna dan hak akses sistem</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleOpenModal()}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 md:px-6 py-2.5 md:py-3 rounded-lg shadow-lg transition-colors text-sm md:text-base"
+                >
+                  <Plus size={18} className="md:w-5 md:h-5" />
+                  Tambah User
+                </button>
+              </div>
+
+              {/* Success Message */}
+              {successMessage && (
+                <div className="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                  {successMessage}
+                </div>
+              )}
+
+              {/* Users Table */}
+              <div className="bg-white rounded-2xl shadow-xl overflow-hidden hover-lift delay-200">
+                {isLoading ? (
+                  <TableSkeleton />
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px]">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase">Username</th>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase hidden sm:table-cell">Email</th>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase">Nama</th>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase hidden md:table-cell">Dibuat</th>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-center text-xs font-semibold text-gray-600 uppercase">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {users.map((user, index) => (
+                          <tr key={user.id} className="hover:bg-gray-50 transition-smooth" style={{ animationDelay: `${index * 50}ms` }}>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm text-gray-800 font-medium">{user.username}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm text-gray-600 hidden sm:table-cell">{user.email}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm text-gray-800">{user.name}</td>
+                            <td className="px-3 md:px-6 py-3 md:py-4">
+                              <span className={`inline-flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1 rounded-full text-xs font-medium ${getRoleBadgeColor(user.role)}`}>
+                                <Shield size={12} className="md:w-3.5 md:h-3.5" />
+                                <span className="hidden md:inline">{getRoleLabel(user.role)}</span>
+                                <span className="md:hidden">{getRoleLabel(user.role).split(' ')[0]}</span>
+                              </span>
+                            </td>
+                            <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm text-gray-600 hidden md:table-cell">
+                              {new Date(user.createdAt).toLocaleDateString('id-ID')}
+                            </td>
+                            <td className="px-3 md:px-6 py-3 md:py-4">
+                              <div className="flex items-center justify-center gap-1 md:gap-2">
+                                <button
+                                  onClick={() => handleOpenModal(user)}
+                                  className="p-1.5 md:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="Edit"
+                                >
+                                  <Edit2 size={16} className="md:w-4.5 md:h-4.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(user.id)}
+                                  className="p-1.5 md:p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="Hapus"
+                                >
+                                  <Trash2 size={16} className="md:w-4.5 md:h-4.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </main>
+        </div>
+
+        {/* Modal */}
+        {showModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-scaleIn">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  {isEditing ? 'Edit User' : 'Tambah User Baru'}
+                </h2>
+                <button
+                  onClick={handleCloseModal}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X size={24} className="text-gray-500" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                {/* Username */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Username
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <User size={18} className="text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.username}
+                      onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Mail size={18} className="text-gray-400" />
+                    </div>
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nama Lengkap
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                    required
+                  />
+                </div>
+
+                {/* Role */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Role
+                  </label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                    required
+                  >
+                    {ROLES.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label} - {role.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Password {isEditing && '(kosongkan jika tidak ingin mengubah)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="w-full pr-12 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      style={{ color: '#000000', backgroundColor: '#ffffff' }}
+                      placeholder={isEditing ? 'Opsional' : 'Minimal 6 karakter'}
+                      required={!isEditing}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error Message */}
+                {error && (
+                  <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+                    {error}
+                  </div>
+                )}
+
+                {/* Modal Footer */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                  >
+                    {isEditing ? 'Update User' : 'Tambah User'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    </AuthGuard>
+  );
+}

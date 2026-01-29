@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 
 interface MetricCardProps {
@@ -9,7 +10,7 @@ interface MetricCardProps {
   color: string;
 }
 
-export default function MetricCard({
+function MetricCard({
   title,
   value,
   icon,
@@ -31,7 +32,7 @@ export default function MetricCard({
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-lg border border-gray-200 p-6 hover-lift transition-smooth">
       <div className="flex items-center justify-between">
         <div className="flex-1">
           <p className="text-sm text-gray-500 mb-1">{title}</p>
@@ -44,3 +45,5 @@ export default function MetricCard({
     </div>
   );
 }
+
+export default memo(MetricCard);

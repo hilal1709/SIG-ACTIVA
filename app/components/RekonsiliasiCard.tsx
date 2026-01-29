@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 interface RekonsiliasiCardProps {
   title: string;
   description: string;
@@ -7,7 +9,7 @@ interface RekonsiliasiCardProps {
   percentage: number;
 }
 
-export default function RekonsiliasiCard({ title, description, status, percentage }: RekonsiliasiCardProps) {
+function RekonsiliasiCard({ title, description, status, percentage }: RekonsiliasiCardProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'normal':
@@ -35,7 +37,7 @@ export default function RekonsiliasiCard({ title, description, status, percentag
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow">
+    <div className="bg-white rounded-lg border border-gray-200 p-6 hover-lift transition-smooth">
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
           <h4 className="text-lg font-semibold text-gray-800 mb-2">{title}</h4>
@@ -64,3 +66,5 @@ export default function RekonsiliasiCard({ title, description, status, percentag
     </div>
   );
 }
+
+export default memo(RekonsiliasiCard);

@@ -329,18 +329,13 @@ export default function MonitoringPrepaidPage() {
     
     // Generate jurnal entries untuk setiap prepaid item
     filteredData.forEach((item) => {
-      // Calculate total amortized yang sudah lewat tanggalnya
-      const totalAmortized = item.periodes?.reduce((sum, p) => {
-        if (p.isAmortized) {
-          return sum + p.amountPrepaid;
-        }
-        return sum;
-      }, 0) || 0;
+      // Use total amount directly
+      const totalAmount = item.totalAmount || 0;
       
-      if (totalAmortized > 0) {
-        // Parse tanggal from start date
-        const startDate = new Date(item.startDate);
-        const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+      if (totalAmount > 0) {
+        // Use current date for document date
+        const today = new Date();
+        const docDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
         
         // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
         const row1 = worksheet.getRow(currentRow);
@@ -356,7 +351,7 @@ export default function MonitoringPrepaidPage() {
         row1.getCell(8).value = item.headerText || ''; // bktxt
         row1.getCell(9).value = ''; // zuonr
         row1.getCell(10).value = item.namaAkun; // hkont (expense account)
-        row1.getCell(11).value = totalAmortized; // wrbtr (positive)
+        row1.getCell(11).value = totalAmount; // wrbtr (positive)
         row1.getCell(11).numFmt = '0';
         row1.getCell(12).value = item.headerText || ''; // sgtxt
         row1.getCell(13).value = ''; // prctr
@@ -394,7 +389,7 @@ export default function MonitoringPrepaidPage() {
         row2.getCell(8).value = item.headerText || ''; // bktxt
         row2.getCell(9).value = ''; // zuonr
         row2.getCell(10).value = item.kdAkr; // hkont (prepaid account)
-        row2.getCell(11).value = -totalAmortized; // wrbtr (negative)
+        row2.getCell(11).value = -totalAmount; // wrbtr (negative)
         row2.getCell(11).numFmt = '0';
         row2.getCell(12).value = item.headerText || ''; // sgtxt
         row2.getCell(13).value = ''; // prctr
@@ -440,17 +435,12 @@ export default function MonitoringPrepaidPage() {
     
     // Generate jurnal entries (no headers)
     filteredData.forEach((item) => {
-      // Calculate total amortized yang sudah lewat tanggalnya
-      const totalAmortized = item.periodes?.reduce((sum, p) => {
-        if (p.isAmortized) {
-          return sum + p.amountPrepaid;
-        }
-        return sum;
-      }, 0) || 0;
+      // Use total amount directly
+      const totalAmount = item.totalAmount || 0;
       
-      if (totalAmortized > 0) {
-        const startDate = new Date(item.startDate);
-        const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+      if (totalAmount > 0) {
+        const today = new Date();
+        const docDate = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
         
         // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
         rows.push([
@@ -464,7 +454,7 @@ export default function MonitoringPrepaidPage() {
           item.headerText || '',
           '',
           item.namaAkun,
-          totalAmortized.toString(),
+          totalAmount.toString(),
           item.headerText || '',
           '',
           '', // Cost center kosong untuk akun biaya
@@ -487,7 +477,7 @@ export default function MonitoringPrepaidPage() {
           item.headerText || '',
           '',
           item.kdAkr,
-          (-totalAmortized).toString(),
+          (-totalAmount).toString(),
           item.headerText || '',
           '',
           item.alokasi || '', // Cost center untuk realisasi prepaid
@@ -718,7 +708,7 @@ export default function MonitoringPrepaidPage() {
                       finishDate.setMonth(finishDate.getMonth() + item.period);
                       
                       const totalRealisasi = item.totalAmount - item.remaining;
-                      const saldo = item.remaining;
+                      const saldo = item.totalAmount + item.remaining;
                       
                       return (
                         <tr key={item.id} className="hover:bg-gray-50 transition-colors">
@@ -767,36 +757,23 @@ export default function MonitoringPrepaidPage() {
                           <td className="px-3 py-3 text-right font-medium text-gray-800">
                             {formatCurrency(saldo)}
                           </td>
-                          <td className="px-3 py-3 text-center relative">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenDropdown(openDropdown === item.id ? null : item.id);
-                              }}
-                              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded hover:bg-gray-100"
-                            >
-                              <MoreVertical size={18} />
-                            </button>
-                            
-                            {/* Dropdown Menu */}
-                            {openDropdown === item.id && (
-                              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
-                                <button
-                                  onClick={() => handleEdit(item)}
-                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                                >
-                                  <Edit size={16} />
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(item.id)}
-                                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors rounded-b-lg"
-                                >
-                                  <Trash2 size={16} />
-                                  Hapus
-                                </button>
-                              </div>
-                            )}
+                          <td className="px-3 py-3 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleEdit(item)}
+                                className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(item.id)}
+                                className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
+                                title="Hapus"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

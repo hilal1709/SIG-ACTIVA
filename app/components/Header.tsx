@@ -1,14 +1,15 @@
 'use client';
 
-import { Bell, User, LogOut } from 'lucide-react';
+import { Bell, User, LogOut, Menu } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 
 interface HeaderProps {
   title: string;
   subtitle: string;
+  onMenuClick?: () => void;
 }
 
-export default function Header({ title, subtitle }: HeaderProps) {
+export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
   const [showLogout, setShowLogout] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -33,16 +34,26 @@ export default function Header({ title, subtitle }: HeaderProps) {
   }, [showLogout]);
 
   return (
-    <div className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
-        <p className="text-sm text-gray-500">{subtitle}</p>
+    <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        {/* Hamburger Menu for Mobile */}
+        <button
+          onClick={onMenuClick}
+          className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <Menu size={24} className="text-gray-600" />
+        </button>
+        
+        <div>
+          <h1 className="text-lg md:text-2xl font-bold text-gray-800">{title}</h1>
+          <p className="text-xs md:text-sm text-gray-500 hidden sm:block">{subtitle}</p>
+        </div>
       </div>
       
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4">
         {/* Notification */}
         <button className="relative p-2 hover:bg-gray-100 rounded-full transition-colors">
-          <Bell size={20} className="text-gray-600" />
+          <Bell size={18} md:size={20} className="text-gray-600" />
           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
         </button>
         
@@ -50,14 +61,14 @@ export default function Header({ title, subtitle }: HeaderProps) {
         <div className="relative" ref={dropdownRef}>
           <button 
             onClick={() => setShowLogout(!showLogout)}
-            className="flex items-center gap-3 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors"
+            className="flex items-center gap-2 md:gap-3 hover:bg-gray-50 rounded-lg px-2 md:px-3 py-2 transition-colors"
           >
-            <div className="text-right">
+            <div className="text-right hidden md:block">
               <p className="text-sm font-medium text-gray-800">Admin Akuntansi</p>
               <p className="text-xs text-gray-500">Finance Dept</p>
             </div>
-            <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center">
-              <User size={20} className="text-white" />
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-red-600 rounded-full flex items-center justify-center">
+              <User size={16} className="md:w-5 md:h-5 text-white" />
             </div>
           </button>
 
