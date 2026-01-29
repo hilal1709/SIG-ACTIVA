@@ -244,22 +244,6 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
                 />
               </div>
 
-              {/* Vendor */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Vendor <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  name="vendor"
-                  value={formData.vendor}
-                  onChange={handleChange}
-                  required
-                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                  placeholder="Nama vendor"
-                />
-              </div>
-
               {/* Klasifikasi */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -309,32 +293,22 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
                 />
               </div>
 
-              {/* Periode */}
+              {/* Jumlah Periode */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Periode <span className="text-red-600">*</span>
+                  Jumlah Periode <span className="text-red-600">*</span>
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    name="period"
-                    value={formData.period}
-                    onChange={handleChange}
-                    required
-                    min="1"
-                    className="flex-1 px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                    placeholder="12"
-                  />
-                  <select
-                    name="periodUnit"
-                    value={formData.periodUnit}
-                    onChange={handleChange}
-                    className="px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                  >
-                    <option value="bulan">Bulan</option>
-                    <option value="tahun">Tahun</option>
-                  </select>
-                </div>
+                <input
+                  type="number"
+                  name="period"
+                  value={formData.period}
+                  onChange={handleChange}
+                  required
+                  min="1"
+                  max="36"
+                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                  placeholder="Contoh: 12 (bulan)"
+                />
               </div>
 
               {/* Cost Center */}
@@ -386,21 +360,22 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-200">
+            {/* Form Actions */}
+            <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 bg-white px-6 py-4 -mx-6 -mb-6 rounded-b-2xl">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold shadow-sm"
+                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+                disabled={loading}
               >
                 Batal
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-semibold shadow-md hover:shadow-lg disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/30"
               >
-                {loading ? 'Menyimpan...' : 'Simpan Data'}
+                {loading ? 'Menyimpan...' : mode === 'edit' ? 'Update Data' : 'Simpan Data'}
               </button>
             </div>
           </form>

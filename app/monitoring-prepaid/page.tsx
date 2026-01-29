@@ -630,7 +630,14 @@ export default function MonitoringPrepaidPage() {
                   className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Download size={18} />
-                  Export Jurnal SAP
+                  Jurnal SAP (Excel)
+                </button>
+                <button
+                  onClick={handleDownloadJurnalSAPTxt}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                >
+                  <Download size={18} />
+                  Jurnal SAP (TXT)
                 </button>
                 <button 
                   onClick={handleAddNew}
