@@ -13,7 +13,6 @@ export default function RegisterPage() {
     username: '',
     password: '',
     confirmPassword: '',
-    role: 'STAFF_ACCOUNTING',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -56,7 +55,6 @@ export default function RegisterPage() {
           email: formData.email,
           username: formData.username,
           password: formData.password,
-          role: formData.role,
         }),
       });
 
@@ -85,10 +83,10 @@ export default function RegisterPage() {
             <div className="text-white font-bold text-2xl">SIG</div>
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            PT Semen Indonesia Grup
+            SIG ACTIVA
           </h1>
           <p className="text-gray-600">
-            Sistem Informasi Akuntansi
+            Sistem Informasi Akuntansi PT Semen Indonesia Grup
           </p>
         </div>
 
@@ -171,26 +169,11 @@ export default function RegisterPage() {
               </div>
             </div>
 
-            {/* Role Selection */}
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-2">
-                Role
-              </label>
-              <select
-                id="role"
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all"
-                style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                required
-              >
-                <option value="STAFF_ACCOUNTING">Staff Accounting</option>
-                <option value="SUPERVISOR_ACCOUNTING">Supervisor Accounting</option>
-                <option value="AUDITOR_INTERNAL">Auditor Internal</option>
-                <option value="STAFF_PRODUCTION">Staff Production</option>
-              </select>
-              <p className="mt-1 text-xs text-gray-500">Pilih role sesuai dengan posisi Anda</p>
+            {/* Role Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                <span className="font-semibold">Catatan:</span> Role akun Anda akan ditentukan oleh Admin System setelah registrasi. Secara default, Anda akan mendapatkan role <span className="font-semibold">Staff Accounting</span>.
+              </p>
             </div>
 
             {/* Password Input */}
@@ -286,7 +269,7 @@ export default function RegisterPage() {
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-500 mt-6">
-          © 2026 PT Semen Indonesia Grup. All rights reserved.
+          © 2026 SIG ACTIVA - PT Semen Indonesia Grup. All rights reserved.
         </p>
       </div>
     </div>

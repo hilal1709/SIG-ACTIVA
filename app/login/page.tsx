@@ -8,7 +8,7 @@ import Link from 'next/link';
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -32,7 +32,7 @@ export default function LoginPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
@@ -48,7 +48,7 @@ export default function LoginPage() {
          // Redirect ke dashboard utama
          router.push('/');
       } else {
-        setError(data.error || 'Username atau password salah');
+        setError(data.error || 'Email atau password salah');
         setIsLoading(false);
       }
     } catch (err) {
@@ -67,37 +67,37 @@ export default function LoginPage() {
             <div className="text-white font-bold text-2xl">SIG</div>
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
-            PT Semen Indonesia Grup
+            SIG ACTIVA
           </h1>
           <p className="text-gray-600">
-            Sistem Informasi Akuntansi
+            Sistem Informasi Akuntansi PT Semen Indonesia Grup
           </p>
         </div>
 
         {/* Login Card */}
         <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-200">
           <h2 className="text-2xl font-bold text-gray-800 mb-6">
-            Login Admin
+            Masuk
           </h2>
 
           <form onSubmit={handleLogin} className="space-y-5">
-            {/* Username Input */}
+            {/* Email Input */}
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                Username
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Email
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <User size={20} className="text-gray-400" />
                 </div>
                 <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all"
                   style={{ color: '#000000', backgroundColor: '#ffffff' }}
-                  placeholder="Masukkan username"
+                  placeholder="Masukkan email"
                   required
                 />
               </div>
@@ -156,36 +156,24 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Demo Credentials */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center mb-2">Demo Credentials:</p>
-            <div className="bg-gray-50 rounded-lg p-3 text-xs space-y-1">
-              <p className="text-gray-600">
-                <span className="font-semibold">Username:</span> admin
-              </p>
-              <p className="text-gray-600">
-                <span className="font-semibold">Password:</span> admin123
-              </p>
-            </div>
-          </div>
-
           {/* Register Link */}
-          <div className="mt-4">
+          <div className="mt-6">
             <p className="text-center text-sm text-gray-600">
               Belum punya akun?{' '}
-              <Link 
-                href="/register" 
-                className="text-red-600 hover:text-red-700 font-semibold"
+              <button
+                type="button"
+                onClick={() => router.push('/register')}
+                className="text-red-600 hover:text-red-700 font-semibold hover:underline"
               >
                 Daftar di sini
-              </Link>
+              </button>
             </p>
           </div>
         </div>
 
         {/* Footer */}
         <p className="text-center text-sm text-gray-500 mt-6">
-          © 2026 PT Semen Indonesia Grup. All rights reserved.
+          © 2026 SIG ACTIVA - PT Semen Indonesia Grup. All rights reserved.
         </p>
       </div>
     </div>

@@ -3,8 +3,8 @@ import "./globals.css";
 import AuthGuard from "./components/AuthGuard";
 
 export const metadata: Metadata = {
-  title: "Dashboard - PT Semen Indonesia Grup",
-  description: "Visualisasi data dan ringkasan aktivitas akuntan",
+  title: "Dashboard - SIG ACTIVA",
+  description: "Sistem Informasi Akuntansi PT Semen Indonesia Grup",
 };
 
 export default function RootLayout({

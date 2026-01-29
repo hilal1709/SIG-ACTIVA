@@ -299,14 +299,14 @@ export default function DashboardPage() {
             <RekonsiliasiCard
               title="Rekonsiliasi Accrual vs Realisasi"
               description="Monitoring selisih antara accrual yang dicatat dengan realisasi pembayaran"
-              status="normal"
-              percentage={85}
+              status={stats.totalAccrual > 0 ? (stats.totalRealisasi / stats.totalAccrual >= 0.8 ? 'normal' : 'warning') : 'normal'}
+              percentage={stats.totalAccrual > 0 ? Math.round((stats.totalRealisasi / stats.totalAccrual) * 100) : 0}
             />
             <RekonsiliasiCard
-              title="Status Periode Accrual"
-              description="Tracking periode accrual yang telah jatuh tempo"
-              status="warning"
-              percentage={72}
+              title="Status Prepaid"
+              description="Tracking prepaid yang telah diamortisasi"
+              status={summary?.prepaid.financial.total > 0 ? (summary.prepaid.financial.cleared / summary.prepaid.financial.total >= 0.7 ? 'normal' : 'warning') : 'normal'}
+              percentage={summary?.prepaid.financial.total > 0 ? Math.round((summary.prepaid.financial.cleared / summary.prepaid.financial.total) * 100) : 0}
             />
           </div>
         </div>

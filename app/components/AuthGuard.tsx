@@ -16,8 +16,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       setIsAuthenticated(auth);
       setIsChecking(false);
 
-      // If not authenticated and not on login page, redirect immediately
-      if (!auth && pathname !== '/login') {
+      // If not authenticated and not on login or register page, redirect immediately
+      if (!auth && pathname !== '/login' && pathname !== '/register') {
         router.replace('/login');
       }
     };
@@ -49,7 +49,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   // Don't render protected content if not authenticated
-  if (!isAuthenticated && pathname !== '/login') {
+  if (!isAuthenticated && pathname !== '/login' && pathname !== '/register') {
     return null;
   }
 
