@@ -187,15 +187,17 @@ export default function UserManagementPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-gray-100">
-        <Header 
-          title="User Management" 
-          subtitle="Kelola pengguna dan hak akses sistem" 
-          onMenuClick={() => setIsSidebarOpen(true)}
-        />
-        <div className="flex">
-          <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-          <main className="flex-1 p-4 md:p-8 lg:ml-64">
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+        
+        <div className="lg:ml-64 flex-1 bg-gradient-to-br from-red-50 to-gray-100 overflow-hidden">
+          <Header 
+            title="User Management" 
+            subtitle="Kelola pengguna dan hak akses sistem" 
+            onMenuClick={() => setIsSidebarOpen(true)}
+          />
+          
+          <main className="p-4 md:p-8">
             <div className="max-w-7xl mx-auto animate-fadeIn">
               {/* Action Button */}
               <div className="flex justify-end mb-6">
