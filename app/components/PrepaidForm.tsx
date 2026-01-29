@@ -164,14 +164,16 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Company Code
                 </label>
-                <input
-                  type="text"
+                <select
                   name="companyCode"
                   value={formData.companyCode}
                   onChange={handleChange}
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                  placeholder="Masukkan company code"
-                />
+                >
+                  <option value="">Pilih company code</option>
+                  <option value="2000">2000</option>
+                  <option value="7000">7000</option>
+                </select>
               </div>
 
               {/* No PO */}
@@ -210,15 +212,18 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Kode Akun Prepaid <span className="text-red-600">*</span>
                 </label>
-                <input
-                  type="text"
+                <select
                   name="kdAkr"
                   value={formData.kdAkr}
                   onChange={handleChange}
                   required
                   className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                  placeholder="Contoh: 1401001"
-                />
+                >
+                  <option value="">Pilih kode akun prepaid</option>
+                  <option value="11830001">11830001</option>
+                  <option value="11830009">11830009</option>
+                  <option value="11830002">11830002</option>
+                </select>
               </div>
 
               {/* Kode Akun Biaya */}
