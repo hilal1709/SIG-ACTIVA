@@ -620,21 +620,21 @@ export default function MonitoringPrepaidPage() {
               <div className="flex gap-2 ml-auto">
                 <button
                   onClick={handleDownloadGlobalReport}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Download size={18} />
                   Export Laporan Prepaid
                 </button>
                 <button
                   onClick={handleDownloadJurnalSAP}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Download size={18} />
                   Export Jurnal SAP
                 </button>
                 <button 
                   onClick={handleAddNew}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
                 >
                   <Plus size={18} />
                   Tambah Data Prepaid
