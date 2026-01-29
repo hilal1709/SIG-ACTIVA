@@ -19,6 +19,8 @@ export async function GET(req: NextRequest) {
       prisma.prepaid.findMany({
         select: {
           vendor: true,
+          namaAkun: true,
+          alokasi: true,
           totalAmount: true,
           remaining: true,
           periodes: {
@@ -94,20 +96,11 @@ export async function GET(req: NextRequest) {
     const totalRemaining = prepaidData.reduce((sum: number, item) => sum + (item.remaining || 0), 0);
     const totalCleared = totalPrepaid - totalRemaining;
 
-    // Prepaid by Vendor
-    const prepaidByVendor = prepaidData.reduce((acc: Record<string, number>, item) => {
-      const vendor = item.vendor || 'Unknown';
-      if (!acc[vendor]) {
-        acc[vendor] = 0;
-      }
-      acc[vendor] += item.totalAmount || 0;
-      return acc;
-    }, {});
-
-    const topVendors = Object.entries(prepaidByVendor)
-      .map(([vendor, amount]) => ({
-        label: vendor,
-        value: amount as number,
+    // Top Prepaid by Amount (instead of by vendor)
+    const topPrepaidByAmount = prepaidData
+      .map((item) => ({
+        label: `${item.namaAkun} - ${item.alokasi}`,
+        value: item.totalAmount,
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
@@ -166,7 +159,7 @@ export async function GET(req: NextRequest) {
           cleared: totalCleared,
           remaining: totalRemaining,
         },
-        topVendors,
+        topPrepaidByAmount,
         total: prepaidData.length,
       },
       accrual: {

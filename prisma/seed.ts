@@ -41,19 +41,7 @@ async function main() {
     role: adminSystem.role 
   });
 
-  // Clear existing prepaid data
-  console.log('Clearing existing prepaid data...');
-  await prisma.prepaidPeriode.deleteMany({});
-  await prisma.prepaid.deleteMany({});
-  console.log('Prepaid data cleared');
-
-  // Skip seeding prepaid data - let user input manually
-  console.log('Skipping prepaid data seed - table will be empty for manual input');
-
-  // Skip seeding accrual data - let user input manually
-  console.log('Skipping accrual data seed - table will be empty for manual input');
-
-  console.log('Seed completed successfully');
+  console.log('Seed completed successfully - Only user data synced');
 }
 
 main()

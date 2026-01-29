@@ -19,7 +19,7 @@ interface DashboardSummary {
   prepaid: {
     status: { active: number; cleared: number; pending: number };
     financial: { total: number; cleared: number; remaining: number };
-    topVendors: Array<{ label: string; value: number }>;
+    topPrepaidByAmount: Array<{ label: string; value: number }>;
     total: number;
   };
   accrual: {
@@ -114,17 +114,17 @@ export default function DashboardPage() {
     ];
   }, [summary]);
 
-  const topVendorsData = useMemo(() => {
+  const topAccrualVendorsData = useMemo(() => {
     if (!summary) return [];
-    return summary.prepaid.topVendors.map(v => ({
+    return summary.accrual.topVendors.map(v => ({
       label: v.label,
       value: v.value,
     }));
   }, [summary]);
 
-  const topAccrualVendorsData = useMemo(() => {
+  const topPrepaidByAmountData = useMemo(() => {
     if (!summary) return [];
-    return summary.accrual.topVendors.map(v => ({
+    return summary.prepaid.topPrepaidByAmount.map(v => ({
       label: v.label,
       value: v.value,
     }));
@@ -231,7 +231,7 @@ export default function DashboardPage() {
                 />
               </div>
 
-              {/* Accrual & Vendors Charts */}
+              {/* Accrual Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 md:mb-8">
                 <DonutChart
                   data={accrualDonutData}
@@ -241,20 +241,23 @@ export default function DashboardPage() {
                 />
                 
                 <SimpleBarChart
-                  data={topVendorsData}
-                  title="Top 5 Vendor Prepaid"
-                  color="#059669"
-                />
-              </div>
-
-              {/* Vendor Analysis */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 md:mb-8">
-                <SimpleBarChart
                   data={topAccrualVendorsData}
                   title="Top 5 Vendor Accrual"
                   color="#dc2626"
                 />
-                
+              </div>
+
+              {/* Prepaid Analysis */}
+              <div className="grid grid-cols-1 gap-6 mb-6 md:mb-8">
+                <SimpleBarChart
+                  data={topPrepaidByAmountData}
+                  title="Top 5 Prepaid (Berdasarkan Nilai)"
+                  color="#059669"
+                />
+              </div>
+
+              {/* Status Summary */}
+              <div className="grid grid-cols-1 gap-6 mb-6 md:mb-8">
                 <StatusCard
                   title="Ringkasan Status"
                   items={[

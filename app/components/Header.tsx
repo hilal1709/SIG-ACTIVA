@@ -144,12 +144,9 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
           >
             <Bell className="text-gray-600 w-5 h-5" />
             {notificationCount > 0 && (
-              <>
-                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {notificationCount > 9 ? '9+' : notificationCount}
-                </span>
-              </>
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                {notificationCount > 9 ? '9+' : notificationCount}
+              </span>
             )}
           </button>
 
