@@ -197,23 +197,32 @@ export default function UserManagementPage() {
           <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
           <main className="flex-1 p-4 md:p-8 lg:ml-64">
             <div className="max-w-7xl mx-auto animate-fadeIn">
+              {/* Page Header */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-8 gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-red-600 p-2 md:p-3 rounded-xl shadow-lg">
+                    <Users size={24} className="md:w-8 md:h-8 text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800">User Management</h1>
+                    <p className="text-sm md:text-base text-gray-600 mt-1">Kelola pengguna dan hak akses sistem</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleOpenModal()}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 md:px-6 py-2.5 md:py-3 rounded-lg shadow-lg transition-colors text-sm md:text-base"
+                >
+                  <Plus size={18} className="md:w-5 md:h-5" />
+                  Tambah User
+                </button>
+              </div>
+
               {/* Success Message */}
               {successMessage && (
                 <div className="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
                   {successMessage}
                 </div>
               )}
-
-              {/* Action Button */}
-              <div className="flex justify-end mb-6">
-                <button
-                  onClick={() => handleOpenModal()}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg shadow-lg transition-colors font-medium"
-                >
-                  <Plus size={20} />
-                  Tambah User
-                </button>
-              </div>
 
               {/* Users Table */}
               <div className="bg-white rounded-2xl shadow-xl overflow-hidden hover-lift delay-200">
