@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { sendVerificationEmail } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +51,9 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Generate verification token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
     // Create user with default role STAFF_ACCOUNTING and isApproved = false
     const user = await prisma.user.create({
       data: {
@@ -58,12 +63,17 @@ export async function POST(request: NextRequest) {
         name,
         role: 'STAFF_ACCOUNTING',
         isApproved: false, // Menunggu approval admin
+        emailVerified: false, // Menunggu verifikasi email
+        verificationToken,
       },
     });
 
+    // Send verification email
+    await sendVerificationEmail(email, verificationToken, name);
+
     return NextResponse.json({
       success: true,
-      message: 'Registrasi berhasil! Silakan menunggu persetujuan dari Admin System untuk dapat login.',
+      message: 'Registrasi berhasil! Silakan cek email Anda untuk verifikasi.',
       user: {
         id: user.id,
         username: user.username,

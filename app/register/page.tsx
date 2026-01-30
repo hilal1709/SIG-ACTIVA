@@ -61,8 +61,8 @@ export default function RegisterPage() {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        // Redirect ke login dengan pesan sukses dan approval pending
-        router.push('/login?registered=true&pending=true');
+        // Redirect ke login dengan pesan sukses
+        router.push('/login?registered=true&needVerification=true');
       } else {
         setError(data.error || 'Registrasi gagal');
         setIsLoading(false);

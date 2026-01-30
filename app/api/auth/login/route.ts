@@ -25,6 +25,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if email is verified
+    if (!user.emailVerified) {
+      return NextResponse.json(
+        { error: 'Email Anda belum diverifikasi. Silakan cek email untuk link verifikasi.' },
+        { status: 403 }
+      );
+    }
+
     // Check if user is approved
     if (!user.isApproved) {
       return NextResponse.json(
