@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Users, Plus, Edit2, Trash2, Shield, Mail, User, X, Eye, EyeOff } from 'lucide-react';
+import { Users, Plus, Edit2, Trash2, Shield, Mail, User, X, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import AuthGuard from '../components/AuthGuard';
 import Header from '../components/Header';
 import Sidebar from '../components/Sidebar';
@@ -13,6 +13,7 @@ interface User {
   email: string;
   name: string;
   role: string;
+  isApproved: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -169,6 +170,36 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleApprove = async (userId: number, currentRole: string) => {
+    try {
+      const response = await fetch(`/api/users/${userId}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          isApproved: true,
+          role: currentRole // Gunakan role yang sudah dipilih admin
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccessMessage('User berhasil disetujui');
+        setTimeout(() => setSuccessMessage(''), 3000);
+        fetchUsers();
+      } else {
+        setError(data.error || 'Gagal menyetujui user');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (error) {
+      console.error('Error approving user:', error);
+      setError('Terjadi kesalahan server');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
   const getRoleLabel = (roleValue: string) => {
     const role = ROLES.find(r => r.value === roleValue);
     return role ? role.label : roleValue;
@@ -230,6 +261,7 @@ export default function UserManagementPage() {
                           <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase hidden sm:table-cell">Email</th>
                           <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase">Nama</th>
                           <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase">Role</th>
+                          <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>
                           <th className="px-3 md:px-6 py-3 md:py-4 text-left text-xs font-semibold text-gray-600 uppercase hidden md:table-cell">Dibuat</th>
                           <th className="px-3 md:px-6 py-3 md:py-4 text-center text-xs font-semibold text-gray-600 uppercase">Aksi</th>
                         </tr>
@@ -247,11 +279,33 @@ export default function UserManagementPage() {
                                 <span className="md:hidden">{getRoleLabel(user.role).split(' ')[0]}</span>
                               </span>
                             </td>
+                            <td className="px-3 md:px-6 py-3 md:py-4">
+                              {user.isApproved ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                  <CheckCircle size={14} />
+                                  Aktif
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                                  <XCircle size={14} />
+                                  Pending
+                                </span>
+                              )}
+                            </td>
                             <td className="px-3 md:px-6 py-3 md:py-4 text-xs md:text-sm text-gray-600 hidden md:table-cell">
                               {new Date(user.createdAt).toLocaleDateString('id-ID')}
                             </td>
                             <td className="px-3 md:px-6 py-3 md:py-4">
                               <div className="flex items-center justify-center gap-1 md:gap-2">
+                                {!user.isApproved && (
+                                  <button
+                                    onClick={() => handleApprove(user.id, user.role)}
+                                    className="p-1.5 md:p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                                    title="Setujui"
+                                  >
+                                    <CheckCircle size={16} className="md:w-4.5 md:h-4.5" />
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handleOpenModal(user)}
                                   className="p-1.5 md:p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -281,7 +335,7 @@ export default function UserManagementPage() {
 
         {/* Modal */}
         {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden animate-scaleIn">
               {/* Modal Header */}
               <div className="bg-gradient-to-r from-red-600 to-red-700 px-6 py-6 flex items-center justify-between">

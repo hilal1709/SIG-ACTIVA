@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validasi input
-    if (!kdAkr || !namaAkun || !vendor || !totalAmount || !startDate || !period || !alokasi) {
+    if (!kdAkr || !namaAkun || !totalAmount || !startDate || !period || !alokasi) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }

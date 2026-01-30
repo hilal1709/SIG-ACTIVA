@@ -1,0 +1,48 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const userId = parseInt(params.id);
+    const body = await request.json();
+    const { isApproved, role } = body;
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Update user approval status and role
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        isApproved: isApproved,
+        role: role || 'STAFF_ACCOUNTING',
+      },
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        name: true,
+        role: true,
+        isApproved: true,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      user,
+    });
+  } catch (error) {
+    console.error('Error approving user:', error);
+    return NextResponse.json(
+      { error: 'Failed to approve user' },
+      { status: 500 }
+    );
+  }
+}

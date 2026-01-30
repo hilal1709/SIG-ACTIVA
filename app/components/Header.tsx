@@ -33,9 +33,9 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
 
   useEffect(() => {
     // Get user info from localStorage
-    const name = localStorage.getItem('userName') || 'User';
+    const username = localStorage.getItem('username') || 'User';
     const role = localStorage.getItem('userRole') || '';
-    setUserName(name);
+    setUserName(username);
     setUserRole(role);
 
     // Load read notifications from localStorage

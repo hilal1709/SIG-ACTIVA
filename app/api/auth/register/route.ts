@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user with default role STAFF_ACCOUNTING
+    // Create user with default role STAFF_ACCOUNTING and isApproved = false
     const user = await prisma.user.create({
       data: {
         username,
@@ -57,17 +57,18 @@ export async function POST(request: NextRequest) {
         password: hashedPassword,
         name,
         role: 'STAFF_ACCOUNTING',
+        isApproved: false, // Menunggu approval admin
       },
     });
 
     return NextResponse.json({
       success: true,
+      message: 'Registrasi berhasil! Silakan menunggu persetujuan dari Admin System untuk dapat login.',
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
         name: user.name,
-        role: user.role,
       },
     });
   } catch (error) {

@@ -24,6 +24,7 @@ async function main() {
     update: {
       email: 'admin@semenindonesia.com',
       role: 'ADMIN_SYSTEM',
+      isApproved: true, // Admin selalu approved
     },
     create: {
       username: 'admin',
@@ -31,6 +32,7 @@ async function main() {
       password: hashedPasswordAdmin,
       name: 'Administrator Sistem',
       role: 'ADMIN_SYSTEM',
+      isApproved: true, // Admin selalu approved
     },
   });
 

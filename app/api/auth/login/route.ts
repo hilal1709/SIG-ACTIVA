@@ -25,6 +25,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if user is approved
+    if (!user.isApproved) {
+      return NextResponse.json(
+        { error: 'Akun Anda belum disetujui oleh Admin System. Silakan hubungi administrator.' },
+        { status: 403 }
+      );
+    }
+
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
 

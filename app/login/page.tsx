@@ -17,7 +17,11 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
-      setSuccessMessage('Registrasi berhasil! Silakan login dengan akun Anda.');
+      if (searchParams.get('pending') === 'true') {
+        setSuccessMessage('Registrasi berhasil! Akun Anda menunggu persetujuan dari Admin System. Anda akan dapat login setelah akun disetujui.');
+      } else {
+        setSuccessMessage('Registrasi berhasil! Silakan login dengan akun Anda.');
+      }
     }
   }, [searchParams]);
 
