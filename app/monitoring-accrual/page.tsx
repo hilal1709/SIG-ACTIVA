@@ -101,6 +101,7 @@ export default function MonitoringAccrualPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [userRole, setUserRole] = useState<string>('');
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [expandedKodeAkun, setExpandedKodeAkun] = useState<Set<string>>(new Set());
   const [expandedVendor, setExpandedVendor] = useState<Set<string>>(new Set());
@@ -143,6 +144,15 @@ export default function MonitoringAccrualPage() {
     if (!formData.kdAkr) return [];
     return KODE_AKUN_KLASIFIKASI[formData.kdAkr] || [];
   }, [formData.kdAkr]);
+
+  // Load user role from localStorage
+  useEffect(() => {
+    const role = localStorage.getItem('userRole') || '';
+    setUserRole(role);
+  }, []);
+
+  // Check if user can edit (only ADMIN_SYSTEM and STAFF_ACCOUNTING)
+  const canEdit = userRole === 'ADMIN_SYSTEM' || userRole === 'STAFF_ACCOUNTING';
 
   // Fetch accrual data
   useEffect(() => {
@@ -1483,13 +1493,15 @@ export default function MonitoringAccrualPage() {
                       <Download size={18} />
                       Jurnal SAP (TXT)
                     </button>
-                    <button 
-                      onClick={() => setShowModal(true)}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                    >
-                      <Plus size={18} />
-                      Tambah Data Accrual
-                    </button>
+                    {canEdit && (
+                      <button 
+                        onClick={() => setShowModal(true)}
+                        className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <Plus size={18} />
+                        Tambah Data Accrual
+                      </button>
+                    )}
                   </div>
                 </div>
           </div>
@@ -1754,20 +1766,24 @@ export default function MonitoringAccrualPage() {
                               >
                                 <Download size={16} />
                               </button>
-                              <button
-                                onClick={() => handleEdit(item)}
-                                className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
-                                title="Edit"
-                              >
-                                <Edit2 size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(item.id)}
-                                className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
-                                title="Hapus"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                              {canEdit && (
+                                <>
+                                  <button
+                                    onClick={() => handleEdit(item)}
+                                    className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
+                                    title="Edit"
+                                  >
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(item.id)}
+                                    className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
+                                    title="Hapus"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>

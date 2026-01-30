@@ -32,6 +32,16 @@ export default function LaporanMaterialPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [historyDates, setHistoryDates] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const [userRole, setUserRole] = useState<string>('');
+
+  // Load user role from localStorage
+  useEffect(() => {
+    const role = localStorage.getItem('userRole') || '';
+    setUserRole(role);
+  }, []);
+
+  // Check if user can edit/delete (only ADMIN_SYSTEM and STAFF_ACCOUNTING)
+  const canEdit = userRole === 'ADMIN_SYSTEM' || userRole === 'STAFF_ACCOUNTING';
 
   // Load history dates on mount
   useEffect(() => {
@@ -434,8 +444,8 @@ export default function LaporanMaterialPage() {
             </div>
           )}
 
-          {/* Excel Import Section */}
-          <ExcelImport onDataImport={handleDataImport} />
+          {/* Excel Import Section - only for ADMIN and STAFF_ACCOUNTING */}
+          {canEdit && <ExcelImport onDataImport={handleDataImport} />}
 
           {/* Show loading message */}
           {isLoading && (

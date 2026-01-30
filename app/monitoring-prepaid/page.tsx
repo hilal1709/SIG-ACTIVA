@@ -47,6 +47,16 @@ export default function MonitoringPrepaidPage() {
   const [editMode, setEditMode] = useState<'create' | 'edit'>('create');
   const [editData, setEditData] = useState<Prepaid | null>(null);
   const [openDropdown, setOpenDropdown] = useState<number | null>(null);
+  const [userRole, setUserRole] = useState<string>('');
+
+  // Load user role from localStorage
+  useEffect(() => {
+    const role = localStorage.getItem('userRole') || '';
+    setUserRole(role);
+  }, []);
+
+  // Check if user can edit (only ADMIN_SYSTEM and STAFF_ACCOUNTING)
+  const canEdit = userRole === 'ADMIN_SYSTEM' || userRole === 'STAFF_ACCOUNTING';
 
   // Fetch data dari API
   useEffect(() => {
@@ -629,13 +639,15 @@ export default function MonitoringPrepaidPage() {
                   <Download size={18} />
                   Jurnal SAP (TXT)
                 </button>
-                <button 
-                  onClick={handleAddNew}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                >
-                  <Plus size={18} />
-                  Tambah Data Prepaid
-                </button>
+                {canEdit && (
+                  <button 
+                    onClick={handleAddNew}
+                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  >
+                    <Plus size={18} />
+                    Tambah Data Prepaid
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -758,22 +770,24 @@ export default function MonitoringPrepaidPage() {
                             {formatCurrency(saldo)}
                           </td>
                           <td className="px-3 py-3 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                onClick={() => handleEdit(item)}
-                                className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
-                                title="Edit"
-                              >
-                                <Edit size={16} />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(item.id)}
-                                className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
-                                title="Hapus"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
+                            {canEdit && (
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  onClick={() => handleEdit(item)}
+                                  className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
+                                  title="Edit"
+                                >
+                                  <Edit size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDelete(item.id)}
+                                  className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
+                                  title="Hapus"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );
