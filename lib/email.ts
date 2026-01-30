@@ -1,9 +1,16 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Gmail SMTP Configuration
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
 
-// Email sender - gunakan domain verified atau default
-const EMAIL_FROM = process.env.EMAIL_FROM || 'onboarding@resend.dev';
+// Email sender
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.GMAIL_USER || 'noreply@gmail.com';
 
 export async function sendVerificationEmail(
   email: string,
@@ -13,8 +20,8 @@ export async function sendVerificationEmail(
   const verificationUrl = `${process.env.NEXT_PUBLIC_APP_URL}/verify-email?token=${verificationToken}`;
 
   try {
-    await resend.emails.send({
-      from: EMAIL_FROM,
+    await transporter.sendMail({
+      from: `"SIG ACTIVA" <${EMAIL_FROM}>`,
       to: email,
       subject: 'Verifikasi Email - SIG ACTIVA',
       html: `
@@ -84,8 +91,8 @@ export async function sendAdminNotification(
   const approveUrl = `${process.env.NEXT_PUBLIC_APP_URL}/user-management`;
 
   try {
-    await resend.emails.send({
-      from: EMAIL_FROM,
+    await transporter.sendMail({
+      from: `"SIG ACTIVA" <${EMAIL_FROM}>`,
       to: adminEmails,
       subject: '🔔 User Baru Memerlukan Persetujuan - SIG ACTIVA',
       html: `
