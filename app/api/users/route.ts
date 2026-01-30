@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
         email: true,
         name: true,
         role: true,
+        isApproved: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // Create user - user yang dibuat admin langsung approved
     const user = await prisma.user.create({
       data: {
         username,
@@ -86,6 +87,7 @@ export async function POST(request: NextRequest) {
         password: hashedPassword,
         name,
         role,
+        isApproved: true, // Admin yang buat user langsung approved
       },
       select: {
         id: true,
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
         email: true,
         name: true,
         role: true,
+        isApproved: true,
         createdAt: true,
       },
     });
