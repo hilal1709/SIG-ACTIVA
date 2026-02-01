@@ -25,6 +25,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('Login attempt:', {
+      email: user.email,
+      emailVerified: user.emailVerified,
+      isApproved: user.isApproved,
+      role: user.role,
+    });
+
     // Auto-verify dan approve admin yang sudah ada sebelumnya
     if (user.role === 'ADMIN_SYSTEM' && (!user.emailVerified || !user.isApproved)) {
       await prisma.user.update({
@@ -41,6 +48,7 @@ export async function POST(request: NextRequest) {
 
     // Check if email is verified (skip for admin yang baru di-update)
     if (!user.emailVerified) {
+      console.log('❌ Email not verified for:', user.email);
       return NextResponse.json(
         { error: 'Email Anda belum diverifikasi. Silakan cek email untuk link verifikasi.' },
         { status: 403 }
@@ -49,6 +57,7 @@ export async function POST(request: NextRequest) {
 
     // Check if user is approved (skip for admin yang baru di-update)
     if (!user.isApproved) {
+      console.log('❌ User not approved:', user.email);
       return NextResponse.json(
         { error: 'Akun Anda belum disetujui oleh Admin System. Silakan hubungi administrator.' },
         { status: 403 }
