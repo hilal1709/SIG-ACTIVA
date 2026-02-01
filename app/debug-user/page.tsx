@@ -6,6 +6,7 @@ export default function DebugUser() {
   const [email, setEmail] = useState('');
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const checkUser = async () => {
     if (!email) {
@@ -28,6 +29,40 @@ export default function DebugUser() {
       setResult({ error: 'Terjadi kesalahan' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const forceVerify = async () => {
+    if (!email) {
+      alert('Masukkan email!');
+      return;
+    }
+
+    if (!confirm(`Force verify email: ${email}?`)) {
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      const response = await fetch('/api/users/force-verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        alert('✅ User berhasil di-verify! Silakan cek status lagi.');
+        checkUser(); // Refresh status
+      } else {
+        alert('❌ Error: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      alert('❌ Terjadi kesalahan');
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -55,6 +90,14 @@ export default function DebugUser() {
               className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-lg font-semibold hover:opacity-90 disabled:opacity-50"
             >
               {loading ? 'Checking...' : 'Check Status'}
+            </button>
+
+            <button
+              onClick={forceVerify}
+              disabled={verifying || !email}
+              className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-lg font-semibold hover:opacity-90 disabled:opacity-50"
+            >
+              {verifying ? 'Verifying...' : '🔓 Force Verify Email'}
             </button>
           </div>
 
