@@ -79,37 +79,12 @@ export async function GET(request: NextRequest) {
     });
 
     // Calculate total realisasi and saldo for each periode
-    const now = new Date();
     const accrualsWithCalculations = accruals.map((accrual: any) => {
-      // Calculate amount per periode (total / jumlah periode)
-      const amountPerPeriode = accrual.totalAmount / accrual.jumlahPeriode;
-      
       return {
         ...accrual,
-        periodes: accrual.periodes.map((periode: any, index: number) => {
-          // Parse periode date from "Jan 2026" format
-          const [monthName, yearStr] = periode.bulan.split(' ');
-          const monthMap: { [key: string]: number } = {
-            'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-            'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-          };
-          const periodeMonth = monthMap[monthName];
-          const periodeYear = parseInt(yearStr);
-          
-          // Create date for first day of periode month
-          const periodeDate = new Date(periodeYear, periodeMonth, 1);
-          
-          // Total realisasi adalah amount per periode * jumlah periode yang sudah lewat (termasuk periode ini jika sudah lewat)
-          let totalRealisasi = 0;
-          
-          // Hitung berapa banyak periode yang sudah lewat sampai periode saat ini
-          if (periodeDate <= now) {
-            // Periode ini sudah lewat, maka total realisasi = amount per periode * (index + 1)
-            totalRealisasi = amountPerPeriode * (index + 1);
-          } else {
-            // Periode ini belum lewat, ambil total realisasi dari periode sebelumnya
-            totalRealisasi = amountPerPeriode * index;
-          }
+        periodes: accrual.periodes.map((periode: any) => {
+          // Calculate totalRealisasi from actual realisasi data
+          const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0;
           
           return {
             ...periode,
