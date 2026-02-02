@@ -1964,18 +1964,18 @@ export default function MonitoringAccrualPage() {
                         {/* Expanded Row - Periode Details */}
                         {isExpanded && item.periodes && item.periodes.length > 0 && (
                           <tr className="bg-gray-50">
-                            <td colSpan={18} className="px-4 py-4">
+                            <td colSpan={18} className="px-4 py-4 bg-gray-50">
                               <div className="ml-8">
                                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Detail Periode</h4>
                                 <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
                                   <thead className="bg-white">
                                     <tr>
-                                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Periode</th>
-                                      <th className="px-3 py-2 text-left font-semibold text-gray-700">Bulan</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Accrual</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Total Realisasi</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-gray-700">Saldo</th>
-                                      <th className="px-3 py-2 text-center font-semibold text-gray-700">Action</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Periode</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Bulan</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Accrual</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Total Realisasi</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Saldo</th>
+                                      <th className="px-3 py-2 text-center font-semibold text-gray-700 bg-white">Action</th>
                                     </tr>
                                   </thead>
                                   <tbody className="bg-white divide-y divide-gray-200">
