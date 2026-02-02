@@ -1749,6 +1749,7 @@ export default function MonitoringAccrualPage() {
                     const allItems = Object.values(vendorGroups).flat();
                     
                     // Calculate totals using optimized helper functions
+                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + (item.amount || 0), 0);
                     const totalAccrualKodeAkun = allItems.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
                     const totalRealisasiKodeAkun = allItems.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
                     const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun;
@@ -1773,10 +1774,12 @@ export default function MonitoringAccrualPage() {
                               {isKodeAkunExpanded ? '▼' : '▶'}
                             </button>
                           </td>
-                          <td colSpan={8} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
+                          <td colSpan={9} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
                             Kode Akun: {kodeAkun}
                           </td>
-                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalAmountKodeAkun)}
+                          </td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
@@ -1799,6 +1802,7 @@ export default function MonitoringAccrualPage() {
                           const isVendorExpanded = expandedVendor.has(vendorKey);
                           
                           // Calculate totals using optimized helper functions
+                          const totalAmountVendor = items.reduce((sum, item) => sum + (item.amount || 0), 0);
                           const totalAccrualVendor = items.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
                           const totalRealisasiVendor = items.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
                           const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor;
@@ -1823,10 +1827,12 @@ export default function MonitoringAccrualPage() {
                                     {isVendorExpanded ? '▼' : '▶'}
                                   </button>
                                 </td>
-                                <td colSpan={8} className="px-4 py-3 text-left text-green-900 bg-green-50">
+                                <td colSpan={9} className="px-4 py-3 text-left text-green-900 bg-green-50">
                                   Vendor: {vendor}
                                 </td>
-                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalAmountVendor)}
+                                </td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
@@ -1839,7 +1845,6 @@ export default function MonitoringAccrualPage() {
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalSaldoVendor)}
                                 </td>
-                                <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                               </tr>
 
