@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload, ChevronDown } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import { exportToCSV } from '../utils/exportUtils';
@@ -138,12 +138,28 @@ export default function MonitoringAccrualPage() {
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [showImportGlobalModal, setShowImportGlobalModal] = useState(false);
   const [uploadingGlobalExcel, setUploadingGlobalExcel] = useState(false);
+  const [showJurnalDropdown, setShowJurnalDropdown] = useState(false);
+  const jurnalDropdownRef = useRef<HTMLDivElement>(null);
 
   // Get available klasifikasi based on selected kode akun
   const availableKlasifikasi = useMemo(() => {
     if (!formData.kdAkr) return [];
     return KODE_AKUN_KLASIFIKASI[formData.kdAkr] || [];
   }, [formData.kdAkr]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (jurnalDropdownRef.current && !jurnalDropdownRef.current.contains(event.target as Node)) {
+        setShowJurnalDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Load user role from localStorage
   useEffect(() => {
@@ -206,146 +222,6 @@ export default function MonitoringAccrualPage() {
   const handleExport = () => {
     const headers = ['kdAkr', 'namaAkun', 'vendor', 'deskripsi', 'amount', 'accrDate', 'status'];
     exportToCSV(filteredData, 'Monitoring_Accrual.csv', headers);
-  };
-
-  const handleDownloadAccrualReport = async (item: Accrual) => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Detail Accrual');
-    
-    // Title - Kode Akun Accrual
-    worksheet.mergeCells('A1:I1');
-    const titleCell = worksheet.getCell('A1');
-    titleCell.value = `${item.kdAkr} ACCRUAL-${item.klasifikasi?.toUpperCase() || 'TRANSPORTATION'}`;
-    titleCell.font = { name: 'Calibri', size: 11, bold: true };
-    titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
-    titleCell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF404040' }
-    };
-    titleCell.font = { ...titleCell.font, color: { argb: 'FFFFFFFF' } };
-    
-    // Calculate total outstanding
-    const totalAccrual = item.periodes?.reduce((sum, p) => {
-      // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
-      if (item.pembagianType === 'manual') {
-        return sum + p.amountAccrual;
-      }
-      
-      // Untuk otomatis, cek tanggal periode
-      const [bulanName, tahunStr] = p.bulan.split(' ');
-      const bulanMap: Record<string, number> = {
-        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-      };
-      const periodeBulan = bulanMap[bulanName];
-      const periodeTahun = parseInt(tahunStr);
-      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-      const today = new Date();
-      if (today >= periodeDate) {
-        return sum + p.amountAccrual;
-      }
-      return sum;
-    }, 0) || 0;
-    
-    const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
-    const totalOutstanding = totalAccrual - totalRealisasi;
-    
-    // Add outstanding to title cell (right side)
-    worksheet.getCell('I1').value = totalOutstanding;
-    worksheet.getCell('I1').numFmt = '#,##0.000';
-    worksheet.getCell('I1').alignment = { horizontal: 'right', vertical: 'middle' };
-    
-    // Headers
-    worksheet.getRow(2).height = 30;
-    const headers = ['PEKERJAAN', 'VENDOR', 'PO/PR', 'ORDER', 'KETERANGAN', 'NILAI PO', 'DOC DATE', 'DELIV DATE', 'OUSTANDING'];
-    
-    worksheet.getRow(2).values = headers;
-    worksheet.getRow(2).eachCell((cell) => {
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF404040' }
-      };
-      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
-    });
-    
-    // Column widths
-    worksheet.columns = [
-      { width: 12 },  // PEKERJAAN
-      { width: 35 },  // VENDOR
-      { width: 15 },  // PO/PR
-      { width: 15 },  // ORDER
-      { width: 45 },  // KETERANGAN
-      { width: 15 },  // NILAI PO
-      { width: 12 },  // DOC DATE
-      { width: 12 },  // DELIV DATE
-      { width: 15 }   // OUSTANDING
-    ];
-    
-    let currentRow = 3;
-    
-    // Data row
-    const row = worksheet.getRow(currentRow);
-    
-    row.getCell(1).value = item.klasifikasi || 'OA';
-    row.getCell(2).value = item.vendor;
-    row.getCell(3).value = item.noPo || '';
-    row.getCell(4).value = item.alokasi || ''; // ORDER (assignment/order)
-    row.getCell(5).value = item.deskripsi;
-    row.getCell(6).value = item.totalAmount;
-    row.getCell(6).numFmt = '#,##0.000';
-    
-    // DOC DATE - format dari startDate
-    const docDate = new Date(item.startDate);
-    row.getCell(7).value = `${docDate.getDate().toString().padStart(2, '0')}/${(docDate.getMonth() + 1).toString().padStart(2, '0')}/${docDate.getFullYear()}`;
-    
-    // DELIV DATE - gunakan tanggal akhir periode
-    const endDate = new Date(item.startDate);
-    endDate.setMonth(endDate.getMonth() + item.jumlahPeriode);
-    row.getCell(8).value = `${endDate.getDate().toString().padStart(2, '0')}/${(endDate.getMonth() + 1).toString().padStart(2, '0')}/${endDate.getFullYear()}`;
-    
-    // OUTSTANDING = saldo (totalAccrual - totalRealisasi)
-    row.getCell(9).value = totalOutstanding;
-    row.getCell(9).numFmt = '#,##0.000';
-    
-    // Apply borders and styling to all cells
-    for (let col = 1; col <= 9; col++) {
-      const cell = row.getCell(col);
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
-      
-      if (col === 1 || col === 2 || col === 3 || col === 4 || col === 5 || col === 7 || col === 8) {
-        cell.alignment = { horizontal: 'left', vertical: 'middle' };
-      } else {
-        cell.alignment = { horizontal: 'right', vertical: 'middle' };
-      }
-    }
-    
-    // Generate and download file
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { 
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Detail_Accrual_${item.kdAkr}_${item.vendor.replace(/\s+/g, '_')}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleDownloadAllItemsReport = async () => {
@@ -688,7 +564,7 @@ export default function MonitoringAccrualPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadJurnalSAP = async () => {
+  const handleDownloadJurnalSAP = async (filterCompanyCode?: string) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Jurnal SAP');
     
@@ -757,39 +633,59 @@ export default function MonitoringAccrualPage() {
     
     let currentRow = 3;
     
-    // Generate jurnal entries
+    // Generate jurnal entries - Group by company code first
     Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
       Object.entries(vendorGroups).forEach(([vendor, items]) => {
+        // Group items by company code
+        const itemsByCompanyCode: Record<string, typeof items> = {};
         items.forEach((item) => {
-          // Calculate total accrual for this item (only periods that have passed)
-          const totalAccrual = item.periodes?.reduce((sum, p) => {
-            // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
-            if (item.pembagianType === 'manual') {
-              return sum + p.amountAccrual;
-            }
-            
-            // Untuk otomatis, cek tanggal periode
-            // Parse bulan periode (format: "Jan 2026")
-            const [bulanName, tahunStr] = p.bulan.split(' ');
-            const bulanMap: Record<string, number> = {
-              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-            };
-            const periodeBulan = bulanMap[bulanName];
-            const periodeTahun = parseInt(tahunStr);
-            
-            // Tanggal 1 bulan periode tersebut
-            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-            const today = new Date();
-            
-            // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
-            if (today >= periodeDate) {
-              return sum + p.amountAccrual;
-            }
-            return sum;
-          }, 0) || 0;
+          const companyCode = item.companyCode || '';
+          if (!itemsByCompanyCode[companyCode]) {
+            itemsByCompanyCode[companyCode] = [];
+          }
+          itemsByCompanyCode[companyCode].push(item);
+        });
+        
+        // Process each company code separately
+        Object.entries(itemsByCompanyCode).forEach(([companyCode, companyItems]) => {
+          // Calculate total accrual for all items in this company code
+          let totalAccrualForCompany = 0;
+          let sampleItem: Accrual | null = null;
           
-          if (totalAccrual > 0) {
+          companyItems.forEach((item) => {
+            const totalAccrual = item.periodes?.reduce((sum, p) => {
+              // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+              if (item.pembagianType === 'manual') {
+                return sum + p.amountAccrual;
+              }
+              
+              // Untuk otomatis, cek tanggal periode
+              // Parse bulan periode (format: "Jan 2026")
+              const [bulanName, tahunStr] = p.bulan.split(' ');
+              const bulanMap: Record<string, number> = {
+                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+              };
+              const periodeBulan = bulanMap[bulanName];
+              const periodeTahun = parseInt(tahunStr);
+              
+              // Tanggal 1 bulan periode tersebut
+              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+              const today = new Date();
+              
+              // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+              if (today >= periodeDate) {
+                return sum + p.amountAccrual;
+              }
+              return sum;
+            }, 0) || 0;
+            
+            totalAccrualForCompany += totalAccrual;
+            if (!sampleItem) sampleItem = item;
+          });
+          
+          if (totalAccrualForCompany > 0 && sampleItem) {
+            const item = sampleItem as Accrual;
             // Parse tanggal from start date
             const startDate = new Date(item.startDate);
             const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
@@ -799,7 +695,7 @@ export default function MonitoringAccrualPage() {
             row1.height = 15;
             
             row1.getCell(1).value = ''; // xblnr - kosong
-            row1.getCell(2).value = item.companyCode || ''; // bukrs
+            row1.getCell(2).value = companyCode; // bukrs
             row1.getCell(3).value = 'SA'; // blart
             row1.getCell(4).value = docDate; // bldat
             row1.getCell(5).value = docDate; // budat
@@ -808,7 +704,7 @@ export default function MonitoringAccrualPage() {
             row1.getCell(8).value = item.headerText || ''; // bktxt
             row1.getCell(9).value = ''; // zuonr
             row1.getCell(10).value = item.kdAkunBiaya; // hkont (expense account)
-            row1.getCell(11).value = Math.round(totalAccrual); // wrbtr (positive)
+            row1.getCell(11).value = Math.round(totalAccrualForCompany); // wrbtr (positive)
             row1.getCell(11).numFmt = '0';
             row1.getCell(12).value = item.headerText || ''; // sgtxt
             row1.getCell(13).value = ''; // prctr
@@ -837,7 +733,7 @@ export default function MonitoringAccrualPage() {
             row2.height = 15;
             
             row2.getCell(1).value = ''; // xblnr - kosong
-            row2.getCell(2).value = item.companyCode || ''; // bukrs
+            row2.getCell(2).value = companyCode; // bukrs
             row2.getCell(3).value = 'SA'; // blart
             row2.getCell(4).value = docDate; // bldat
             row2.getCell(5).value = docDate; // budat
@@ -846,7 +742,7 @@ export default function MonitoringAccrualPage() {
             row2.getCell(8).value = item.headerText || ''; // bktxt
             row2.getCell(9).value = ''; // zuonr
             row2.getCell(10).value = item.kdAkr; // hkont (accrual account)
-            row2.getCell(11).value = -Math.round(totalAccrual); // wrbtr (negative)
+            row2.getCell(11).value = -Math.round(totalAccrualForCompany); // wrbtr (negative)
             row2.getCell(11).numFmt = '0';
             row2.getCell(12).value = item.headerText || ''; // sgtxt
             row2.getCell(13).value = ''; // prctr
@@ -881,57 +777,82 @@ export default function MonitoringAccrualPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Jurnal_SAP_${new Date().getFullYear()}.xlsx`;
+    link.download = `Jurnal_SAP${filterCompanyCode ? `_${filterCompanyCode}` : ''}_${new Date().getFullYear()}.xlsx`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadJurnalSAPTxt = () => {
+  const handleDownloadJurnalSAPTxt = (filterCompanyCode?: string) => {
     // Build TXT content (tab-separated)
     const rows: string[][] = [];
     
-    // Generate jurnal entries (no headers)
+    // Generate jurnal entries (no headers) - Group by company code first
     Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
       Object.entries(vendorGroups).forEach(([vendor, items]) => {
+        // Group items by company code
+        const itemsByCompanyCode: Record<string, typeof items> = {};
         items.forEach((item) => {
-          // Calculate total accrual for this item (only periods that have passed)
-          const totalAccrual = item.periodes?.reduce((sum, p) => {
-            // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
-            if (item.pembagianType === 'manual') {
-              return sum + p.amountAccrual;
-            }
-            
-            // Untuk otomatis, cek tanggal periode
-            // Parse bulan periode (format: "Jan 2026")
-            const [bulanName, tahunStr] = p.bulan.split(' ');
-            const bulanMap: Record<string, number> = {
-              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-            };
-            const periodeBulan = bulanMap[bulanName];
-            const periodeTahun = parseInt(tahunStr);
-            
-            // Tanggal 1 bulan periode tersebut
-            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-            const today = new Date();
-            
-            // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
-            if (today >= periodeDate) {
-              return sum + p.amountAccrual;
-            }
-            return sum;
-          }, 0) || 0;
+          const companyCode = item.companyCode || '';
+          if (!itemsByCompanyCode[companyCode]) {
+            itemsByCompanyCode[companyCode] = [];
+          }
+          itemsByCompanyCode[companyCode].push(item);
+        });
+        
+        // Process each company code separately
+        Object.entries(itemsByCompanyCode).forEach(([companyCode, companyItems]) => {
+          // Skip if filtering by company code and this doesn't match
+          if (filterCompanyCode && companyCode !== filterCompanyCode) {
+            return;
+          }
           
-          if (totalAccrual > 0) {
+          // Calculate total accrual for all items in this company code
+          let totalAccrualForCompany = 0;
+          let sampleItem: Accrual | null = null;
+          
+          (companyItems as Accrual[]).forEach((item) => {
+            const totalAccrual = item.periodes?.reduce((sum, p) => {
+              // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+              if (item.pembagianType === 'manual') {
+                return sum + p.amountAccrual;
+              }
+              
+              // Untuk otomatis, cek tanggal periode
+              // Parse bulan periode (format: "Jan 2026")
+              const [bulanName, tahunStr] = p.bulan.split(' ');
+              const bulanMap: Record<string, number> = {
+                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+              };
+              const periodeBulan = bulanMap[bulanName];
+              const periodeTahun = parseInt(tahunStr);
+              
+              // Tanggal 1 bulan periode tersebut
+              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+              const today = new Date();
+              
+              // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+              if (today >= periodeDate) {
+                return sum + p.amountAccrual;
+              }
+              return sum;
+            }, 0) || 0;
+            
+            totalAccrualForCompany += totalAccrual;
+            if (!sampleItem) sampleItem = item;
+          });
+          
+          if (totalAccrualForCompany > 0 && sampleItem) {
+            const item = sampleItem as Accrual;
             const startDate = new Date(item.startDate);
             const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
             
             // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
             rows.push([
               '',
-              item.companyCode || '',
+              companyCode,
               'SA',
               docDate,
               docDate,
@@ -940,7 +861,7 @@ export default function MonitoringAccrualPage() {
               item.headerText || '',
               '',
               item.kdAkunBiaya,
-              Math.round(totalAccrual).toString(),
+              Math.round(totalAccrualForCompany).toString(),
               item.headerText || '',
               '',
               item.costCenter || '',
@@ -954,7 +875,7 @@ export default function MonitoringAccrualPage() {
             // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
             rows.push([
               '',
-              item.companyCode || '',
+              companyCode,
               'SA',
               docDate,
               docDate,
@@ -963,7 +884,7 @@ export default function MonitoringAccrualPage() {
               item.headerText || '',
               '',
               item.kdAkr,
-              (-Math.round(totalAccrual)).toString(),
+              (-Math.round(totalAccrualForCompany)).toString(),
               item.headerText || '',
               '',
               '', // Cost center kosong untuk akun accrual
@@ -986,7 +907,7 @@ export default function MonitoringAccrualPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Jurnal_SAP_${new Date().getFullYear()}.txt`;
+    link.download = `Jurnal_SAP${filterCompanyCode ? `_${filterCompanyCode}` : ''}_${new Date().getFullYear()}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1617,20 +1538,66 @@ export default function MonitoringAccrualPage() {
                       <Download size={18} />
                       Export Global
                     </button>
-                    <button 
-                      onClick={handleDownloadJurnalSAP}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                    >
-                      <Download size={18} />
-                      Jurnal SAP (Excel)
-                    </button>
-                    <button 
-                      onClick={handleDownloadJurnalSAPTxt}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                    >
-                      <Download size={18} />
-                      Jurnal SAP (TXT)
-                    </button>
+                    
+                    {/* Dropdown Jurnal SAP */}
+                    <div className="relative" ref={jurnalDropdownRef}>
+                      <button 
+                        onClick={() => setShowJurnalDropdown(!showJurnalDropdown)}
+                        className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <Download size={18} />
+                        Jurnal SAP
+                        <ChevronDown size={16} className={`transition-transform ${showJurnalDropdown ? 'rotate-180' : ''}`} />
+                      </button>
+                      
+                      {showJurnalDropdown && (
+                        <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                          <div className="py-1">
+                            <button
+                              onClick={() => {
+                                handleDownloadJurnalSAP('2000');
+                                setShowJurnalDropdown(false);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center gap-2"
+                            >
+                              <Download size={16} />
+                              Company 2000 (Excel)
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleDownloadJurnalSAP('7000');
+                                setShowJurnalDropdown(false);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-2"
+                            >
+                              <Download size={16} />
+                              Company 7000 (Excel)
+                            </button>
+                            <div className="border-t border-gray-200 my-1"></div>
+                            <button
+                              onClick={() => {
+                                handleDownloadJurnalSAPTxt('2000');
+                                setShowJurnalDropdown(false);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center gap-2"
+                            >
+                              <Download size={16} />
+                              Company 2000 (TXT)
+                            </button>
+                            <button
+                              onClick={() => {
+                                handleDownloadJurnalSAPTxt('7000');
+                                setShowJurnalDropdown(false);
+                              }}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-2"
+                            >
+                              <Download size={16} />
+                              Company 7000 (TXT)
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                     {canEdit && (
                       <button 
                         onClick={() => setShowModal(true)}
@@ -1897,13 +1864,6 @@ export default function MonitoringAccrualPage() {
                           </td>
                           <td className="px-4 py-4 text-center">
                             <div className="flex items-center justify-center gap-2">
-                              <button
-                                onClick={() => handleDownloadAccrualReport(item)}
-                                className="text-green-600 hover:text-green-800 transition-colors p-1 hover:bg-green-50 rounded"
-                                title="Download Excel"
-                              >
-                                <Download size={16} />
-                              </button>
                               {canEdit && (
                                 <>
                                   <button
