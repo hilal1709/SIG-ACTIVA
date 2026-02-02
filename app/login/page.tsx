@@ -14,6 +14,10 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [accountStatus, setAccountStatus] = useState<{
+    emailVerified: boolean;
+    isApproved: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (searchParams.get('registered') === 'true') {
@@ -30,6 +34,8 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage(''); // Clear success message saat login
+    setAccountStatus(null); // Reset account status
     setIsLoading(true);
 
     try {
@@ -54,6 +60,29 @@ export default function LoginPage() {
          // Redirect ke dashboard utama
          router.push('/');
       } else {
+        // Jika login gagal karena verifikasi/approval, cek status akun
+        if (response.status === 403) {
+          try {
+            const checkResponse = await fetch('/api/users/check', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ email }),
+            });
+            
+            if (checkResponse.ok) {
+              const checkData = await checkResponse.json();
+              setAccountStatus({
+                emailVerified: checkData.user.emailVerified,
+                isApproved: checkData.user.isApproved,
+              });
+            }
+          } catch (checkError) {
+            console.error('Failed to check account status:', checkError);
+          }
+        }
+        
         setError(data.error || 'Email atau password salah');
         setIsLoading(false);
       }
@@ -140,15 +169,71 @@ export default function LoginPage() {
 
             {/* Success Message */}
             {successMessage && (
-              <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-3 rounded-lg text-sm">
+              <div className={`px-4 py-3 rounded-lg text-sm ${
+                successMessage.includes('persetujuan') || successMessage.includes('approval') 
+                  ? 'bg-blue-50 border border-blue-200 text-blue-700' 
+                  : 'bg-green-50 border border-green-200 text-green-600'
+              }`}>
                 {successMessage}
+                {successMessage.includes('persetujuan') && (
+                  <div className="mt-2 pt-2 border-t border-blue-200">
+                    <p className="text-xs text-blue-600">
+                      💡 Tip: Hubungi Admin System untuk mempercepat proses persetujuan.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Error Message */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-                {error}
+              <div>
+                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+                
+                {/* Account Status Indicator */}
+                {accountStatus && (
+                  <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p className="text-sm font-semibold text-gray-700 mb-2">Status Akun:</p>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex items-center">
+                        <span className={`mr-2 ${accountStatus.emailVerified ? 'text-green-600' : 'text-red-600'}`}>
+                          {accountStatus.emailVerified ? '✅' : '❌'}
+                        </span>
+                        <span className="text-gray-600">
+                          Verifikasi Email: {accountStatus.emailVerified ? 'Sudah terverifikasi' : 'Belum terverifikasi'}
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <span className={`mr-2 ${accountStatus.isApproved ? 'text-green-600' : 'text-amber-600'}`}>
+                          {accountStatus.isApproved ? '✅' : '⏳'}
+                        </span>
+                        <span className="text-gray-600">
+                          Persetujuan Admin: {accountStatus.isApproved ? 'Sudah disetujui' : 'Menunggu persetujuan'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {accountStatus.emailVerified && !accountStatus.isApproved && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <p className="text-xs text-amber-700">
+                          <strong>Akun Anda sedang menunggu persetujuan Admin System.</strong><br/>
+                          Silakan hubungi administrator untuk mempercepat proses persetujuan.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {!accountStatus.emailVerified && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <p className="text-xs text-red-700">
+                          <strong>Email Anda belum diverifikasi.</strong><br/>
+                          Silakan cek inbox email Anda dan klik link verifikasi yang telah dikirimkan.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

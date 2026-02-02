@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Check User Status - SIG ACTIVA</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #fef2f2 0%, #f3f4f6 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); padding: 32px; }
+        h1 { color: #dc2626; margin-bottom: 24px; font-size: 28px; }
+        .input-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #374151; }
+        input { width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: all 0.3s; }
+        input:focus { outline: none; border-color: #dc2626; }
+        button { width: 100%; padding: 14px; background: #dc2626; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        button:hover { background: #b91c1c; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .result { margin-top: 24px; padding: 20px; border-radius: 8px; display: none; }
+        .result.show { display: block; }
+        .result.success { background: #f0fdf4; border: 2px solid #22c55e; }
+        .result.error { background: #fef2f2; border: 2px solid #ef4444; }
+        .result.warning { background: #fffbeb; border: 2px solid #f59e0b; }
+        .status-row { display: flex; align-items: center; margin: 12px 0; padding: 12px; background: rgba(255,255,255,0.7); border-radius: 6px; }
+        .status-icon { margin-right: 12px; font-size: 20px; }
+        .status-text { flex: 1; }
+        .status-label { font-weight: 600; color: #111827; margin-bottom: 4px; }
+        .status-value { font-size: 14px; color: #6b7280; }
+        .divider { height: 1px; background: #e5e7eb; margin: 16px 0; }
+        .diagnosis { background: #f9fafb; padding: 16px; border-radius: 8px; margin-top: 16px; }
+        .diagnosis h3 { color: #111827; margin-bottom: 12px; font-size: 16px; }
+        .diagnosis ul { list-style: none; padding-left: 0; }
+        .diagnosis li { padding: 8px 0; color: #374151; }
+        pre { background: #1f2937; color: #f3f4f6; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Check User Status</h1>
+        <p style="color: #6b7280; margin-bottom: 24px;">Cek status verifikasi dan approval akun user</p>
+        
+        <div class="input-group">
+            <label for="email">Email User</label>
+            <input type="email" id="email" placeholder="contoh@email.com" value="aszra.tjahjaningrat23@student.ui.ac.id">
+        </div>
+        
+        <button onclick="checkUser()" id="checkBtn">Cek Status</button>
+        
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        async function checkUser() {
+            const email = document.getElementById('email').value.trim();
+            const resultDiv = document.getElementById('result');
+            const btn = document.getElementById('checkBtn');
+            
+            if (!email) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = '<p>❌ Email tidak boleh kosong</p>';
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Memeriksa...';
+            resultDiv.className = 'result';
+            resultDiv.innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/users/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok || !data.success) {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `<p>❌ ${data.error || 'User tidak ditemukan'}</p>`;
+                    return;
+                }
+                
+                const user = data.user;
+                const status = data.status;
+                
+                const canLogin = user.emailVerified && user.isApproved;
+                resultDiv.className = `result ${canLogin ? 'success' : 'warning'} show`;
+                
+                let html = `
+                    <h2 style="margin-bottom: 16px; color: ${canLogin ? '#16a34a' : '#f59e0b'};">
+                        ${canLogin ? '✅ User Bisa Login!' : '⚠️ User Tidak Bisa Login'}
+                    </h2>
+                    
+                    <div class="status-row">
+                        <div class="status-icon">${user.emailVerified ? '✅' : '❌'}</div>
+                        <div class="status-text">
+                            <div class="status-label">Verifikasi Email</div>
+                            <div class="status-value">${user.emailVerified ? 'Sudah terverifikasi' : 'Belum terverifikasi'}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-row">
+                        <div class="status-icon">${user.isApproved ? '✅' : '⏳'}</div>
+                        <div class="status-text">
+                            <div class="status-label">Approval Admin</div>
+                            <div class="status-value">${user.isApproved ? 'Sudah di-approve' : 'Menunggu approval'}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="status-row">
+                        <div class="status-text">
+                            <div class="status-label">Nama</div>
+                            <div class="status-value">${user.name}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-row">
+                        <div class="status-text">
+                            <div class="status-label">Username</div>
+                            <div class="status-value">${user.username}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-row">
+                        <div class="status-text">
+                            <div class="status-label">Email</div>
+                            <div class="status-value">${user.email}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="status-row">
+                        <div class="status-text">
+                            <div class="status-label">Role</div>
+                            <div class="status-value">${user.role}</div>
+                        </div>
+                    </div>
+                `;
+                
+                if (!canLogin) {
+                    html += `
+                        <div class="diagnosis">
+                            <h3>💡 Yang Harus Dilakukan:</h3>
+                            <ul>
+                                ${!user.emailVerified ? '<li>✗ User harus klik link verifikasi di email</li>' : ''}
+                                ${!user.isApproved ? '<li>✗ Admin harus approve user di User Management</li>' : ''}
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="diagnosis">
+                            <h3>✅ Semua Persyaratan Terpenuhi</h3>
+                            <p style="color: #6b7280; margin-top: 8px;">
+                                Jika user masih tidak bisa login:<br>
+                                • Pastikan password yang dimasukkan benar<br>
+                                • Coba clear cache browser (Ctrl+Shift+Delete)<br>
+                                • Coba di incognito/private mode<br>
+                                • Cek console browser (F12 → Console) untuk error
+                            </p>
+                        </div>
+                    `;
+                }
+                
+                html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Cek Status';
+            }
+        }
+        
+        // Auto check on page load
+        window.addEventListener('load', () => {
+            const email = document.getElementById('email').value;
+            if (email) checkUser();
+        });
+    </script>
+</body>
+</html>
