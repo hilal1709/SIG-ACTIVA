@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Download, Plus, MoreVertical, Edit, Trash2, FileDown } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
@@ -41,6 +41,7 @@ interface Prepaid {
 
 export default function MonitoringPrepaidPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [prepaidData, setPrepaidData] = useState<Prepaid[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -48,6 +49,7 @@ export default function MonitoringPrepaidPage() {
   const [editData, setEditData] = useState<Prepaid | null>(null);
   const [openDropdown, setOpenDropdown] = useState<number | null>(null);
   const [userRole, setUserRole] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
 
   // Load user role from localStorage
   useEffect(() => {
@@ -567,45 +569,68 @@ export default function MonitoringPrepaidPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-gray-50 overflow-hidden">
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+      
       {/* Sidebar */}
-      <Sidebar />
+      <div className={`fixed lg:static inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out ${
+        isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <Sidebar />
+      </div>
 
       {/* Main Content */}
-      <div className="ml-64 flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 bg-gray-50 overflow-hidden lg:ml-64">
         {/* Header */}
-        <Header
-          title="Monitoring Prepaid"
-          subtitle="Monitoring dan input data prepaid dengan laporan SAP"
-        />
+        <div className="relative">
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+          >
+            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <Header
+            title="Monitoring Prepaid"
+            subtitle="Monitoring dan input data prepaid dengan laporan SAP"
+          />
+        </div>
 
         {/* Content Area */}
-        <div className="p-8 flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-6 md:p-8 bg-gray-50">
           {/* Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Total Prepaid Value</p>
-              <h3 className="text-2xl font-bold text-gray-800">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Total Prepaid Value</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
                 {formatCurrency(totalPrepaidValue)}
               </h3>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Remaining Amount</p>
-              <h3 className="text-2xl font-bold text-gray-800">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Remaining Amount</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
                 {formatCurrency(totalRemaining)}
               </h3>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Active Items</p>
-              <h3 className="text-2xl font-bold text-gray-800">{activeItems}</h3>
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Active Items</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">{activeItems}</h3>
             </div>
           </div>
 
           {/* Filter Bar */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-            <div className="flex flex-wrap items-center gap-4">
+          <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4 mb-4 sm:mb-6">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
               {/* Search */}
-              <div className="relative flex-1 min-w-[250px]">
+              <div className="relative w-full sm:flex-1 sm:min-w-[250px]">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                 <input
                   type="text"
@@ -617,35 +642,39 @@ export default function MonitoringPrepaidPage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-2 ml-auto">
+              <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto">
                 <button
                   onClick={handleDownloadGlobalReport}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                 >
-                  <Download size={18} />
-                  Export Laporan Prepaid
+                  <Download size={16} className="sm:w-[18px] sm:h-[18px]" />
+                  <span className="hidden sm:inline">Export Laporan Prepaid</span>
+                  <span className="sm:hidden">Laporan</span>
                 </button>
                 <button
                   onClick={handleDownloadJurnalSAP}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                 >
-                  <Download size={18} />
-                  Jurnal SAP (Excel)
+                  <Download size={16} className="sm:w-[18px] sm:h-[18px]" />
+                  <span className="hidden sm:inline">Jurnal SAP (Excel)</span>
+                  <span className="sm:hidden">Excel</span>
                 </button>
                 <button
                   onClick={handleDownloadJurnalSAPTxt}
-                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                  className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                 >
-                  <Download size={18} />
-                  Jurnal SAP (TXT)
+                  <Download size={16} className="sm:w-[18px] sm:h-[18px]" />
+                  <span className="hidden sm:inline">Jurnal SAP (TXT)</span>
+                  <span className="sm:hidden">TXT</span>
                 </button>
                 {canEdit && (
                   <button 
                     onClick={handleAddNew}
-                    className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium w-full sm:w-auto justify-center"
                   >
-                    <Plus size={18} />
-                    Tambah Data Prepaid
+                    <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                    <span className="hidden sm:inline">Tambah Data Prepaid</span>
+                    <span className="sm:hidden">Tambah Data</span>
                   </button>
                 )}
               </div>
@@ -653,13 +682,29 @@ export default function MonitoringPrepaidPage() {
           </div>
 
           {/* Table */}
-          <div className="bg-white rounded-lg border border-gray-200">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <style jsx>{`
+              .custom-scrollbar::-webkit-scrollbar {
+                height: 10px;
+              }
+              .custom-scrollbar::-webkit-scrollbar-track {
+                background: #f1f5f9;
+                border-radius: 5px;
+              }
+              .custom-scrollbar::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 5px;
+              }
+              .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+              }
+            `}</style>
             {loading ? (
               <div className="text-center py-12">
                 <p className="text-gray-500">Memuat data...</p>
               </div>
             ) : (
-              <div className="overflow-x-auto max-w-full bg-white" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+              <div className="overflow-x-auto max-w-full bg-white custom-scrollbar" style={{ maxHeight: 'calc(100vh - 400px)' }}>
                 <table className="w-full text-sm bg-white min-w-max">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -777,14 +822,14 @@ export default function MonitoringPrepaidPage() {
                                   className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
                                   title="Edit"
                                 >
-                                  <Edit size={16} />
+                                  <Edit size={16} className="sm:w-[18px] sm:h-[18px]" />
                                 </button>
                                 <button
                                   onClick={() => handleDelete(item.id)}
                                   className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
                                   title="Hapus"
                                 >
-                                  <Trash2 size={16} />
+                                  <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
                                 </button>
                               </div>
                             )}
@@ -819,6 +864,19 @@ export default function MonitoringPrepaidPage() {
         mode={editMode}
         editData={editData}
       />
+
+      {/* Loading Overlay untuk proses yang memakan waktu */}
+      {submitting && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 sm:p-8 shadow-2xl flex flex-col items-center space-y-4 max-w-sm mx-4">
+            <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-red-600 border-t-transparent"></div>
+            <div className="text-center">
+              <p className="text-base sm:text-lg font-semibold text-gray-800">Memproses data...</p>
+              <p className="text-xs sm:text-sm text-gray-500 mt-1">Mohon tunggu sebentar</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

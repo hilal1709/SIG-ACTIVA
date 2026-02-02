@@ -139,11 +139,11 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gradient-to-br from-red-600 to-red-800 rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+      <div className="bg-gradient-to-br from-red-600 to-red-800 rounded-xl sm:rounded-2xl shadow-2xl max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-8 py-6">
-          <h2 className="text-2xl font-bold text-white">
+        <div className="flex items-center justify-between px-4 sm:px-6 md:px-8 py-4 sm:py-5 md:py-6">
+          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-white">
             {mode === 'edit' ? 'Edit Data Prepaid' : 'Tambah Data Prepaid'}
           </h2>
           <button
@@ -156,12 +156,12 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
         </div>
 
         {/* Modal Body */}
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 140px)' }}>
-          <form onSubmit={handleSubmit} className="p-6 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="overflow-y-auto" style={{ maxHeight: 'calc(95vh - 180px)' }}>
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 bg-gray-50">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               {/* Company Code */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Company Code <span className="text-red-600">*</span>
                 </label>
                 <select
@@ -179,7 +179,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* No PO */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   No PO <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -195,7 +195,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Assignment/Order (Alokasi) */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Assignment/Order <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -211,7 +211,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Kode Akun Prepaid */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Kode Akun Prepaid <span className="text-red-600">*</span>
                 </label>
                 <select
@@ -230,7 +230,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Kode Akun Biaya */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Kode Akun Biaya <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -246,7 +246,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Klasifikasi */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Klasifikasi <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -262,7 +262,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Amount */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Amount <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -280,7 +280,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Start Date */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Start Date <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -295,7 +295,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Jumlah Periode */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Jumlah Periode <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -313,7 +313,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
 
               {/* Cost Center */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Cost Center <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -328,8 +328,8 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               </div>
 
               {/* Header Text */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <div className="sm:col-span-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Header Text (untuk jurnal SAP) <span className="text-red-600">*</span>
                 </label>
                 <input
@@ -344,8 +344,8 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               </div>
 
               {/* Deskripsi */}
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
+              <div className="sm:col-span-2">
+                <label className="block text-xs sm:text-sm font-semibold text-gray-700 mb-2">
                   Deskripsi <span className="text-red-600">*</span>
                 </label>
                 <textarea
@@ -361,11 +361,11 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
             </div>
 
             {/* Form Actions */}
-            <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200 bg-white px-6 py-4 -mx-6 -mb-6 rounded-b-2xl">
+            <div className="flex items-center justify-end gap-2 sm:gap-3 pt-4 sm:pt-6 border-t border-gray-200 bg-white px-4 sm:px-6 py-3 sm:py-4 -mx-4 sm:-mx-6 -mb-4 sm:-mb-6 rounded-b-xl sm:rounded-b-2xl">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
+                className="px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"
                 disabled={loading}
               >
                 Batal
@@ -373,7 +373,7 @@ export default function PrepaidForm({ isOpen, onClose, onSuccess, editData, mode
               <button
                 type="submit"
                 disabled={loading}
-                className="px-5 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/30"
+                className="px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-red-500/30"
               >
                 {loading ? 'Menyimpan...' : mode === 'edit' ? 'Update Data' : 'Simpan Data'}
               </button>

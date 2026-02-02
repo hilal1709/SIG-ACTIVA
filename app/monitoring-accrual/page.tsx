@@ -98,12 +98,13 @@ export default function MonitoringAccrualPage() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterType, setFilterType] = useState('All');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [accrualData, setAccrualData] = useState<Accrual[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [userRole, setUserRole] = useState<string>('');
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [expandedRows, setExpandedRows] = useState<Set<number | string>>(new Set());
   const [expandedKodeAkun, setExpandedKodeAkun] = useState<Set<string>>(new Set());
   const [expandedVendor, setExpandedVendor] = useState<Set<string>>(new Set());
   const [formData, setFormData] = useState<AccrualFormData>({
@@ -139,28 +140,12 @@ export default function MonitoringAccrualPage() {
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [showImportGlobalModal, setShowImportGlobalModal] = useState(false);
   const [uploadingGlobalExcel, setUploadingGlobalExcel] = useState(false);
-  const [showJurnalDropdown, setShowJurnalDropdown] = useState(false);
-  const jurnalDropdownRef = useRef<HTMLDivElement>(null);
 
   // Get available klasifikasi based on selected kode akun
   const availableKlasifikasi = useMemo(() => {
     if (!formData.kdAkr) return [];
     return KODE_AKUN_KLASIFIKASI[formData.kdAkr] || [];
   }, [formData.kdAkr]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (jurnalDropdownRef.current && !jurnalDropdownRef.current.contains(event.target as Node)) {
-        setShowJurnalDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
 
   // Debounce search term for better performance
   useEffect(() => {
@@ -620,7 +605,13 @@ export default function MonitoringAccrualPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadJurnalSAP = async (filterCompanyCode?: string) => {
+  const handleDownloadJurnalSAPPerItem = async (item: Accrual, filterCompanyCode: string) => {
+    // Filter by company code
+    if (item.companyCode !== filterCompanyCode) {
+      alert(`Item ini menggunakan company code ${item.companyCode}, tidak bisa didownload untuk company code ${filterCompanyCode}`);
+      return;
+    }
+    
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Jurnal SAP');
     
@@ -687,287 +678,229 @@ export default function MonitoringAccrualPage() {
       { width: 5 }    // flag
     ];
     
-    let currentRow = 3;
+    // Calculate total accrual for this single item
+    const totalAccrual = item.periodes?.reduce((sum, p) => {
+      // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+      if (item.pembagianType === 'manual') {
+        return sum + p.amountAccrual;
+      }
+      
+      // Untuk otomatis, cek tanggal periode
+      // Parse bulan periode (format: "Jan 2026")
+      const [bulanName, tahunStr] = p.bulan.split(' ');
+      const bulanMap: Record<string, number> = {
+        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+      };
+      const periodeBulan = bulanMap[bulanName];
+      const periodeTahun = parseInt(tahunStr);
+      
+      // Tanggal 1 bulan periode tersebut
+      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+      const today = new Date();
+      
+      // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+      if (today >= periodeDate) {
+        return sum + p.amountAccrual;
+      }
+      return sum;
+    }, 0) || 0;
     
-    // Generate jurnal entries - Group by company code first
-    Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
-      Object.entries(vendorGroups).forEach(([vendor, items]) => {
-        // Group items by company code
-        const itemsByCompanyCode: Record<string, typeof items> = {};
-        items.forEach((item) => {
-          const companyCode = item.companyCode || '';
-          if (!itemsByCompanyCode[companyCode]) {
-            itemsByCompanyCode[companyCode] = [];
-          }
-          itemsByCompanyCode[companyCode].push(item);
-        });
-        
-        // Process each company code separately
-        Object.entries(itemsByCompanyCode).forEach(([companyCode, companyItems]) => {
-          // Calculate total accrual for all items in this company code
-          let totalAccrualForCompany = 0;
-          let sampleItem: Accrual | null = null;
-          
-          companyItems.forEach((item) => {
-            const totalAccrual = item.periodes?.reduce((sum, p) => {
-              // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
-              if (item.pembagianType === 'manual') {
-                return sum + p.amountAccrual;
-              }
-              
-              // Untuk otomatis, cek tanggal periode
-              // Parse bulan periode (format: "Jan 2026")
-              const [bulanName, tahunStr] = p.bulan.split(' ');
-              const bulanMap: Record<string, number> = {
-                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-              };
-              const periodeBulan = bulanMap[bulanName];
-              const periodeTahun = parseInt(tahunStr);
-              
-              // Tanggal 1 bulan periode tersebut
-              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-              const today = new Date();
-              
-              // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
-              if (today >= periodeDate) {
-                return sum + p.amountAccrual;
-              }
-              return sum;
-            }, 0) || 0;
-            
-            totalAccrualForCompany += totalAccrual;
-            if (!sampleItem) sampleItem = item;
-          });
-          
-          if (totalAccrualForCompany > 0 && sampleItem) {
-            const item = sampleItem as Accrual;
-            // Parse tanggal from start date
-            const startDate = new Date(item.startDate);
-            const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
-            
-            // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
-            const row1 = worksheet.getRow(currentRow);
-            row1.height = 15;
-            
-            row1.getCell(1).value = ''; // xblnr - kosong
-            row1.getCell(2).value = companyCode; // bukrs
-            row1.getCell(3).value = 'SA'; // blart
-            row1.getCell(4).value = docDate; // bldat
-            row1.getCell(5).value = docDate; // budat
-            row1.getCell(6).value = 'IDR'; // waers
-            row1.getCell(7).value = ''; // kursf
-            row1.getCell(8).value = item.headerText || ''; // bktxt
-            row1.getCell(9).value = ''; // zuonr
-            row1.getCell(10).value = item.kdAkunBiaya; // hkont (expense account)
-            row1.getCell(11).value = Math.round(totalAccrualForCompany); // wrbtr (positive)
-            row1.getCell(11).numFmt = '0';
-            row1.getCell(12).value = item.headerText || ''; // sgtxt
-            row1.getCell(13).value = ''; // prctr
-            row1.getCell(14).value = item.costCenter || ''; // kostl
-            row1.getCell(15).value = ''; // empty
-            row1.getCell(16).value = ''; // nplnr
-            row1.getCell(17).value = ''; // aufnr
-            row1.getCell(18).value = ''; // valut
-            row1.getCell(19).value = 'G'; // flag
-            
-            // Apply font and alignment to all cells (NO BORDERS)
-            for (let col = 1; col <= 19; col++) {
-              const cell = row1.getCell(col);
-              cell.font = { name: 'Aptos Narrow', size: 12 };
-              if (col === 11) {
-                cell.alignment = { horizontal: 'right', vertical: 'bottom' };
-              } else {
-                cell.alignment = { horizontal: 'left', vertical: 'bottom' };
-              }
-            }
-            
-            currentRow++;
-            
-            // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
-            const row2 = worksheet.getRow(currentRow);
-            row2.height = 15;
-            
-            row2.getCell(1).value = ''; // xblnr - kosong
-            row2.getCell(2).value = companyCode; // bukrs
-            row2.getCell(3).value = 'SA'; // blart
-            row2.getCell(4).value = docDate; // bldat
-            row2.getCell(5).value = docDate; // budat
-            row2.getCell(6).value = 'IDR'; // waers
-            row2.getCell(7).value = ''; // kursf
-            row2.getCell(8).value = item.headerText || ''; // bktxt
-            row2.getCell(9).value = ''; // zuonr
-            row2.getCell(10).value = item.kdAkr; // hkont (accrual account)
-            row2.getCell(11).value = -Math.round(totalAccrualForCompany); // wrbtr (negative)
-            row2.getCell(11).numFmt = '0';
-            row2.getCell(12).value = item.headerText || ''; // sgtxt
-            row2.getCell(13).value = ''; // prctr
-            row2.getCell(14).value = ''; // kostl - kosongkan untuk akun accrual
-            row2.getCell(15).value = ''; // empty
-            row2.getCell(16).value = ''; // nplnr
-            row2.getCell(17).value = ''; // aufnr
-            row2.getCell(18).value = ''; // valut
-            row2.getCell(19).value = 'G'; // flag
-            
-            // Apply font and alignment to all cells (NO BORDERS)
-            for (let col = 1; col <= 19; col++) {
-              const cell = row2.getCell(col);
-              cell.font = { name: 'Aptos Narrow', size: 12 };
-              if (col === 11) {
-                cell.alignment = { horizontal: 'right', vertical: 'bottom' };
-              } else {
-                cell.alignment = { horizontal: 'left', vertical: 'bottom' };
-              }
-            }
-            
-            currentRow++;
-          }
-        });
+    if (totalAccrual > 0) {
+      // Parse tanggal from start date
+      const startDate = new Date(item.startDate);
+      const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+      const year = startDate.getFullYear();
+      
+      // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+      const row1 = worksheet.getRow(3);
+      row1.height = 15;
+      
+      row1.getCell(1).value = ''; // xblnr - kosong
+      row1.getCell(2).value = filterCompanyCode; // bukrs
+      row1.getCell(3).value = 'SA'; // blart
+      row1.getCell(4).value = docDate; // bldat
+      row1.getCell(5).value = docDate; // budat
+      row1.getCell(6).value = 'IDR'; // waers
+      row1.getCell(7).value = ''; // kursf
+      row1.getCell(8).value = item.headerText || ''; // bktxt
+      row1.getCell(9).value = ''; // zuonr
+      row1.getCell(10).value = item.kdAkunBiaya; // hkont (expense account)
+      row1.getCell(11).value = Math.round(totalAccrual); // wrbtr (positive)
+      row1.getCell(11).numFmt = '0';
+      row1.getCell(12).value = item.headerText || ''; // sgtxt
+      row1.getCell(13).value = ''; // prctr
+      row1.getCell(14).value = item.costCenter || ''; // kostl
+      row1.getCell(15).value = ''; // empty
+      row1.getCell(16).value = ''; // nplnr
+      row1.getCell(17).value = ''; // aufnr
+      row1.getCell(18).value = ''; // valut
+      row1.getCell(19).value = 'G'; // flag
+      
+      // Apply font and alignment to all cells (NO BORDERS)
+      for (let col = 1; col <= 19; col++) {
+        const cell = row1.getCell(col);
+        cell.font = { name: 'Aptos Narrow', size: 12 };
+        if (col === 11) {
+          cell.alignment = { horizontal: 'right', vertical: 'bottom' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'bottom' };
+        }
+      }
+      
+      // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
+      const row2 = worksheet.getRow(4);
+      row2.height = 15;
+      
+      row2.getCell(1).value = ''; // xblnr - kosong
+      row2.getCell(2).value = filterCompanyCode; // bukrs
+      row2.getCell(3).value = 'SA'; // blart
+      row2.getCell(4).value = docDate; // bldat
+      row2.getCell(5).value = docDate; // budat
+      row2.getCell(6).value = 'IDR'; // waers
+      row2.getCell(7).value = ''; // kursf
+      row2.getCell(8).value = item.headerText || ''; // bktxt
+      row2.getCell(9).value = ''; // zuonr
+      row2.getCell(10).value = item.kdAkr; // hkont (accrual account)
+      row2.getCell(11).value = -Math.round(totalAccrual); // wrbtr (negative)
+      row2.getCell(11).numFmt = '0';
+      row2.getCell(12).value = item.headerText || ''; // sgtxt
+      row2.getCell(13).value = ''; // prctr
+      row2.getCell(14).value = ''; // kostl - kosongkan untuk akun accrual
+      row2.getCell(15).value = ''; // empty
+      row2.getCell(16).value = ''; // nplnr
+      row2.getCell(17).value = ''; // aufnr
+      row2.getCell(18).value = ''; // valut
+      row2.getCell(19).value = 'G'; // flag
+      
+      // Apply font and alignment to all cells (NO BORDERS)
+      for (let col = 1; col <= 19; col++) {
+        const cell = row2.getCell(col);
+        cell.font = { name: 'Aptos Narrow', size: 12 };
+        if (col === 11) {
+          cell.alignment = { horizontal: 'right', vertical: 'bottom' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'bottom' };
+        }
+      }
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
-    });
-    
-    const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { 
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Jurnal_SAP${filterCompanyCode ? `_${filterCompanyCode}` : ''}_${new Date().getFullYear()}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Jurnal_SAP_${filterCompanyCode}_${item.noPo || item.id}_${year}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
   };
 
-  const handleDownloadJurnalSAPTxt = (filterCompanyCode?: string) => {
+  const handleDownloadJurnalSAPTxt = (item: Accrual, filterCompanyCode: string) => {
+    // Filter by company code
+    if (item.companyCode !== filterCompanyCode) {
+      return;
+    }
+    
     // Build TXT content (tab-separated)
     const rows: string[][] = [];
     
-    // Generate jurnal entries (no headers) - Group by company code first
-    Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
-      Object.entries(vendorGroups).forEach(([vendor, items]) => {
-        // Group items by company code
-        const itemsByCompanyCode: Record<string, typeof items> = {};
-        items.forEach((item) => {
-          const companyCode = item.companyCode || '';
-          if (!itemsByCompanyCode[companyCode]) {
-            itemsByCompanyCode[companyCode] = [];
-          }
-          itemsByCompanyCode[companyCode].push(item);
-        });
-        
-        // Process each company code separately
-        Object.entries(itemsByCompanyCode).forEach(([companyCode, companyItems]) => {
-          // Skip if filtering by company code and this doesn't match
-          if (filterCompanyCode && companyCode !== filterCompanyCode) {
-            return;
-          }
-          
-          // Calculate total accrual for all items in this company code
-          let totalAccrualForCompany = 0;
-          let sampleItem: Accrual | null = null;
-          
-          (companyItems as Accrual[]).forEach((item) => {
-            const totalAccrual = item.periodes?.reduce((sum, p) => {
-              // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
-              if (item.pembagianType === 'manual') {
-                return sum + p.amountAccrual;
-              }
-              
-              // Untuk otomatis, cek tanggal periode
-              // Parse bulan periode (format: "Jan 2026")
-              const [bulanName, tahunStr] = p.bulan.split(' ');
-              const bulanMap: Record<string, number> = {
-                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-              };
-              const periodeBulan = bulanMap[bulanName];
-              const periodeTahun = parseInt(tahunStr);
-              
-              // Tanggal 1 bulan periode tersebut
-              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-              const today = new Date();
-              
-              // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
-              if (today >= periodeDate) {
-                return sum + p.amountAccrual;
-              }
-              return sum;
-            }, 0) || 0;
-            
-            totalAccrualForCompany += totalAccrual;
-            if (!sampleItem) sampleItem = item;
-          });
-          
-          if (totalAccrualForCompany > 0 && sampleItem) {
-            const item = sampleItem as Accrual;
-            const startDate = new Date(item.startDate);
-            const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
-            
-            // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
-            rows.push([
-              '',
-              companyCode,
-              'SA',
-              docDate,
-              docDate,
-              'IDR',
-              '',
-              item.headerText || '',
-              '',
-              item.kdAkunBiaya,
-              Math.round(totalAccrualForCompany).toString(),
-              item.headerText || '',
-              '',
-              item.costCenter || '',
-              '',
-              '',
-              '',
-              '',
-              'G'
-            ]);
-            
-            // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
-            rows.push([
-              '',
-              companyCode,
-              'SA',
-              docDate,
-              docDate,
-              'IDR',
-              '',
-              item.headerText || '',
-              '',
-              item.kdAkr,
-              (-Math.round(totalAccrualForCompany)).toString(),
-              item.headerText || '',
-              '',
-              '', // Cost center kosong untuk akun accrual
-              '',
-              '',
-              '',
-              '',
-              'G'
-            ]);
-          }
-        });
-      });
-    });
+    // Calculate total accrual for this specific item
+    const totalAccrual = item.periodes?.reduce((sum, p) => {
+      // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+      if (item.pembagianType === 'manual') {
+        return sum + p.amountAccrual;
+      }
+      
+      // Untuk otomatis, cek tanggal periode
+      // Parse bulan periode (format: "Jan 2026")
+      const [bulanName, tahunStr] = p.bulan.split(' ');
+      const bulanMap: Record<string, number> = {
+        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+      };
+      const periodeBulan = bulanMap[bulanName];
+      const periodeTahun = parseInt(tahunStr);
+      
+      // Tanggal 1 bulan periode tersebut
+      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+      const today = new Date();
+      
+      // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+      if (today >= periodeDate) {
+        return sum + p.amountAccrual;
+      }
+      return sum;
+    }, 0) || 0;
     
-    // Convert to TXT string (tab-separated)
-    const txtContent = rows.map(row => row.join('\t')).join('\n');
-    
-    // Create blob and download
-    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Jurnal_SAP${filterCompanyCode ? `_${filterCompanyCode}` : ''}_${new Date().getFullYear()}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (totalAccrual > 0) {
+      const startDate = new Date(item.startDate);
+      const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+      const year = startDate.getFullYear();
+      
+      // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+      rows.push([
+        '',
+        filterCompanyCode,
+        'SA',
+        docDate,
+        docDate,
+        'IDR',
+        '',
+        item.headerText || '',
+        '',
+        item.kdAkunBiaya,
+        Math.round(totalAccrual).toString(),
+        item.headerText || '',
+        '',
+        item.costCenter || '',
+        '',
+        '',
+        '',
+        '',
+        'G'
+      ]);
+      
+      // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
+      rows.push([
+        '',
+        filterCompanyCode,
+        'SA',
+        docDate,
+        docDate,
+        'IDR',
+        '',
+        item.headerText || '',
+        '',
+        item.kdAkr,
+        (-Math.round(totalAccrual)).toString(),
+        item.headerText || '',
+        '',
+        '', // Cost center kosong untuk akun accrual
+        '',
+        '',
+        '',
+        '',
+        'G'
+      ]);
+      
+      // Convert to TXT string (tab-separated)
+      const txtContent = rows.map(row => row.join('\t')).join('\n');
+      
+      // Create blob and download
+      const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Jurnal_SAP_${filterCompanyCode}_${item.noPo || item.id}_${year}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -1532,19 +1465,42 @@ export default function MonitoringAccrualPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+      
       {/* Sidebar */}
-      <Sidebar />
+      <div className={`fixed lg:static inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out ${
+        isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <Sidebar />
+      </div>
 
       {/* Main Content */}
-      <div className="ml-64 flex-1 bg-gray-50 overflow-hidden">
+      <div className="flex-1 bg-gray-50 overflow-hidden lg:ml-64">
         {/* Header */}
-        <Header
-          title="Monitoring Accrual"
-          subtitle="Monitoring dan input data accrual dengan export laporan SAP"
-        />
+        <div className="relative">
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+          >
+            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <Header
+            title="Monitoring Accrual"
+            subtitle="Monitoring dan input data accrual dengan export laporan SAP"
+          />
+        </div>
 
         {/* Content Area */}
-        <div className="p-8 bg-gray-50">
+        <div className="p-4 sm:p-6 md:p-8 bg-gray-50">
           {/* Loading State */}
           {loading ? (
             <div className="flex justify-center items-center h-64">
@@ -1553,10 +1509,10 @@ export default function MonitoringAccrualPage() {
           ) : (
             <>
               {/* Filter Bar */}
-              <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-                <div className="flex flex-wrap items-center gap-4">
+              <div className="bg-white rounded-lg border border-gray-200 p-3 sm:p-4 mb-4 sm:mb-6">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4">
                   {/* Search */}
-                  <div className="relative flex-1 min-w-62.5">
+                  <div className="relative w-full sm:flex-1 sm:min-w-[250px]">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                     <input
                       type="text"
@@ -1568,95 +1524,39 @@ export default function MonitoringAccrualPage() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2 ml-auto">
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto">
                     <button 
                       onClick={() => setShowImportGlobalModal(true)}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                     >
-                      <Upload size={18} />
-                      Import Realisasi Global
+                      <Upload size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      <span className="hidden sm:inline">Import Realisasi Global</span>
+                      <span className="sm:hidden">Import</span>
                     </button>
                     <button 
                       onClick={handleDownloadAllItemsReport}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                     >
-                      <Download size={18} />
-                      Export Per Item (All)
+                      <Download size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      <span className="hidden sm:inline">Export Per Item (All)</span>
+                      <span className="sm:hidden">Per Item</span>
                     </button>
                     <button 
                       onClick={handleDownloadGlobalReport}
-                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                      className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                     >
-                      <Download size={18} />
-                      Export Global
+                      <Download size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      <span className="hidden sm:inline">Export Global</span>
+                      <span className="sm:hidden">Global</span>
                     </button>
-                    
-                    {/* Dropdown Jurnal SAP */}
-                    <div className="relative" ref={jurnalDropdownRef}>
-                      <button 
-                        onClick={() => setShowJurnalDropdown(!showJurnalDropdown)}
-                        className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
-                      >
-                        <Download size={18} />
-                        Jurnal SAP
-                        <ChevronDown size={16} className={`transition-transform ${showJurnalDropdown ? 'rotate-180' : ''}`} />
-                      </button>
-                      
-                      {showJurnalDropdown && (
-                        <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                          <div className="py-1">
-                            <button
-                              onClick={() => {
-                                handleDownloadJurnalSAP('2000');
-                                setShowJurnalDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center gap-2"
-                            >
-                              <Download size={16} />
-                              Company 2000 (Excel)
-                            </button>
-                            <button
-                              onClick={() => {
-                                handleDownloadJurnalSAP('7000');
-                                setShowJurnalDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-2"
-                            >
-                              <Download size={16} />
-                              Company 7000 (Excel)
-                            </button>
-                            <div className="border-t border-gray-200 my-1"></div>
-                            <button
-                              onClick={() => {
-                                handleDownloadJurnalSAPTxt('2000');
-                                setShowJurnalDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 transition-colors flex items-center gap-2"
-                            >
-                              <Download size={16} />
-                              Company 2000 (TXT)
-                            </button>
-                            <button
-                              onClick={() => {
-                                handleDownloadJurnalSAPTxt('7000');
-                                setShowJurnalDropdown(false);
-                              }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 transition-colors flex items-center gap-2"
-                            >
-                              <Download size={16} />
-                              Company 7000 (TXT)
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
                     {canEdit && (
                       <button 
                         onClick={() => setShowModal(true)}
-                        className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                        className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium w-full sm:w-auto justify-center"
                       >
-                        <Plus size={18} />
-                        Tambah Data Accrual
+                        <Plus size={16} className="sm:w-[18px] sm:h-[18px]" />
+                        <span className="hidden sm:inline">Tambah Data Accrual</span>
+                        <span className="sm:hidden">Tambah Data</span>
                       </button>
                     )}
                   </div>
@@ -1664,27 +1564,43 @@ export default function MonitoringAccrualPage() {
           </div>
 
           {/* Metric Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Total Accrual</p>
-              <h3 className="text-2xl font-bold text-gray-800">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Total Accrual</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
                 {formatCurrency(totalAccrual)}
               </h3>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Jumlah Accrual</p>
-              <h3 className="text-2xl font-bold text-gray-800">{accrualData.length}</h3>
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Jumlah Accrual</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">{accrualData.length}</h3>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <p className="text-sm text-gray-600 mb-2">Total Periode</p>
-              <h3 className="text-2xl font-bold text-gray-800">{totalPeriodes}</h3>
+            <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Total Periode</p>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-800">{totalPeriodes}</h3>
             </div>
           </div>
 
           {/* Table */}
           <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto" style={{ maxWidth: '100%' }}>
-              <table className="w-full text-sm" style={{ minWidth: '1800px' }}>
+            <style jsx>{`
+              .custom-scrollbar::-webkit-scrollbar {
+                height: 10px;
+              }
+              .custom-scrollbar::-webkit-scrollbar-track {
+                background: #f1f5f9;
+                border-radius: 5px;
+              }
+              .custom-scrollbar::-webkit-scrollbar-thumb {
+                background: #cbd5e1;
+                border-radius: 5px;
+              }
+              .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                background: #94a3b8;
+              }
+            `}</style>
+            <div className="overflow-x-auto custom-scrollbar" style={{ maxWidth: '100%' }}>
+              <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12">
@@ -1934,7 +1850,93 @@ export default function MonitoringAccrualPage() {
                             )}
                           </td>
                           <td className="px-4 py-4 text-center">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-1">
+                              {/* Jurnal SAP Dropdown */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => {
+                                    const itemId = item.id;
+                                    setExpandedRows(prev => {
+                                      const newSet = new Set(prev);
+                                      if (newSet.has(`jurnal-${itemId}`)) {
+                                        newSet.delete(`jurnal-${itemId}`);
+                                      } else {
+                                        // Close all other jurnal dropdowns
+                                        Array.from(newSet).forEach(id => {
+                                          if (typeof id === 'string' && id.startsWith('jurnal-')) {
+                                            newSet.delete(id);
+                                          }
+                                        });
+                                        newSet.add(`jurnal-${itemId}`);
+                                      }
+                                      return newSet;
+                                    });
+                                  }}
+                                  className="text-green-600 hover:text-green-800 transition-colors p-1 hover:bg-green-50 rounded"
+                                  title="Download Jurnal SAP"
+                                >
+                                  <Download size={16} />
+                                </button>
+                                {expandedRows.has(`jurnal-${item.id}`) && (
+                                  <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                    <div className="py-1">
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPPerItem(item, '2000');
+                                          setExpandedRows(prev => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(`jurnal-${item.id}`);
+                                            return newSet;
+                                          });
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
+                                      >
+                                        2000 Excel
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPPerItem(item, '7000');
+                                          setExpandedRows(prev => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(`jurnal-${item.id}`);
+                                            return newSet;
+                                          });
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+                                      >
+                                        7000 Excel
+                                      </button>
+                                      <div className="border-t border-gray-200 my-1"></div>
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPTxt(item, '2000');
+                                          setExpandedRows(prev => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(`jurnal-${item.id}`);
+                                            return newSet;
+                                          });
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
+                                      >
+                                        2000 TXT
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPTxt(item, '7000');
+                                          setExpandedRows(prev => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(`jurnal-${item.id}`);
+                                            return newSet;
+                                          });
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+                                      >
+                                        7000 TXT
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                               {canEdit && (
                                 <>
                                   <button
@@ -2076,8 +2078,8 @@ export default function MonitoringAccrualPage() {
 
       {/* Modal Form Tambah Data Accrual */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">{editingId ? 'Edit Data Accrual' : 'Tambah Data Accrual'}</h2>
@@ -2110,9 +2112,9 @@ export default function MonitoringAccrualPage() {
             </div>
 
             {/* Modal Body */}
-            <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 140px)' }}>
-              <form onSubmit={handleSubmit} className="p-6 bg-gray-50">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="overflow-y-auto" style={{ maxHeight: 'calc(95vh - 120px)' }}>
+              <form onSubmit={handleSubmit} className="p-3 sm:p-6 bg-gray-50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 mb-4 sm:mb-6">
                 {/* Company Code */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -2424,8 +2426,8 @@ export default function MonitoringAccrualPage() {
 
       {/* Modal Input Realisasi */}
       {showRealisasiModal && selectedPeriode && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
               <div>
@@ -2655,8 +2657,8 @@ export default function MonitoringAccrualPage() {
 
       {/* Modal Import Realisasi Global */}
       {showImportGlobalModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Import Realisasi Global</h2>
@@ -2732,6 +2734,21 @@ export default function MonitoringAccrualPage() {
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay untuk proses export/import */}
+      {(uploadingExcel || uploadingGlobalExcel || submitting) && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 sm:p-8 shadow-2xl flex flex-col items-center space-y-4 max-w-sm mx-4">
+            <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-red-600 border-t-transparent"></div>
+            <div className="text-center">
+              <p className="text-base sm:text-lg font-semibold text-gray-800">
+                {uploadingExcel || uploadingGlobalExcel ? 'Memproses file...' : 'Menyimpan data...'}
+              </p>
+              <p className="text-xs sm:text-sm text-gray-500 mt-1">Mohon tunggu sebentar</p>
             </div>
           </div>
         </div>
