@@ -177,14 +177,6 @@ export default function MonitoringAccrualPage() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Debounce search term for performance
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchTerm(searchTerm);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
   // Load user role from localStorage
   useEffect(() => {
     const role = localStorage.getItem('userRole') || '';
