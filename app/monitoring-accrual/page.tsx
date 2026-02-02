@@ -1749,7 +1749,7 @@ export default function MonitoringAccrualPage() {
                     const allItems = Object.values(vendorGroups).flat();
                     
                     // Calculate totals using optimized helper functions
-                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + (item.amount || 0), 0);
+                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
                     const totalAccrualKodeAkun = allItems.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
                     const totalRealisasiKodeAkun = allItems.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
                     const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun;
@@ -1802,7 +1802,7 @@ export default function MonitoringAccrualPage() {
                           const isVendorExpanded = expandedVendor.has(vendorKey);
                           
                           // Calculate totals using optimized helper functions
-                          const totalAmountVendor = items.reduce((sum, item) => sum + (item.amount || 0), 0);
+                          const totalAmountVendor = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
                           const totalAccrualVendor = items.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
                           const totalRealisasiVendor = items.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
                           const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor;
