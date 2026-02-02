@@ -1732,7 +1732,6 @@ export default function MonitoringAccrualPage() {
                       Saldo
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap"></th>
                       Actions
                     </th>
                   </tr>
