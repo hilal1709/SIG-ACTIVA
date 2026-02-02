@@ -2,11 +2,32 @@
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload, ChevronDown } from 'lucide-react';
-import Sidebar from '../components/Sidebar';
-import Header from '../components/Header';
+import dynamic from 'next/dynamic';
 import { exportToCSV } from '../utils/exportUtils';
-import * as XLSX from 'xlsx';
-import ExcelJS from 'exceljs';
+
+// Lazy load components yang tidak critical untuk initial render
+const Sidebar = dynamic(() => import('../components/Sidebar'), { 
+  ssr: false,
+  loading: () => <div className="w-64 bg-gray-900 animate-pulse" />
+});
+const Header = dynamic(() => import('../components/Header'), {
+  ssr: false,
+  loading: () => <div className="h-20 bg-white border-b animate-pulse" />
+});
+
+// Lazy load Excel libraries untuk mengurangi bundle size awal
+let XLSX: any = null;
+let ExcelJS: any = null;
+
+const loadExcelLibraries = async () => {
+  if (!XLSX) {
+    XLSX = (await import('xlsx')).default;
+  }
+  if (!ExcelJS) {
+    ExcelJS = (await import('exceljs')).default;
+  }
+  return { XLSX, ExcelJS };
+};
 
 // Mapping Kode Akun dan Klasifikasi
 const KODE_AKUN_KLASIFIKASI: Record<string, string[]> = {
@@ -228,24 +249,29 @@ export default function MonitoringAccrualPage() {
     }).format(amount);
   }, []);
 
-  // Calculate totals
-  const totalAccrual = accrualData.reduce((sum, item) => sum + item.totalAmount, 0);
-  const totalPeriodes = accrualData.reduce((sum, item) => sum + (item.periodes?.length || 0), 0);
+  // Calculate totals (optimized with useMemo)
+  const totalAccrual = useMemo(() => {
+    return accrualData.reduce((sum, item) => sum + item.totalAmount, 0);
+  }, [accrualData]);
+  
+  const totalPeriodes = useMemo(() => {
+    return accrualData.reduce((sum, item) => sum + (item.periodes?.length || 0), 0);
+  }, [accrualData]);
 
-  // Filter data (optimized with debounced search)
+  // Filter data (optimized with debounced search and cached toLowerCase)
   const filteredData = useMemo(() => {
+    if (debouncedSearchTerm === '') return accrualData;
+    
+    const searchLower = debouncedSearchTerm.toLowerCase();
     return accrualData.filter(item => {
-      const matchesSearch = debouncedSearchTerm === '' || 
-        item.kdAkr.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        item.kdAkunBiaya.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        item.vendor.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        item.deskripsi.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
-      
-      return matchesSearch;
+      return item.kdAkr.toLowerCase().includes(searchLower) ||
+        item.kdAkunBiaya.toLowerCase().includes(searchLower) ||
+        item.vendor.toLowerCase().includes(searchLower) ||
+        item.deskripsi.toLowerCase().includes(searchLower);
     });
   }, [accrualData, debouncedSearchTerm]);
 
-  // Group data by kode akun accrual, then by vendor
+  // Group data by kode akun accrual, then by vendor (dengan pre-calculated totals)
   const groupedByKodeAkun = useMemo(() => {
     const groups: Record<string, Record<string, Accrual[]>> = {};
     filteredData.forEach(item => {
@@ -260,21 +286,36 @@ export default function MonitoringAccrualPage() {
     return groups;
   }, [filteredData]);
 
+  // Pre-calculate totals untuk setiap item (cache untuk performa)
+  const itemTotalsCache = useMemo(() => {
+    const cache = new Map<number, { accrual: number; realisasi: number }>();
+    filteredData.forEach(item => {
+      cache.set(item.id, {
+        accrual: calculateItemAccrual(item),
+        realisasi: calculateItemRealisasi(item)
+      });
+    });
+    return cache;
+  }, [filteredData, calculateItemAccrual, calculateItemRealisasi]);
+
   const handleExport = () => {
     const headers = ['kdAkr', 'namaAkun', 'vendor', 'deskripsi', 'amount', 'accrDate', 'status'];
     exportToCSV(filteredData, 'Monitoring_Accrual.csv', headers);
   };
 
   const handleDownloadAllItemsReport = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Detail All Accruals');
+    try {
+      // Load ExcelJS on demand
+      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+      const workbook = new ExcelJSLib.Workbook();
+      const worksheet = workbook.addWorksheet('Detail All Accruals');
     
     // Headers
     worksheet.getRow(1).height = 30;
     const headers = ['KODE AKUN', 'KLASIFIKASI', 'PEKERJAAN', 'VENDOR', 'PO/PR', 'ORDER', 'KETERANGAN', 'NILAI PO', 'DOC DATE', 'DELIV DATE', 'OUSTANDING'];
     
     worksheet.getRow(1).values = headers;
-    worksheet.getRow(1).eachCell((cell) => {
+    worksheet.getRow(1).eachCell((cell: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -394,10 +435,17 @@ export default function MonitoringAccrualPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('Gagal membuat laporan. Silakan coba lagi.');
+    }
   };
 
   const handleDownloadGlobalReport = async () => {
-    const workbook = new ExcelJS.Workbook();
+    try {
+      // Load ExcelJS on demand
+      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+      const workbook = new ExcelJSLib.Workbook();
     const worksheet = workbook.addWorksheet('Rekap Akrual');
     
     // Title - "Kebutuhan lain rekon akru utang AU exclude 21600001 dan 21600020 (SDM)"
@@ -417,7 +465,7 @@ export default function MonitoringAccrualPage() {
     const headers = ['GL ACCOUNT', 'VENDOR', 'SUM OF AMOUNT IN LOC. CURR.'];
     
     worksheet.getRow(2).values = headers;
-    worksheet.getRow(2).eachCell((cell) => {
+    worksheet.getRow(2).eachCell((cell: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -603,16 +651,24 @@ export default function MonitoringAccrualPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating global report:', error);
+      alert('Gagal membuat laporan global. Silakan coba lagi.');
+    }
   };
 
   const handleDownloadJurnalSAPPerItem = async (item: Accrual, filterCompanyCode: string) => {
-    // Filter by company code
-    if (item.companyCode !== filterCompanyCode) {
-      alert(`Item ini menggunakan company code ${item.companyCode}, tidak bisa didownload untuk company code ${filterCompanyCode}`);
-      return;
-    }
-    
-    const workbook = new ExcelJS.Workbook();
+    try {
+      // Load ExcelJS on demand
+      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+      
+      // Filter by company code
+      if (item.companyCode !== filterCompanyCode) {
+        alert(`Item ini menggunakan company code ${item.companyCode}, tidak bisa didownload untuk company code ${filterCompanyCode}`);
+        return;
+      }
+      
+      const workbook = new ExcelJSLib.Workbook();
     const worksheet = workbook.addWorksheet('Jurnal SAP');
     
     // Headers row 1 (field names)
@@ -626,7 +682,7 @@ export default function MonitoringAccrualPage() {
     const yellowColumns = [7, 9, 13, 16, 17, 18];
     
     worksheet.getRow(1).values = headers1;
-    worksheet.getRow(1).eachCell((cell, colNumber) => {
+    worksheet.getRow(1).eachCell((cell: any, colNumber: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -645,7 +701,7 @@ export default function MonitoringAccrualPage() {
     ];
     
     worksheet.getRow(2).values = headers2;
-    worksheet.getRow(2).eachCell((cell, colNumber) => {
+    worksheet.getRow(2).eachCell((cell: any, colNumber: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -797,6 +853,10 @@ export default function MonitoringAccrualPage() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     }
+    } catch (error) {
+      console.error('Error generating Jurnal SAP:', error);
+      alert('Gagal membuat jurnal SAP. Silakan coba lagi.');
+    }
   };
 
   const handleDownloadJurnalSAPTxt = (item: Accrual, filterCompanyCode: string) => {
@@ -903,7 +963,7 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
     // If kode akun changes, reset klasifikasi
@@ -925,7 +985,7 @@ export default function MonitoringAccrualPage() {
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
-  };
+  }, [formData.jumlahPeriode]);
 
   const handlePeriodeAmountChange = (index: number, value: string) => {
     setFormData(prev => {
@@ -935,7 +995,7 @@ export default function MonitoringAccrualPage() {
     });
   };
 
-  const handleEdit = (item: Accrual) => {
+  const handleEdit = useCallback((item: Accrual) => {
     setEditingId(item.id);
     
     // Get periodeAmounts if manual type
@@ -961,9 +1021,9 @@ export default function MonitoringAccrualPage() {
       periodeAmounts: periodeAmounts,
     });
     setShowModal(true);
-  };
+  }, []);
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = useCallback(async (id: number) => {
     if (!confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
 
     try {
@@ -979,7 +1039,7 @@ export default function MonitoringAccrualPage() {
       console.error('Error deleting accrual:', error);
       alert('Gagal menghapus data');
     }
-  };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1079,14 +1139,17 @@ export default function MonitoringAccrualPage() {
 
     setUploadingExcel(true);
     try {
+      // Load XLSX on demand
+      const { XLSX: XLSXLib } = await loadExcelLibraries();
+      
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
           const data = event.target?.result;
-          const workbook = XLSX.read(data, { type: 'binary' });
+          const workbook = XLSXLib.read(data, { type: 'binary' });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          const jsonData: any[][] = XLSXLib.utils.sheet_to_json(worksheet, { header: 1 });
 
           // Skip header row (index 0) and process data rows
           const successCount = [];
@@ -1277,14 +1340,17 @@ export default function MonitoringAccrualPage() {
 
     setUploadingGlobalExcel(true);
     try {
+      // Load XLSX on demand
+      const { XLSX: XLSXLib } = await loadExcelLibraries();
+      
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
           const data = event.target?.result;
-          const workbook = XLSX.read(data, { type: 'binary' });
+          const workbook = XLSXLib.read(data, { type: 'binary' });
           const sheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[sheetName];
-          const jsonData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          const jsonData: any[][] = XLSXLib.utils.sheet_to_json(worksheet, { header: 1 });
 
           let successCount = 0;
           let errorCount = 0;
@@ -1445,10 +1511,10 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = useCallback((dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
-  };
+  }, []);
 
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
@@ -1665,10 +1731,16 @@ export default function MonitoringAccrualPage() {
                     const isKodeAkunExpanded = expandedKodeAkun.has(kodeAkun);
                     const allItems = Object.values(vendorGroups).flat();
                     
-                    // Calculate totals using optimized helper functions
+                    // Calculate totals using cache untuk performa lebih baik
                     const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
-                    const totalAccrualKodeAkun = allItems.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
-                    const totalRealisasiKodeAkun = allItems.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
+                    const totalAccrualKodeAkun = allItems.reduce((sum, item) => {
+                      const cached = itemTotalsCache.get(item.id);
+                      return sum + (cached?.accrual || 0);
+                    }, 0);
+                    const totalRealisasiKodeAkun = allItems.reduce((sum, item) => {
+                      const cached = itemTotalsCache.get(item.id);
+                      return sum + (cached?.realisasi || 0);
+                    }, 0);
                     const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun;
 
                     return (
@@ -1718,10 +1790,16 @@ export default function MonitoringAccrualPage() {
                           const vendorKey = `${kodeAkun}-${vendor}`;
                           const isVendorExpanded = expandedVendor.has(vendorKey);
                           
-                          // Calculate totals using optimized helper functions
+                          // Calculate totals using cache untuk performa
                           const totalAmountVendor = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
-                          const totalAccrualVendor = items.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
-                          const totalRealisasiVendor = items.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
+                          const totalAccrualVendor = items.reduce((sum, item) => {
+                            const cached = itemTotalsCache.get(item.id);
+                            return sum + (cached?.accrual || 0);
+                          }, 0);
+                          const totalRealisasiVendor = items.reduce((sum, item) => {
+                            const cached = itemTotalsCache.get(item.id);
+                            return sum + (cached?.realisasi || 0);
+                          }, 0);
                           const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor;
 
                           return (

@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user - user yang dibuat admin langsung approved
+    // Create user - user yang dibuat admin langsung approved dan emailVerified
     const user = await prisma.user.create({
       data: {
         username,
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
         name,
         role,
         isApproved: true, // Admin yang buat user langsung approved
+        emailVerified: true, // Email langsung terverifikasi karena dibuat oleh admin
       },
       select: {
         id: true,
