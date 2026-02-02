@@ -582,7 +582,7 @@ export default function MonitoringPrepaidPage() {
       <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
         isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
-        <Sidebar />
+        <Sidebar onClose={() => setIsMobileSidebarOpen(false)} />
       </div>
 
       {/* Mobile Menu Button */}
@@ -703,7 +703,7 @@ export default function MonitoringPrepaidPage() {
                 <p className="text-gray-500">Memuat data...</p>
               </div>
             ) : (
-              <div className="overflow-x-auto max-w-full bg-white custom-scrollbar" style={{ maxHeight: 'calc(100vh - 400px)' }}>
+              <div className="overflow-x-auto max-w-full bg-white custom-scrollbar" style={{ maxHeight: 'calc(100vh - 400px)', width: '100%' }}>
                 <table className="w-full text-sm bg-white min-w-max">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>

@@ -145,7 +145,7 @@ export default function DashboardPage() {
       <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
         isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
-        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+        <Sidebar onClose={() => setIsMobileSidebarOpen(false)} />
       </div>
 
       {/* Mobile Menu Button */}

@@ -232,7 +232,7 @@ export default function UserManagementPage() {
         <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
           isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}>
-          <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+          <Sidebar onClose={() => setIsMobileSidebarOpen(false)} />
         </div>
 
         {/* Mobile Menu Button */}
@@ -246,7 +246,7 @@ export default function UserManagementPage() {
         </button>
         
         {/* Main Content */}
-        <div className="flex-1 bg-gradient-to-br from-red-50 to-gray-100 lg:ml-64">
+        <div className="flex-1 bg-gradient-to-br from-red-50 to-gray-100 lg:ml-64 overflow-x-hidden">
           {/* Header */}
           <Header 
             title="User Management" 
@@ -295,7 +295,7 @@ export default function UserManagementPage() {
                 {isLoading ? (
                   <TableSkeleton />
                 ) : (
-                  <div className="overflow-x-auto custom-scrollbar">
+                  <div className="overflow-x-auto custom-scrollbar" style={{ maxWidth: '100%' }}>
                     <table className="w-full min-w-[640px]">
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>

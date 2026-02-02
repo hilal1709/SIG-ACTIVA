@@ -1477,7 +1477,7 @@ export default function MonitoringAccrualPage() {
       <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
         isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
-        <Sidebar />
+        <Sidebar onClose={() => setIsMobileSidebarOpen(false)} />
       </div>
 
       {/* Mobile Menu Button */}
@@ -1583,7 +1583,7 @@ export default function MonitoringAccrualPage() {
           </div>
 
           {/* Table */}
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden" style={{ maxWidth: '100%' }}>
             <style jsx>{`
               .custom-scrollbar::-webkit-scrollbar {
                 height: 10px;
@@ -1600,7 +1600,7 @@ export default function MonitoringAccrualPage() {
                 background: #94a3b8;
               }
             `}</style>
-            <div className="overflow-x-auto custom-scrollbar" style={{ maxWidth: '100%' }}>
+            <div className="overflow-x-auto custom-scrollbar" style={{ maxWidth: '100%', width: '100%' }}>
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
