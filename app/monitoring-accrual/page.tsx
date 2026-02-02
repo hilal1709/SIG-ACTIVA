@@ -1981,9 +1981,9 @@ export default function MonitoringAccrualPage() {
                                   <tbody className="bg-white divide-y divide-gray-200">
                                     {item.periodes.map((periode) => (
                                       <tr key={periode.id} className="hover:bg-gray-50">
-                                        <td className="px-3 py-2 text-gray-700">Periode {periode.periodeKe}</td>
-                                        <td className="px-3 py-2 text-gray-700">{periode.bulan}</td>
-                                        <td className="px-3 py-2 text-right text-gray-800 font-medium">
+                                        <td className="px-3 py-2 text-gray-700 bg-white">Periode {periode.periodeKe}</td>
+                                        <td className="px-3 py-2 text-gray-700 bg-white">{periode.bulan}</td>
+                                        <td className="px-3 py-2 text-right text-gray-800 font-medium bg-white">
                                           {editingPeriodeId === periode.id ? (
                                             <div className="flex items-center gap-1">
                                               <input
@@ -2031,13 +2031,13 @@ export default function MonitoringAccrualPage() {
                                             </div>
                                           )}
                                         </td>
-                                        <td className="px-3 py-2 text-right text-blue-700">
+                                        <td className="px-3 py-2 text-right text-blue-700 bg-white">
                                           {formatCurrency(periode.totalRealisasi || 0)}
                                         </td>
-                                        <td className="px-3 py-2 text-right text-gray-800 font-semibold">
+                                        <td className="px-3 py-2 text-right text-gray-800 font-semibold bg-white">
                                           {formatCurrency(periode.saldo || periode.amountAccrual)}
                                         </td>
-                                        <td className="px-3 py-2 text-center">
+                                        <td className="px-3 py-2 text-center bg-white">
                                           <button
                                             onClick={() => handleOpenRealisasiModal(periode)}
                                             className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
