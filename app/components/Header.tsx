@@ -35,6 +35,7 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
     // Get user info from localStorage
     const username = localStorage.getItem('username') || 'User';
     const role = localStorage.getItem('userRole') || '';
+    console.log('Header - Username:', username, 'Role:', role);
     setUserName(username);
     setUserRole(role);
 
@@ -287,9 +288,13 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
             onClick={() => setShowLogout(!showLogout)}
             className="flex items-center gap-2 md:gap-3 hover:bg-gray-50 rounded-lg px-2 md:px-3 py-2 transition-colors"
           >
-            <div className="text-right hidden md:block">
+            <div className="text-right">
               <p className="text-sm font-medium text-gray-800">{userName}</p>
-              {userRole && <p className="text-xs text-gray-500">{userRole.replace('_', ' ')}</p>}
+              {userRole && (
+                <p className="text-xs text-gray-500 font-medium">
+                  {userRole.replace('_', ' ').replace('ADMIN', 'Admin').replace('STAFF', 'Staff').replace('SUPERVISOR', 'Supervisor').replace('AUDITOR', 'Auditor')}
+                </p>
+              )}
             </div>
             <div className="w-8 h-8 md:w-10 md:h-10 bg-red-600 rounded-full flex items-center justify-center">
               <User size={16} className="md:w-5 md:h-5 text-white" />
@@ -298,10 +303,21 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
 
           {/* Logout Dropdown */}
           {showLogout && (
-            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+            <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+              {/* User Info Section */}
+              <div className="px-4 py-3 border-b border-gray-200">
+                <p className="text-sm font-semibold text-gray-800 truncate">{userName}</p>
+                {userRole && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    {userRole.replace('_', ' ').replace('ADMIN', 'Admin').replace('STAFF', 'Staff').replace('SUPERVISOR', 'Supervisor').replace('AUDITOR', 'Auditor')}
+                  </p>
+                )}
+              </div>
+              
+              {/* Logout Button */}
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+                className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors mt-1"
               >
                 <LogOut size={16} />
                 <span>Logout</span>

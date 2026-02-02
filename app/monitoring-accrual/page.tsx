@@ -125,6 +125,7 @@ export default function MonitoringAccrualPage() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [userRole, setUserRole] = useState<string>('');
+  const [isRoleLoaded, setIsRoleLoaded] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number | string>>(new Set());
   const [expandedKodeAkun, setExpandedKodeAkun] = useState<Set<string>>(new Set());
   const [expandedVendor, setExpandedVendor] = useState<Set<string>>(new Set());
@@ -187,11 +188,20 @@ export default function MonitoringAccrualPage() {
   // Load user role from localStorage
   useEffect(() => {
     const role = localStorage.getItem('userRole') || '';
+    console.log('User Role loaded:', role);
     setUserRole(role);
+    setIsRoleLoaded(true);
   }, []);
 
   // Check if user can edit (only ADMIN_SYSTEM and STAFF_ACCOUNTING)
   const canEdit = userRole === 'ADMIN_SYSTEM' || userRole === 'STAFF_ACCOUNTING';
+  
+  // Debug log untuk memastikan nilai
+  useEffect(() => {
+    if (isRoleLoaded) {
+      console.log('Can Edit:', canEdit, 'User Role:', userRole);
+    }
+  }, [canEdit, userRole, isRoleLoaded]);
 
   // Helper function to calculate accrual (memoized for better performance)
   const calculateItemAccrual = useCallback((item: Accrual) => {
