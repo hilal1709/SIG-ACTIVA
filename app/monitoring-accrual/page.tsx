@@ -1696,9 +1696,35 @@ export default function MonitoringAccrualPage() {
                     const isKodeAkunExpanded = expandedKodeAkun.has(kodeAkun);
                     const allItems = Object.values(vendorGroups).flat();
                     const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + item.totalAmount, 0);
+                    
+                    // Calculate total accrual for kode akun
+                    const totalAccrualKodeAkun = allItems.reduce((sum, item) => {
+                      const itemAccrual = item.periodes?.reduce((pSum, p) => {
+                        if (item.pembagianType === 'manual') {
+                          return pSum + p.amountAccrual;
+                        }
+                        const [bulanName, tahunStr] = p.bulan.split(' ');
+                        const bulanMap: Record<string, number> = {
+                          'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                          'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+                        };
+                        const periodeBulan = bulanMap[bulanName];
+                        const periodeTahun = parseInt(tahunStr);
+                        const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+                        const today = new Date();
+                        if (today >= periodeDate) {
+                          return pSum + p.amountAccrual;
+                        }
+                        return pSum;
+                      }, 0) || 0;
+                      return sum + itemAccrual;
+                    }, 0);
+                    
                     const totalRealisasiKodeAkun = allItems.reduce((sum, item) => {
                       return sum + (item.periodes?.reduce((pSum, p) => pSum + (p.totalRealisasi || 0), 0) || 0);
                     }, 0);
+                    
+                    const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun;
 
                     return (
                       <React.Fragment key={kodeAkun}>
@@ -1727,9 +1753,15 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
-                          <td className="px-4 py-3 bg-blue-50"></td>
-                          <td className="px-4 py-3 bg-blue-50"></td>
-                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalAccrualKodeAkun)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalRealisasiKodeAkun)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalSaldoKodeAkun)}
+                          </td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                         </tr>
@@ -1739,9 +1771,35 @@ export default function MonitoringAccrualPage() {
                           const vendorKey = `${kodeAkun}-${vendor}`;
                           const isVendorExpanded = expandedVendor.has(vendorKey);
                           const totalAmountVendor = items.reduce((sum, item) => sum + item.totalAmount, 0);
+                          
+                          // Calculate total accrual for vendor
+                          const totalAccrualVendor = items.reduce((sum, item) => {
+                            const itemAccrual = item.periodes?.reduce((pSum, p) => {
+                              if (item.pembagianType === 'manual') {
+                                return pSum + p.amountAccrual;
+                              }
+                              const [bulanName, tahunStr] = p.bulan.split(' ');
+                              const bulanMap: Record<string, number> = {
+                                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+                              };
+                              const periodeBulan = bulanMap[bulanName];
+                              const periodeTahun = parseInt(tahunStr);
+                              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+                              const today = new Date();
+                              if (today >= periodeDate) {
+                                return pSum + p.amountAccrual;
+                              }
+                              return pSum;
+                            }, 0) || 0;
+                            return sum + itemAccrual;
+                          }, 0);
+                          
                           const totalRealisasiVendor = items.reduce((sum, item) => {
                             return sum + (item.periodes?.reduce((pSum, p) => pSum + (p.totalRealisasi || 0), 0) || 0);
                           }, 0);
+                          
+                          const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor;
 
                           return (
                             <React.Fragment key={vendorKey}>
@@ -1770,9 +1828,15 @@ export default function MonitoringAccrualPage() {
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
-                                <td className="px-4 py-3 bg-green-50"></td>
-                                <td className="px-4 py-3 bg-green-50"></td>
-                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalAccrualVendor)}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalRealisasiVendor)}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalSaldoVendor)}
+                                </td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                               </tr>
