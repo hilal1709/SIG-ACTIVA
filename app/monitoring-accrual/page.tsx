@@ -348,6 +348,137 @@ export default function MonitoringAccrualPage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadAllItemsReport = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Detail All Accruals');
+    
+    // Headers
+    worksheet.getRow(1).height = 30;
+    const headers = ['KODE AKUN', 'KLASIFIKASI', 'PEKERJAAN', 'VENDOR', 'PO/PR', 'ORDER', 'KETERANGAN', 'NILAI PO', 'DOC DATE', 'DELIV DATE', 'OUSTANDING'];
+    
+    worksheet.getRow(1).values = headers;
+    worksheet.getRow(1).eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF404040' }
+      };
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      };
+    });
+    
+    // Column widths
+    worksheet.columns = [
+      { width: 12 },  // KODE AKUN
+      { width: 15 },  // KLASIFIKASI
+      { width: 12 },  // PEKERJAAN
+      { width: 35 },  // VENDOR
+      { width: 15 },  // PO/PR
+      { width: 15 },  // ORDER
+      { width: 45 },  // KETERANGAN
+      { width: 15 },  // NILAI PO
+      { width: 12 },  // DOC DATE
+      { width: 12 },  // DELIV DATE
+      { width: 15 }   // OUSTANDING
+    ];
+    
+    let currentRow = 2;
+    
+    // Loop through all items
+    Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
+      Object.entries(vendorGroups).forEach(([vendor, items]) => {
+        items.forEach((item) => {
+          // Calculate total outstanding for this item
+          const totalAccrual = item.periodes?.reduce((sum, p) => {
+            if (item.pembagianType === 'manual') {
+              return sum + p.amountAccrual;
+            }
+            
+            const [bulanName, tahunStr] = p.bulan.split(' ');
+            const bulanMap: Record<string, number> = {
+              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+            };
+            const periodeBulan = bulanMap[bulanName];
+            const periodeTahun = parseInt(tahunStr);
+            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+            const today = new Date();
+            if (today >= periodeDate) {
+              return sum + p.amountAccrual;
+            }
+            return sum;
+          }, 0) || 0;
+          
+          const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+          const totalOutstanding = totalAccrual - totalRealisasi;
+          
+          const row = worksheet.getRow(currentRow);
+          
+          row.getCell(1).value = item.kdAkr;
+          row.getCell(2).value = item.klasifikasi?.toUpperCase() || 'TRANSPORTATION';
+          row.getCell(3).value = item.klasifikasi || 'OA';
+          row.getCell(4).value = item.vendor;
+          row.getCell(5).value = item.noPo || '';
+          row.getCell(6).value = item.alokasi || '';
+          row.getCell(7).value = item.deskripsi;
+          row.getCell(8).value = item.totalAmount;
+          row.getCell(8).numFmt = '#,##0.000';
+          
+          // DOC DATE
+          const docDate = new Date(item.startDate);
+          row.getCell(9).value = `${docDate.getDate().toString().padStart(2, '0')}/${(docDate.getMonth() + 1).toString().padStart(2, '0')}/${docDate.getFullYear()}`;
+          
+          // DELIV DATE
+          const endDate = new Date(item.startDate);
+          endDate.setMonth(endDate.getMonth() + item.jumlahPeriode);
+          row.getCell(10).value = `${endDate.getDate().toString().padStart(2, '0')}/${(endDate.getMonth() + 1).toString().padStart(2, '0')}/${endDate.getFullYear()}`;
+          
+          // OUTSTANDING
+          row.getCell(11).value = totalOutstanding;
+          row.getCell(11).numFmt = '#,##0.000';
+          
+          // Apply borders and styling
+          for (let col = 1; col <= 11; col++) {
+            const cell = row.getCell(col);
+            cell.border = {
+              top: { style: 'thin' },
+              left: { style: 'thin' },
+              bottom: { style: 'thin' },
+              right: { style: 'thin' }
+            };
+            
+            if (col === 8 || col === 11) {
+              cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            } else {
+              cell.alignment = { horizontal: 'left', vertical: 'middle' };
+            }
+          }
+          
+          currentRow++;
+        });
+      });
+    });
+    
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { 
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Detail_All_Accruals_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleDownloadGlobalReport = async () => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Rekap Akrual');
@@ -1471,6 +1602,13 @@ export default function MonitoringAccrualPage() {
                     >
                       <Upload size={18} />
                       Import Realisasi Global
+                    </button>
+                    <button 
+                      onClick={handleDownloadAllItemsReport}
+                      className="flex items-center gap-2 bg-red-600 hover:bg-red-700 !text-white px-4 py-2 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      <Download size={18} />
+                      Export Per Item (All)
                     </button>
                     <button 
                       onClick={handleDownloadGlobalReport}
