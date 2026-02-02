@@ -1491,7 +1491,7 @@ export default function MonitoringAccrualPage() {
       </button>
 
       {/* Main Content */}
-      <div className="flex-1 bg-gray-50 lg:ml-64">
+      <div className="flex-1 bg-gray-50 lg:ml-64 overflow-x-hidden">
         {/* Content area - no z-index needed as overlay is conditionally rendered */}
         
         {/* Header */}

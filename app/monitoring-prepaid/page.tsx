@@ -596,7 +596,7 @@ export default function MonitoringPrepaidPage() {
       </button>
 
       {/* Main Content */}
-      <div className="flex-1 bg-gray-50 lg:ml-64">
+      <div className="flex-1 bg-gray-50 lg:ml-64 overflow-x-hidden">
         {/* Header */}
         <Header
           title="Monitoring Prepaid"
