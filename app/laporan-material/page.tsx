@@ -228,6 +228,62 @@ export default function LaporanMaterialPage() {
         item.materialName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.location?.toLowerCase().includes(searchTerm.toLowerCase());
       
+      // Filter by Selisih - when 'all', show everything, when 'ada selisih', apply percentage logic
+      let matchesSelisih = true;
+      if (selectedSelisih === 'ada selisih') {
+        // Calculate percentage difference for stok awal and stok akhir
+        const stokAwalPercentage = (item.stokAwal?.opr || 0) !== 0 
+          ? Math.abs((item.stokAwal?.selisih || 0) / (item.stokAwal?.opr || 0)) * 100 
+          : 0;
+        const stokAkhirPercentage = (item.stokAkhir?.opr || 0) !== 0 
+          ? Math.abs((item.stokAkhir?.selisih || 0) / (item.stokAkhir?.opr || 0)) * 100 
+          : 0;
+        
+        // Only show items with >5% difference in stok awal OR stok akhir
+        matchesSelisih = stokAwalPercentage > 5 || stokAkhirPercentage > 5;
+      }
+      // If selectedSelisih === 'all', matchesSelisih stays true (show all data)
+      
+      // If selisih filter is 'all', skip other selisih-based filtering logic
+      if (selectedSelisih === 'all') {
+        // Simple filters without selisih checks
+        let matchesLokasi = selectedLokasi === 'All' || item.location === selectedLokasi;
+        
+        let matchesFasilitas = true;
+        if (selectedFasilitas !== 'all') {
+          const locationLower = (item.location || '').toLowerCase();
+          if (selectedFasilitas === 'pabrik') {
+            matchesFasilitas = locationLower.includes('pl') || locationLower.includes('cp');
+          } else if (selectedFasilitas === 'gudang') {
+            matchesFasilitas = !locationLower.includes('pl') && !locationLower.includes('cp');
+          }
+        }
+        
+        let matchesKategori = true;
+        if (selectedKategori !== 'all') {
+          if (selectedKategori === 'stok awal') {
+            matchesKategori = Math.abs(item.stokAwal?.selisih || 0) >= 1;
+          } else if (selectedKategori === 'produksi') {
+            matchesKategori = Math.abs(item.produksi?.selisih || 0) >= 1;
+          } else if (selectedKategori === 'rilis') {
+            matchesKategori = Math.abs(item.rilis?.selisih || 0) >= 1;
+          } else if (selectedKategori === 'stok akhir') {
+            matchesKategori = Math.abs(item.stokAkhir?.selisih || 0) >= 1;
+          }
+        } else {
+          // When kategori = 'all' and selisih = 'all', check if ANY category has selisih >= 1
+          matchesKategori = (
+            Math.abs(item.stokAwal?.selisih || 0) >= 1 ||
+            Math.abs(item.produksi?.selisih || 0) >= 1 ||
+            Math.abs(item.rilis?.selisih || 0) >= 1 ||
+            Math.abs(item.stokAkhir?.selisih || 0) >= 1
+          );
+        }
+        
+        return matchesSearch && matchesLokasi && matchesFasilitas && matchesKategori;
+      }
+      
+      // When selisih filter is 'ada selisih', apply OPR checks
       // Filter by Lokasi - when specific location is selected, also check for valid selisih
       let matchesLokasi = true;
       if (selectedLokasi !== 'All') {
@@ -281,22 +337,6 @@ export default function LaporanMaterialPage() {
           (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
         );
       }
-      
-      // Filter by Selisih (check based on selected category)
-      let matchesSelisih = true;
-      if (selectedSelisih === 'ada selisih') {
-        // Calculate percentage difference for stok awal and stok akhir
-        const stokAwalPercentage = (item.stokAwal?.opr || 0) !== 0 
-          ? Math.abs((item.stokAwal?.selisih || 0) / (item.stokAwal?.opr || 0)) * 100 
-          : 0;
-        const stokAkhirPercentage = (item.stokAkhir?.opr || 0) !== 0 
-          ? Math.abs((item.stokAkhir?.selisih || 0) / (item.stokAkhir?.opr || 0)) * 100 
-          : 0;
-        
-        // Only show items with >5% difference in stok awal OR stok akhir
-        matchesSelisih = stokAwalPercentage > 5 || stokAkhirPercentage > 5;
-      }
-      // If selectedSelisih === 'all', matchesSelisih stays true (show all data)
       
       return matchesSearch && matchesLokasi && matchesFasilitas && matchesKategori && matchesSelisih;
     });

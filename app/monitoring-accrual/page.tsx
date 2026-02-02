@@ -1556,16 +1556,6 @@ export default function MonitoringAccrualPage() {
         <Sidebar onClose={() => setIsMobileSidebarOpen(false)} />
       </div>
 
-      {/* Mobile Menu Button */}
-      <button
-        onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
-      >
-        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-
       {/* Main Content */}
       <div className="flex-1 bg-gray-50 lg:ml-64 overflow-x-hidden">
         {/* Content area - no z-index needed as overlay is conditionally rendered */}
@@ -1574,6 +1564,7 @@ export default function MonitoringAccrualPage() {
         <Header
           title="Monitoring Accrual"
           subtitle="Monitoring dan input data accrual dengan export laporan SAP"
+          onMenuClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
 
         {/* Content Area */}
