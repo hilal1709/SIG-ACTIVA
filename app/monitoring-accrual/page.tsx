@@ -1763,6 +1763,7 @@ export default function MonitoringAccrualPage() {
                                   {formatCurrency(totalSaldoVendor)}
                                 </td>
                                 <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
                               </tr>
 
                               {/* Klasifikasi Items */}

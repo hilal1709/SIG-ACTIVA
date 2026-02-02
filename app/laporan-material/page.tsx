@@ -285,28 +285,18 @@ export default function LaporanMaterialPage() {
       // Filter by Selisih (check based on selected category)
       let matchesSelisih = true;
       if (selectedSelisih === 'ada selisih') {
-        if (selectedKategori === 'stok awal') {
-          // When filtering by stok awal category, only check stok awal selisih
-          matchesSelisih = Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0;
-        } else if (selectedKategori === 'produksi') {
-          // When filtering by produksi category, only check produksi selisih
-          matchesSelisih = Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0;
-        } else if (selectedKategori === 'rilis') {
-          // When filtering by rilis category, only check rilis selisih
-          matchesSelisih = Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0;
-        } else if (selectedKategori === 'stok akhir') {
-          // When filtering by stok akhir category, only check stok akhir selisih
-          matchesSelisih = Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0;
-        } else {
-          // When kategori = 'all', check ANY category has selisih
-          matchesSelisih = (
-            (Math.abs(item.stokAwal?.selisih || 0) >= 1 && (item.stokAwal?.opr || 0) !== 0) ||
-            (Math.abs(item.produksi?.selisih || 0) >= 1 && (item.produksi?.opr || 0) !== 0) ||
-            (Math.abs(item.rilis?.selisih || 0) >= 1 && (item.rilis?.opr || 0) !== 0) ||
-            (Math.abs(item.stokAkhir?.selisih || 0) >= 1 && (item.stokAkhir?.opr || 0) !== 0)
-          );
-        }
+        // Calculate percentage difference for stok awal and stok akhir
+        const stokAwalPercentage = (item.stokAwal?.opr || 0) !== 0 
+          ? Math.abs((item.stokAwal?.selisih || 0) / (item.stokAwal?.opr || 0)) * 100 
+          : 0;
+        const stokAkhirPercentage = (item.stokAkhir?.opr || 0) !== 0 
+          ? Math.abs((item.stokAkhir?.selisih || 0) / (item.stokAkhir?.opr || 0)) * 100 
+          : 0;
+        
+        // Only show items with >5% difference in stok awal OR stok akhir
+        matchesSelisih = stokAwalPercentage > 5 || stokAkhirPercentage > 5;
       }
+      // If selectedSelisih === 'all', matchesSelisih stays true (show all data)
       
       return matchesSearch && matchesLokasi && matchesFasilitas && matchesKategori && matchesSelisih;
     });
@@ -451,7 +441,6 @@ export default function LaporanMaterialPage() {
                 >
                   {historyDates.map((date, index) => (
                     <option key={date} value={date}>
-                      {index === 0 ? '📌 ' : ''}
                       {new Date(date).toLocaleString('id-ID', {
                         day: '2-digit',
                         month: 'short',
