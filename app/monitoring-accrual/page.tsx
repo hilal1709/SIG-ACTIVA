@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload, ChevronDown } from 'lucide-react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
@@ -95,6 +95,7 @@ interface RealisasiData {
 
 export default function MonitoringAccrualPage() {
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('All');
   const [filterType, setFilterType] = useState('All');
   const [accrualData, setAccrualData] = useState<Accrual[]>([]);
@@ -161,6 +162,22 @@ export default function MonitoringAccrualPage() {
     };
   }, []);
 
+  // Debounce search term for better performance
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Debounce search term for performance
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   // Load user role from localStorage
   useEffect(() => {
     const role = localStorage.getItem('userRole') || '';
@@ -169,6 +186,33 @@ export default function MonitoringAccrualPage() {
 
   // Check if user can edit (only ADMIN_SYSTEM and STAFF_ACCOUNTING)
   const canEdit = userRole === 'ADMIN_SYSTEM' || userRole === 'STAFF_ACCOUNTING';
+
+  // Helper function to calculate accrual (memoized for better performance)
+  const calculateItemAccrual = useCallback((item: Accrual) => {
+    return item.periodes?.reduce((sum, p) => {
+      if (item.pembagianType === 'manual') {
+        return sum + p.amountAccrual;
+      }
+      const [bulanName, tahunStr] = p.bulan.split(' ');
+      const bulanMap: Record<string, number> = {
+        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+      };
+      const periodeBulan = bulanMap[bulanName];
+      const periodeTahun = parseInt(tahunStr);
+      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+      const today = new Date();
+      if (today >= periodeDate) {
+        return sum + p.amountAccrual;
+      }
+      return sum;
+    }, 0) || 0;
+  }, []);
+
+  // Helper function to calculate realisasi (memoized)
+  const calculateItemRealisasi = useCallback((item: Accrual) => {
+    return item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+  }, []);
 
   // Fetch accrual data
   useEffect(() => {
@@ -189,20 +233,32 @@ export default function MonitoringAccrualPage() {
     }
   };
 
+  // Format currency helper (memoized)
+  const formatCurrency = useCallback((amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  }, []);
+
   // Calculate totals
   const totalAccrual = accrualData.reduce((sum, item) => sum + item.totalAmount, 0);
   const totalPeriodes = accrualData.reduce((sum, item) => sum + (item.periodes?.length || 0), 0);
 
-  // Filter data
-  const filteredData = accrualData.filter(item => {
-    const matchesSearch = searchTerm === '' || 
-      item.kdAkr.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.kdAkunBiaya.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.deskripsi.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesSearch;
-  });
+  // Filter data (optimized with debounced search)
+  const filteredData = useMemo(() => {
+    return accrualData.filter(item => {
+      const matchesSearch = debouncedSearchTerm === '' || 
+        item.kdAkr.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        item.kdAkunBiaya.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        item.vendor.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
+        item.deskripsi.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
+      
+      return matchesSearch;
+    });
+  }, [accrualData, debouncedSearchTerm]);
 
   // Group data by kode akun accrual, then by vendor
   const groupedByKodeAkun = useMemo(() => {
@@ -1456,10 +1512,6 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return `Rp ${amount.toLocaleString('id-ID')}`;
-  };
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -1695,35 +1747,10 @@ export default function MonitoringAccrualPage() {
                   {Object.entries(groupedByKodeAkun).map(([kodeAkun, vendorGroups]) => {
                     const isKodeAkunExpanded = expandedKodeAkun.has(kodeAkun);
                     const allItems = Object.values(vendorGroups).flat();
-                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + item.totalAmount, 0);
                     
-                    // Calculate total accrual for kode akun
-                    const totalAccrualKodeAkun = allItems.reduce((sum, item) => {
-                      const itemAccrual = item.periodes?.reduce((pSum, p) => {
-                        if (item.pembagianType === 'manual') {
-                          return pSum + p.amountAccrual;
-                        }
-                        const [bulanName, tahunStr] = p.bulan.split(' ');
-                        const bulanMap: Record<string, number> = {
-                          'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                          'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-                        };
-                        const periodeBulan = bulanMap[bulanName];
-                        const periodeTahun = parseInt(tahunStr);
-                        const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-                        const today = new Date();
-                        if (today >= periodeDate) {
-                          return pSum + p.amountAccrual;
-                        }
-                        return pSum;
-                      }, 0) || 0;
-                      return sum + itemAccrual;
-                    }, 0);
-                    
-                    const totalRealisasiKodeAkun = allItems.reduce((sum, item) => {
-                      return sum + (item.periodes?.reduce((pSum, p) => pSum + (p.totalRealisasi || 0), 0) || 0);
-                    }, 0);
-                    
+                    // Calculate totals using optimized helper functions
+                    const totalAccrualKodeAkun = allItems.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
+                    const totalRealisasiKodeAkun = allItems.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
                     const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun;
 
                     return (
@@ -1770,35 +1797,10 @@ export default function MonitoringAccrualPage() {
                         {isKodeAkunExpanded && Object.entries(vendorGroups).map(([vendor, items]) => {
                           const vendorKey = `${kodeAkun}-${vendor}`;
                           const isVendorExpanded = expandedVendor.has(vendorKey);
-                          const totalAmountVendor = items.reduce((sum, item) => sum + item.totalAmount, 0);
                           
-                          // Calculate total accrual for vendor
-                          const totalAccrualVendor = items.reduce((sum, item) => {
-                            const itemAccrual = item.periodes?.reduce((pSum, p) => {
-                              if (item.pembagianType === 'manual') {
-                                return pSum + p.amountAccrual;
-                              }
-                              const [bulanName, tahunStr] = p.bulan.split(' ');
-                              const bulanMap: Record<string, number> = {
-                                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-                              };
-                              const periodeBulan = bulanMap[bulanName];
-                              const periodeTahun = parseInt(tahunStr);
-                              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-                              const today = new Date();
-                              if (today >= periodeDate) {
-                                return pSum + p.amountAccrual;
-                              }
-                              return pSum;
-                            }, 0) || 0;
-                            return sum + itemAccrual;
-                          }, 0);
-                          
-                          const totalRealisasiVendor = items.reduce((sum, item) => {
-                            return sum + (item.periodes?.reduce((pSum, p) => pSum + (p.totalRealisasi || 0), 0) || 0);
-                          }, 0);
-                          
+                          // Calculate totals using optimized helper functions
+                          const totalAccrualVendor = items.reduce((sum, item) => sum + calculateItemAccrual(item), 0);
+                          const totalRealisasiVendor = items.reduce((sum, item) => sum + calculateItemRealisasi(item), 0);
                           const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor;
 
                           return (
