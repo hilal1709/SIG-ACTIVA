@@ -42,26 +42,14 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   };
 
   return (
-    <>
-      {/* Mobile Overlay */}
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={onClose}
-        />
-      )}
-      
-      {/* Sidebar */}
-      <div className={`w-64 bg-white border-r border-gray-200 h-screen fixed left-0 top-0 flex flex-col z-50 shadow-sm transform transition-transform duration-300 lg:translate-x-0 ${
-        isOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
-        {/* Close button for mobile */}
-        <button
-          onClick={onClose}
-          className="lg:hidden absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg"
-        >
-          <X size={20} className="text-gray-600" />
-        </button>
+    <div className="w-64 h-screen bg-white border-r border-gray-200 flex flex-col shadow-sm">
+      {/* Close button for mobile */}
+      <button
+        onClick={onClose}
+        className="lg:hidden absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-lg z-10"
+      >
+        <X size={20} className="text-gray-600" />
+      </button>
 
         {/* Logo/Brand */}
         <div className="p-6 border-b border-gray-200">
@@ -102,6 +90,5 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
           </ul>
         </nav>
       </div>
-    </>
   );
 }
