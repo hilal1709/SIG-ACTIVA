@@ -1604,58 +1604,58 @@ export default function MonitoringAccrualPage() {
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12 bg-gray-50">
                       ▼
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Company Code
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       No PO
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Assignment/Order
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Kode Akun Accrual
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Kode Akun Biaya
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Vendor
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Deskripsi
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Header Text
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Klasifikasi
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Amount
                     </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Cost Center
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Start Date
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Periode
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Total Accrual
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Total Realisasi
                     </th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Saldo
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Actions
                     </th>
                   </tr>
