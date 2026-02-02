@@ -40,6 +40,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     fetchDashboardStats();
@@ -132,27 +133,48 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+      
+      {/* Sidebar - Always rendered, controlled by transform */}
+      <div className={`fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
+        isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
+        <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
+      </div>
+
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+      >
+        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
 
       {/* Main Content */}
-      <div className="lg:ml-64 flex-1 bg-gray-50 overflow-hidden">
+      <div className="flex-1 bg-gray-50 overflow-hidden lg:ml-64">
         {/* Header */}
         <Header
           title="Dashboard"
           subtitle="Ringkasan aktivitas dan monitoring accrual"
-          onMenuClick={() => setIsSidebarOpen(true)}
         />
 
         {/* Content Area */}
-        <div className="p-4 md:p-8 bg-gray-50">
+        <div className="p-3 sm:p-4 md:p-6 lg:p-8 bg-gray-50">
           {/* Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
             <div className="animate-fadeIn delay-100">
               <MetricCard
                 title="Total Accrual"
                 value={formatCurrency(stats.totalAccrual)}
-                icon={<TrendingUp size={24} />}
+                icon={<TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />}
                 color="blue"
               />
             </div>
@@ -160,7 +182,7 @@ export default function DashboardPage() {
               <MetricCard
                 title="Total Realisasi"
                 value={formatCurrency(stats.totalRealisasi)}
-                icon={<CheckCircle size={24} />}
+                icon={<CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" />}
                 color="green"
               />
             </div>
@@ -168,7 +190,7 @@ export default function DashboardPage() {
               <MetricCard
                 title="Total Saldo"
                 value={formatCurrency(stats.totalSaldo)}
-                icon={<DollarSign size={24} />}
+                icon={<DollarSign className="w-5 h-5 sm:w-6 sm:h-6" />}
                 color="red"
               />
             </div>
@@ -176,7 +198,7 @@ export default function DashboardPage() {
               <MetricCard
                 title="Jumlah Accrual"
                 value={stats.jumlahAccrual.toString()}
-                icon={<FileText size={24} />}
+                icon={<FileText className="w-5 h-5 sm:w-6 sm:h-6" />}
                 color="purple"
               />
             </div>
@@ -184,12 +206,12 @@ export default function DashboardPage() {
 
           {/* Additional Overview Cards */}
           {summary && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-6 md:mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
               <div className="animate-fadeIn delay-100">
                 <MetricCard
                   title="Total Material"
                   value={summary.material.total.toString()}
-                  icon={<Package size={24} />}
+                  icon={<Package className="w-5 h-5 sm:w-6 sm:h-6" />}
                   color="indigo"
                 />
               </div>
@@ -197,7 +219,7 @@ export default function DashboardPage() {
                 <MetricCard
                   title="Total Prepaid"
                   value={summary.prepaid.total.toString()}
-                  icon={<CreditCard size={24} />}
+                  icon={<CreditCard className="w-5 h-5 sm:w-6 sm:h-6" />}
                   color="teal"
                 />
               </div>
@@ -205,7 +227,7 @@ export default function DashboardPage() {
                 <MetricCard
                   title="Saldo Prepaid"
                   value={formatCurrency(summary.prepaid.financial.remaining)}
-                  icon={<Clock size={24} />}
+                  icon={<Clock className="w-5 h-5 sm:w-6 sm:h-6" />}
                   color="orange"
                 />
               </div>
@@ -216,7 +238,7 @@ export default function DashboardPage() {
           {!loading && summary && (
             <>
               {/* Material & Prepaid Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 md:mb-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
                 <SimpleBarChart
                   data={materialChartData}
                   title="Material per Plant"
@@ -232,7 +254,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Accrual Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 md:mb-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
                 <DonutChart
                   data={accrualDonutData}
                   title="Status Accrual"
@@ -248,7 +270,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Prepaid Analysis */}
-              <div className="grid grid-cols-1 gap-6 mb-6 md:mb-8">
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
                 <SimpleBarChart
                   data={topPrepaidByAmountData}
                   title="Top 5 Prepaid (Berdasarkan Nilai)"
@@ -257,7 +279,7 @@ export default function DashboardPage() {
               </div>
 
               {/* Status Summary */}
-              <div className="grid grid-cols-1 gap-6 mb-6 md:mb-8">
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
                 <StatusCard
                   title="Ringkasan Status"
                   items={[
@@ -289,16 +311,16 @@ export default function DashboardPage() {
 
           {/* Loading State */}
           {loading && (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-8 sm:py-12">
               <div className="text-center">
-                <div className="inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-                <p className="text-gray-600">Memuat data visualisasi...</p>
+                <div className="inline-block w-6 h-6 sm:w-8 sm:h-8 border-3 sm:border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-3 sm:mb-4"></div>
+                <p className="text-sm sm:text-base text-gray-600">Memuat data visualisasi...</p>
               </div>
             </div>
           )}
 
           {/* Rekonsiliasi Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn delay-300">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 animate-fadeIn delay-300">
             <RekonsiliasiCard
               title="Rekonsiliasi Accrual vs Realisasi"
               description="Monitoring selisih antara accrual yang dicatat dengan realisasi pembayaran"

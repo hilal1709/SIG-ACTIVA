@@ -401,31 +401,30 @@ export default function LaporanMaterialPage() {
         />
       )}
       
-      {/* Sidebar */}
-      <div className={`fixed lg:static inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out ${
+      {/* Sidebar - Always rendered, controlled by transform */}
+      <div className={`fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
         isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <Sidebar />
       </div>
 
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
+      >
+        <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
       {/* Main Content */}
       <div className="flex-1 bg-gray-50 overflow-hidden lg:ml-64">
         {/* Header */}
-        <div className="relative">
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-            className="lg:hidden fixed top-4 left-4 z-30 p-2 bg-white rounded-lg shadow-md hover:bg-gray-50 transition-colors"
-          >
-            <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <Header
-            title="Laporan Material"
-            subtitle="Laporan material terintegrasi dengan SAP"
-          />
-        </div>
+        <Header
+          title="Laporan Material"
+          subtitle="Laporan material terintegrasi dengan SAP"
+        />
 
         {/* Content Area with proper overflow */}
         <div className="p-3 sm:p-4 md:p-6 lg:p-8 space-y-4 sm:space-y-6 overflow-x-hidden">
