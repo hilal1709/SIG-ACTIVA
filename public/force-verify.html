@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Force Verify Email - SIG ACTIVA Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: linear-gradient(135deg, #fef2f2 0%, #f3f4f6 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); padding: 32px; }
+        .warning-banner { background: #fef3c7; border: 2px solid #f59e0b; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+        .warning-banner h3 { color: #92400e; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+        .warning-banner p { color: #78350f; font-size: 14px; line-height: 1.5; }
+        h1 { color: #dc2626; margin-bottom: 16px; font-size: 28px; }
+        .subtitle { color: #6b7280; margin-bottom: 24px; }
+        .input-group { margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; font-weight: 500; color: #374151; }
+        input { width: 100%; padding: 12px 16px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 14px; transition: all 0.3s; }
+        input:focus { outline: none; border-color: #dc2626; }
+        button { width: 100%; padding: 14px; background: #dc2626; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s; }
+        button:hover { background: #b91c1c; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .result { margin-top: 24px; padding: 20px; border-radius: 8px; display: none; }
+        .result.show { display: block; animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .result.success { background: #f0fdf4; border: 2px solid #22c55e; }
+        .result.error { background: #fef2f2; border: 2px solid #ef4444; }
+        .result h3 { margin-bottom: 12px; font-size: 18px; }
+        .result p { margin: 8px 0; color: #374151; line-height: 1.6; }
+        .status-grid { display: grid; gap: 12px; margin: 16px 0; }
+        .status-item { background: rgba(255,255,255,0.7); padding: 12px; border-radius: 6px; display: flex; align-items: center; gap: 12px; }
+        .status-icon { font-size: 24px; }
+        .status-info { flex: 1; }
+        .status-label { font-weight: 600; color: #111827; margin-bottom: 4px; }
+        .status-value { font-size: 14px; color: #6b7280; }
+        .btn-secondary { background: #6b7280; margin-top: 12px; }
+        .btn-secondary:hover { background: #4b5563; }
+        .steps { background: #f9fafb; padding: 16px; border-radius: 8px; margin-top: 16px; }
+        .steps h4 { color: #111827; margin-bottom: 12px; }
+        .steps ol { padding-left: 20px; }
+        .steps li { color: #374151; margin: 8px 0; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="warning-banner">
+            <h3><span>⚠️</span> Admin Only</h3>
+            <p>Tool ini untuk admin yang ingin memverifikasi email user secara manual (bypass link verifikasi). Gunakan hanya jika link verifikasi email tidak bekerja.</p>
+        </div>
+        
+        <h1>🔧 Force Verify Email</h1>
+        <p class="subtitle">Verifikasi email user secara manual tanpa perlu klik link</p>
+        
+        <div class="input-group">
+            <label for="email">Email User yang Akan Di-verify</label>
+            <input type="email" id="email" placeholder="contoh@email.com" value="aszra.tjahjaningrat23@student.ui.ac.id">
+        </div>
+        
+        <button onclick="forceVerify()" id="verifyBtn">Force Verify Email</button>
+        
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        async function forceVerify() {
+            const email = document.getElementById('email').value.trim();
+            const resultDiv = document.getElementById('result');
+            const btn = document.getElementById('verifyBtn');
+            
+            if (!email) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = '<h3>❌ Error</h3><p>Email tidak boleh kosong</p>';
+                return;
+            }
+            
+            if (!confirm(`Anda yakin ingin force verify email:\n${email}?\n\nIni akan mengubah status emailVerified menjadi true.`)) {
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Memverifikasi...';
+            resultDiv.className = 'result';
+            resultDiv.innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/users/force-verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok || !data.success) {
+                    resultDiv.className = 'result error show';
+                    resultDiv.innerHTML = `
+                        <h3>❌ Gagal Memverifikasi</h3>
+                        <p>${data.error || 'Terjadi kesalahan'}</p>
+                    `;
+                    return;
+                }
+                
+                const user = data.user;
+                const canLogin = user.emailVerified && user.isApproved;
+                
+                resultDiv.className = 'result success show';
+                resultDiv.innerHTML = `
+                    <h3>✅ Email Berhasil Di-verify!</h3>
+                    
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <div class="status-icon">✅</div>
+                            <div class="status-info">
+                                <div class="status-label">Verifikasi Email</div>
+                                <div class="status-value">Sudah terverifikasi (force)</div>
+                            </div>
+                        </div>
+                        
+                        <div class="status-item">
+                            <div class="status-icon">${user.isApproved ? '✅' : '⏳'}</div>
+                            <div class="status-info">
+                                <div class="status-label">Approval Admin</div>
+                                <div class="status-value">${user.isApproved ? 'Sudah di-approve' : 'Menunggu approval'}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    ${canLogin ? `
+                        <div class="steps">
+                            <h4>🎉 User Sekarang Bisa Login!</h4>
+                            <p>Instruksi untuk user:</p>
+                            <ol>
+                                <li>Buka halaman login</li>
+                                <li>Masukkan email: <strong>${user.email}</strong></li>
+                                <li>Masukkan password yang sudah dibuat</li>
+                                <li>Klik tombol "Masuk"</li>
+                            </ol>
+                        </div>
+                    ` : `
+                        <div class="steps">
+                            <h4>⏳ Email Sudah Terverifikasi</h4>
+                            <p>Tapi user masih perlu di-approve admin untuk bisa login.</p>
+                            <p style="margin-top: 12px;">Silakan approve user di halaman User Management atau gunakan tool approve-user.</p>
+                        </div>
+                    `}
+                    
+                    <button onclick="location.reload()" class="btn-secondary" style="width: 100%;">
+                        Verify User Lain
+                    </button>
+                `;
+                
+            } catch (error) {
+                resultDiv.className = 'result error show';
+                resultDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p>${error.message}</p>
+                `;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Force Verify Email';
+            }
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('email').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') forceVerify();
+        });
+    </script>
+</body>
+</html>

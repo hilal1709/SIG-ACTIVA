@@ -677,7 +677,7 @@ export default function MonitoringAccrualPage() {
             row1.getCell(8).value = item.headerText || ''; // bktxt
             row1.getCell(9).value = ''; // zuonr
             row1.getCell(10).value = item.kdAkunBiaya; // hkont (expense account)
-            row1.getCell(11).value = totalAccrual; // wrbtr (positive)
+            row1.getCell(11).value = Math.round(totalAccrual); // wrbtr (positive)
             row1.getCell(11).numFmt = '0';
             row1.getCell(12).value = item.headerText || ''; // sgtxt
             row1.getCell(13).value = ''; // prctr
@@ -715,7 +715,7 @@ export default function MonitoringAccrualPage() {
             row2.getCell(8).value = item.headerText || ''; // bktxt
             row2.getCell(9).value = ''; // zuonr
             row2.getCell(10).value = item.kdAkr; // hkont (accrual account)
-            row2.getCell(11).value = -totalAccrual; // wrbtr (negative)
+            row2.getCell(11).value = -Math.round(totalAccrual); // wrbtr (negative)
             row2.getCell(11).numFmt = '0';
             row2.getCell(12).value = item.headerText || ''; // sgtxt
             row2.getCell(13).value = ''; // prctr
@@ -809,7 +809,7 @@ export default function MonitoringAccrualPage() {
               item.headerText || '',
               '',
               item.kdAkunBiaya,
-              totalAccrual.toString(),
+              Math.round(totalAccrual).toString(),
               item.headerText || '',
               '',
               item.costCenter || '',
@@ -832,7 +832,7 @@ export default function MonitoringAccrualPage() {
               item.headerText || '',
               '',
               item.kdAkr,
-              (-totalAccrual).toString(),
+              (-Math.round(totalAccrual)).toString(),
               item.headerText || '',
               '',
               '', // Cost center kosong untuk akun accrual
@@ -2052,23 +2052,27 @@ export default function MonitoringAccrualPage() {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Klasifikasi <span className="text-red-600">*</span>
                   </label>
-                  <select
+                  <input
+                    type="text"
                     name="klasifikasi"
                     value={formData.klasifikasi}
                     onChange={handleInputChange}
+                    list="klasifikasi-list"
                     required
-                    disabled={!formData.kdAkr || availableKlasifikasi.length === 0}
+                    disabled={!formData.kdAkr}
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  >
-                    <option value="">
-                      {!formData.kdAkr ? 'Pilih Kode Akun terlebih dahulu' : 'Pilih Klasifikasi'}
-                    </option>
+                    placeholder={!formData.kdAkr ? 'Pilih Kode Akun terlebih dahulu' : 'Pilih atau ketik klasifikasi baru'}
+                  />
+                  <datalist id="klasifikasi-list">
                     {availableKlasifikasi.map((klasifikasi) => (
-                      <option key={klasifikasi} value={klasifikasi}>
-                        {klasifikasi}
-                      </option>
+                      <option key={klasifikasi} value={klasifikasi} />
                     ))}
-                  </select>
+                  </datalist>
+                  {formData.kdAkr && availableKlasifikasi.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Pilih dari daftar atau ketik klasifikasi baru
+                    </p>
+                  )}
                 </div>
 
                 {/* Amount */}

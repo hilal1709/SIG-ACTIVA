@@ -61,14 +61,37 @@ npx tsx check-user-status.ts
    - `isApproved = true`
    - User bisa login ✅
 
+## 🔧 Force Verify Email (Manual)
+
+Jika link verifikasi email tidak bekerja atau expired, admin bisa force verify:
+
+**Via Browser (Mudah):**
+```
+http://localhost:3000/force-verify.html
+atau
+https://sig-activa.vercel.app/force-verify.html
+```
+
+**Via Script:**
+```bash
+npx tsx force-verify-email.ts <email>
+```
+
+Contoh:
+```bash
+npx tsx force-verify-email.ts aszra.tjahjaningrat23@student.ui.ac.id
+```
+
 ## ⚠️ Troubleshooting Login
 
 Jika user tidak bisa login setelah registrasi:
 
-1. Pastikan user sudah **klik link verifikasi** di email
-2. Pastikan admin sudah **approve user** 
-3. Cek status user dengan `list-pending-users.ts`
-4. Approve user dengan `approve-user.ts <email>`
+1. **Cek status user**: Buka `http://localhost:3000/check-user.html`
+2. Lihat mana yang belum terpenuhi:
+   - ❌ Email belum terverifikasi → Force verify dengan `force-verify.html`
+   - ❌ Belum di-approve admin → Approve di User Management atau `approve-user.ts`
+3. Pastikan **password yang dimasukkan benar**
+4. Coba **clear browser cache** atau gunakan incognito mode
 
 ## 🎯 Tips untuk Admin
 
