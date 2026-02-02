@@ -2,11 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { Search, Download, Plus, MoreVertical, Edit, Trash2, FileDown } from 'lucide-react';
-import Sidebar from '../components/Sidebar';
-import Header from '../components/Header';
-import PrepaidForm from '../components/PrepaidForm';
+import dynamic from 'next/dynamic';
 import { exportToCSV } from '../utils/exportUtils';
-import ExcelJS from 'exceljs';
+
+// Lazy load components
+const Sidebar = dynamic(() => import('../components/Sidebar'), { ssr: false });
+const Header = dynamic(() => import('../components/Header'), { ssr: false });
+const PrepaidForm = dynamic(() => import('../components/PrepaidForm'), { ssr: false });
+
+// Lazy load ExcelJS on demand
+let ExcelJS: any = null;
+const loadExcelJS = async () => {
+  if (!ExcelJS) {
+    ExcelJS = (await import('exceljs')).default;
+  }
+  return ExcelJS;
+};
 
 interface PrepaidPeriode {
   id: number;
@@ -111,8 +122,10 @@ export default function MonitoringPrepaidPage() {
   });
 
   const handleDownloadGlobalReport = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Laporan Prepaid');
+    try {
+      const ExcelJSLib = await loadExcelJS();
+      const workbook = new ExcelJSLib.Workbook();
+      const worksheet = workbook.addWorksheet('Laporan Prepaid');
     
     // Title
     worksheet.mergeCells('A1:N1');
@@ -147,7 +160,7 @@ export default function MonitoringPrepaidPage() {
     ];
     
     worksheet.getRow(2).values = headers;
-    worksheet.getRow(2).eachCell((cell) => {
+    worksheet.getRow(2).eachCell((cell: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -268,11 +281,17 @@ export default function MonitoringPrepaidPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating report:', error);
+      alert('Gagal membuat laporan. Silakan coba lagi.');
+    }
   };
 
   const handleDownloadJurnalSAP = async () => {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Jurnal SAP');
+    try {
+      const ExcelJSLib = await loadExcelJS();
+      const workbook = new ExcelJSLib.Workbook();
+      const worksheet = workbook.addWorksheet('Jurnal SAP');
     
     // Headers row 1 (field names)
     worksheet.getRow(1).height = 15;
@@ -285,7 +304,7 @@ export default function MonitoringPrepaidPage() {
     const yellowColumns = [7, 9, 13, 16, 17, 18];
     
     worksheet.getRow(1).values = headers1;
-    worksheet.getRow(1).eachCell((cell, colNumber) => {
+    worksheet.getRow(1).eachCell((cell: any, colNumber: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -304,7 +323,7 @@ export default function MonitoringPrepaidPage() {
     ];
     
     worksheet.getRow(2).values = headers2;
-    worksheet.getRow(2).eachCell((cell, colNumber) => {
+    worksheet.getRow(2).eachCell((cell: any, colNumber: any) => {
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -439,6 +458,10 @@ export default function MonitoringPrepaidPage() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating Jurnal SAP:', error);
+      alert('Gagal membuat jurnal SAP. Silakan coba lagi.');
+    }
   };
 
   const handleDownloadJurnalSAPTxt = () => {

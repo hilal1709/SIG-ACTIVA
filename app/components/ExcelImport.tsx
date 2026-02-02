@@ -2,7 +2,15 @@
 
 import { useState, useRef } from 'react';
 import { Upload, FileSpreadsheet, X } from 'lucide-react';
-import * as XLSX from 'xlsx';
+
+// Lazy load XLSX on demand
+let XLSX: any = null;
+const loadXLSX = async () => {
+  if (!XLSX) {
+    XLSX = await import('xlsx');
+  }
+  return XLSX;
+};
 
 interface ExcelImportProps {
   onDataImport: (data: any[]) => void;
@@ -21,14 +29,17 @@ export default function ExcelImport({ onDataImport }: ExcelImportProps) {
     setFileName(file.name);
 
     try {
+      // Load XLSX library on demand
+      const XLSXLib = await loadXLSX();
+      
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
+      const workbook = XLSXLib.read(data);
       
       // Look for "Pivot" sheet specifically
       let sheetName = 'Pivot';
       if (!workbook.SheetNames.includes('Pivot')) {
         // Try case-insensitive search
-        const pivotSheet = workbook.SheetNames.find(name => 
+        const pivotSheet = workbook.SheetNames.find((name: string) => 
           name.toLowerCase() === 'pivot'
         );
         
@@ -44,7 +55,7 @@ export default function ExcelImport({ onDataImport }: ExcelImportProps) {
       
       console.log('Reading sheet:', sheetName);
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+      const jsonData = XLSXLib.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
 
       // Process the data
       const processedData = processExcelData(jsonData);

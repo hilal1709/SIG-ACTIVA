@@ -1732,6 +1732,7 @@ export default function MonitoringAccrualPage() {
                       Saldo
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap"></th>
                       Actions
                     </th>
                   </tr>
@@ -1859,8 +1860,8 @@ export default function MonitoringAccrualPage() {
                           const isExpanded = expandedRows.has(item.id);
                           return (
                             <React.Fragment key={item.id}>
-                              <tr className="hover:bg-gray-50 transition-colors">
-                                <td className="px-4 py-4 text-center">
+                              <tr className="bg-white hover:bg-gray-50 transition-colors">
+                                <td className="px-4 py-4 text-center bg-white">
                                   <button
                                     onClick={() => {
                                       const newExpanded = new Set(expandedRows);
@@ -1876,30 +1877,30 @@ export default function MonitoringAccrualPage() {
                                     {isExpanded ? '▼' : '▶'}
                                   </button>
                                 </td>
-                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.companyCode || '-'}</td>
-                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.noPo || '-'}</td>
-                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.alokasi || '-'}</td>
-                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap font-medium">{item.kdAkr}</td>
-                          <td className="px-4 py-4 text-gray-800">{item.kdAkunBiaya}</td>
-                          <td className="px-4 py-4 text-gray-600">{item.vendor}</td>
-                          <td className="px-4 py-4 text-gray-600 max-w-xs truncate" title={item.deskripsi}>{item.deskripsi}</td>
-                          <td className="px-4 py-4 text-gray-600 max-w-xs truncate" title={item.headerText || '-'}>{item.headerText || '-'}</td>
-                          <td className="px-4 py-4 text-center">
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap bg-white">{item.companyCode || '-'}</td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap bg-white">{item.noPo || '-'}</td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap bg-white">{item.alokasi || '-'}</td>
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap font-medium bg-white">{item.kdAkr}</td>
+                          <td className="px-4 py-4 text-gray-800 bg-white">{item.kdAkunBiaya}</td>
+                          <td className="px-4 py-4 text-gray-600 bg-white">{item.vendor}</td>
+                          <td className="px-4 py-4 text-gray-600 max-w-xs truncate bg-white" title={item.deskripsi}>{item.deskripsi}</td>
+                          <td className="px-4 py-4 text-gray-600 max-w-xs truncate bg-white" title={item.headerText || '-'}>{item.headerText || '-'}</td>
+                          <td className="px-4 py-4 text-center bg-white">
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
                               {item.klasifikasi || '-'}
                             </span>
                           </td>
-                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
+                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
                             {formatCurrency(item.totalAmount)}
                           </td>
-                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap">{item.costCenter || '-'}</td>
-                          <td className="px-4 py-4 text-center text-gray-600 text-xs whitespace-nowrap">
+                          <td className="px-4 py-4 text-gray-800 whitespace-nowrap bg-white">{item.costCenter || '-'}</td>
+                          <td className="px-4 py-4 text-center text-gray-600 text-xs whitespace-nowrap bg-white">
                             {formatDate(item.startDate)}
                           </td>
-                          <td className="px-4 py-4 text-center text-gray-800 whitespace-nowrap">
+                          <td className="px-4 py-4 text-center text-gray-800 whitespace-nowrap bg-white">
                             {item.jumlahPeriode} bulan
                           </td>
-                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap">
+                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
                             {formatCurrency(
                               item.periodes?.reduce((sum, p) => {
                                 // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
@@ -1929,17 +1930,17 @@ export default function MonitoringAccrualPage() {
                               }, 0) || 0
                             )}
                           </td>
-                          <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap">
+                          <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
                             {formatCurrency(
                               item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0
                             )}
                           </td>
-                          <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap">
+                          <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
                             {formatCurrency(
                               item.totalAmount - (item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0)
                             )}
                           </td>
-                          <td className="px-4 py-4 text-center">
+                          <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
                               {/* Jurnal SAP Dropdown */}
                               <div className="relative">

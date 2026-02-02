@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
   // Experimental Features for Performance
   experimental: {
     optimizeCss: true,
-    optimizePackageImports: ['lucide-react'],
+    optimizePackageImports: ['lucide-react', 'exceljs', 'xlsx'],
   },
   
   // Production Optimizations
@@ -29,6 +29,38 @@ const nextConfig: NextConfig = {
     removeConsole: process.env.NODE_ENV === 'production' ? {
       exclude: ['error', 'warn'],
     } : false,
+  },
+  
+  // Webpack optimizations
+  webpack: (config, { dev, isServer }) => {
+    // Only in production and client-side
+    if (!dev && !isServer) {
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            default: false,
+            vendors: false,
+            // Vendor chunk
+            vendor: {
+              name: 'vendor',
+              chunks: 'all',
+              test: /node_modules/,
+              priority: 20,
+            },
+            // Separate large Excel libraries
+            excelLibs: {
+              test: /[\\/]node_modules[\\/](exceljs|xlsx)[\\/]/,
+              name: 'excel-libs',
+              chunks: 'async',
+              priority: 30,
+            },
+          },
+        },
+      };
+    }
+    return config;
   },
 };
 
