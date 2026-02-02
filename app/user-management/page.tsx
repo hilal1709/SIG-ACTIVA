@@ -229,7 +229,7 @@ export default function UserManagementPage() {
         )}
         
         {/* Sidebar - Always rendered, controlled by transform */}
-        <div className={`fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
+        <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
           isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}>
           <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
@@ -246,7 +246,7 @@ export default function UserManagementPage() {
         </button>
         
         {/* Main Content */}
-        <div className="flex-1 bg-gradient-to-br from-red-50 to-gray-100 overflow-hidden lg:ml-64">
+        <div className="flex-1 bg-gradient-to-br from-red-50 to-gray-100 lg:ml-64">
           {/* Header */}
           <Header 
             title="User Management" 

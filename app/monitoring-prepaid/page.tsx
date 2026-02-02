@@ -579,7 +579,7 @@ export default function MonitoringPrepaidPage() {
       )}
       
       {/* Sidebar - Always rendered, controlled by transform */}
-      <div className={`fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
         isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <Sidebar />
@@ -596,7 +596,7 @@ export default function MonitoringPrepaidPage() {
       </button>
 
       {/* Main Content */}
-      <div className="flex-1 bg-gray-50 overflow-hidden lg:ml-64">
+      <div className="flex-1 bg-gray-50 lg:ml-64">
         {/* Header */}
         <Header
           title="Monitoring Prepaid"
