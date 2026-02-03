@@ -195,6 +195,29 @@ export default function MonitoringAccrualPage() {
     }
   }, [canEdit, userRole, isRoleLoaded]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      // Check if click is outside dropdown
+      if (!target.closest('.jurnal-dropdown-container')) {
+        setExpandedRows(prev => {
+          const newSet = new Set(prev);
+          // Remove all jurnal dropdown states
+          Array.from(newSet).forEach(id => {
+            if (typeof id === 'string' && id.startsWith('jurnal-')) {
+              newSet.delete(id);
+            }
+          });
+          return newSet.size !== prev.size ? newSet : prev;
+        });
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Helper function to calculate accrual (memoized for better performance)
   const calculateItemAccrual = useCallback((item: Accrual) => {
     return item.periodes?.reduce((sum, p) => {
@@ -1715,7 +1738,7 @@ export default function MonitoringAccrualPage() {
                       Saldo
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
-                    5555555555  Actions
+                      Actions
                     </th>
                   </tr>
                 </thead>
@@ -1925,7 +1948,7 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
                               {/* Jurnal SAP Dropdown */}
-                              <div className="relative">
+                              <div className="relative jurnal-dropdown-container">
                                 <button
                                   onClick={() => {
                                     const itemId = item.id;
