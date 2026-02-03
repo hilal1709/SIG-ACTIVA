@@ -1715,7 +1715,7 @@ export default function MonitoringAccrualPage() {
                       Saldo
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
-                      Actions
+                    5555555555  Actions
                     </th>
                   </tr>
                 </thead>
@@ -1951,7 +1951,7 @@ export default function MonitoringAccrualPage() {
                                   <Download size={16} />
                                 </button>
                                 {expandedRows.has(`jurnal-${item.id}`) && (
-                                  <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                  <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[60]">
                                     <div className="py-1">
                                       <button
                                         onClick={() => {
