@@ -248,8 +248,8 @@ export default function DashboardPage() {
           {/* Charts Section */}
           {!loading && summary && (
             <>
-              {/* Material & Prepaid Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+              {/* Material Chart - Full Width */}
+              <div className="mb-4 sm:mb-6 md:mb-8">
                 <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
                   <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Top 5 Material per Plant (Berdasarkan Selisih)</h3>
                   <div className="space-y-4">
@@ -307,42 +307,37 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </div>
-                
+              </div>
+
+              {/* Prepaid & Accrual Status Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
                 <DonutChart
                   data={prepaidDonutData}
                   title="Status Prepaid"
                   centerText={summary.prepaid.total.toString()}
                   centerSubtext="Total Prepaid"
                 />
-              </div>
-
-              {/* Accrual Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+                
                 <DonutChart
                   data={accrualDonutData}
                   title="Status Accrual"
                   centerText={summary.accrual.total.toString()}
                   centerSubtext="Total Accrual"
                 />
-                
+              </div>
+
+              {/* Top Charts by Classification */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
                 <SimpleBarChart
                   data={topAccrualByKlasifikasiData}
                   title="Top 5 Accrual (Berdasarkan Klasifikasi)"
                   color="#dc2626"
                 />
-              </div>
-
-              {/* Prepaid Analysis */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+                
                 <SimpleBarChart
                   data={topPrepaidByKlasifikasiData}
                   title="Top 5 Prepaid (Berdasarkan Klasifikasi)"
                   color="#059669"
-                />
-                <SimpleBarChart
-                  data={topPrepaidByAmountData}
-                  title="Top 5 Prepaid (Berdasarkan Nilai)"
-                  color="#0891b2"
                 />
               </div>
 

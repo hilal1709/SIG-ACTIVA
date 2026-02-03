@@ -32,13 +32,13 @@ function MetricCard({
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6 hover-lift transition-smooth">
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <p className="text-sm text-gray-500 mb-1">{title}</p>
-          <h3 className="text-2xl font-bold text-gray-800">{value}</h3>
+    <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6 hover-lift transition-smooth h-full">
+      <div className="flex items-center justify-between h-full">
+        <div className="flex-1 min-w-0 pr-3">
+          <p className="text-xs sm:text-sm text-gray-500 mb-1 truncate">{title}</p>
+          <h3 className="text-lg sm:text-xl lg:text-2xl font-bold text-gray-800 break-words">{value}</h3>
         </div>
-        <div className={`p-3 rounded-lg ${getColorClasses(color)}`}>
+        <div className={`p-2 sm:p-3 rounded-lg flex-shrink-0 ${getColorClasses(color)}`}>
           {icon}
         </div>
       </div>
