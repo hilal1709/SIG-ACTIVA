@@ -49,18 +49,21 @@ function RekonsiliasiCard({ title, description, status, percentage }: Rekonsilia
       </div>
 
       {/* Progress Bar */}
-      <div className="w-full bg-gray-200 rounded-full h-2">
+      <div className="w-full bg-gray-200 rounded-full h-2 relative overflow-hidden">
         <div
           className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(status)}`}
-          style={{ width: `${percentage}%` }}
+          style={{ width: `${Math.min(percentage, 100)}%` }}
         ></div>
+        {percentage > 100 && (
+          <div className="absolute right-0 top-0 h-2 w-1 bg-blue-500 animate-pulse"></div>
+        )}
       </div>
 
       {/* Status Text */}
       <div className="mt-3 flex items-center justify-between text-sm">
         <span className="text-gray-500">Status:</span>
         <span className={`font-medium capitalize ${getStatusColor(status)}`}>
-          {status}
+          {percentage > 100 ? 'Over Target' : status}
         </span>
       </div>
     </div>

@@ -12,7 +12,7 @@ import StatusCard from './components/StatusCard';
 
 interface DashboardSummary {
   material: {
-    summary: Array<{ label: string; value: number; amount: number }>;
+    summary: Array<{ label: string; value: number; amount: number; countSelisih: number; countClear: number }>;
     byType: Array<{ label: string; value: number }>;
     total: number;
   };
@@ -20,12 +20,14 @@ interface DashboardSummary {
     status: { active: number; cleared: number; pending: number };
     financial: { total: number; cleared: number; remaining: number };
     topPrepaidByAmount: Array<{ label: string; value: number }>;
+    topByKlasifikasi: Array<{ label: string; value: number }>;
     total: number;
   };
   accrual: {
     status: { active: number; cleared: number; pending: number };
     financial: { total: number; realized: number; remaining: number };
     topVendors: Array<{ label: string; value: number }>;
+    topByKlasifikasi: Array<{ label: string; value: number }>;
     total: number;
   };
 }
@@ -94,6 +96,8 @@ export default function DashboardPage() {
     return summary.material.summary.slice(0, 5).map(item => ({
       label: item.label,
       value: item.value,
+      countSelisih: item.countSelisih,
+      countClear: item.countClear,
     }));
   }, [summary]);
 
@@ -118,6 +122,22 @@ export default function DashboardPage() {
   const topAccrualVendorsData = useMemo(() => {
     if (!summary) return [];
     return summary.accrual.topVendors.map(v => ({
+      label: v.label,
+      value: v.value,
+    }));
+  }, [summary]);
+
+  const topAccrualByKlasifikasiData = useMemo(() => {
+    if (!summary) return [];
+    return summary.accrual.topByKlasifikasi.map(v => ({
+      label: v.label,
+      value: v.value,
+    }));
+  }, [summary]);
+
+  const topPrepaidByKlasifikasiData = useMemo(() => {
+    if (!summary) return [];
+    return summary.prepaid.topByKlasifikasi.map(v => ({
       label: v.label,
       value: v.value,
     }));
@@ -230,11 +250,63 @@ export default function DashboardPage() {
             <>
               {/* Material & Prepaid Charts */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
-                <SimpleBarChart
-                  data={materialChartData}
-                  title="Material per Plant"
-                  color="#2563eb"
-                />
+                <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-4">Top 5 Material per Plant (Berdasarkan Selisih)</h3>
+                  <div className="space-y-4">
+                    {materialChartData.map((item, index) => {
+                      const total = item.countSelisih + item.countClear;
+                      const selisihPercent = total > 0 ? (item.countSelisih / total) * 100 : 0;
+                      const clearPercent = total > 0 ? (item.countClear / total) * 100 : 0;
+                      
+                      return (
+                        <div key={index} className="space-y-2">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="font-medium text-gray-700">{item.label}</span>
+                            <span className="text-xs text-gray-500">
+                              Selisih: {item.countSelisih} | Clear: {item.countClear}
+                            </span>
+                          </div>
+                          <div className="relative h-8 bg-gray-100 rounded-full overflow-hidden">
+                            <div 
+                              className="absolute left-0 top-0 h-full bg-red-500 transition-all duration-300"
+                              style={{ width: `${selisihPercent}%` }}
+                            >
+                              {selisihPercent > 15 && (
+                                <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
+                                  {selisihPercent.toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            <div 
+                              className="absolute right-0 top-0 h-full bg-green-500 transition-all duration-300"
+                              style={{ width: `${clearPercent}%` }}
+                            >
+                              {clearPercent > 15 && (
+                                <span className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-white">
+                                  {clearPercent.toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-xs text-gray-500">
+                            <span>Total Selisih: {formatCurrency(item.value)}</span>
+                            <span>Total: {total} items</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex gap-4 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-red-500 rounded"></div>
+                      <span className="text-gray-600">Ada Selisih</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500 rounded"></div>
+                      <span className="text-gray-600">Clear</span>
+                    </div>
+                  </div>
+                </div>
                 
                 <DonutChart
                   data={prepaidDonutData}
@@ -254,18 +326,23 @@ export default function DashboardPage() {
                 />
                 
                 <SimpleBarChart
-                  data={topAccrualVendorsData}
-                  title="Top 5 Vendor Accrual"
+                  data={topAccrualByKlasifikasiData}
+                  title="Top 5 Accrual (Berdasarkan Klasifikasi)"
                   color="#dc2626"
                 />
               </div>
 
               {/* Prepaid Analysis */}
-              <div className="grid grid-cols-1 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
+                <SimpleBarChart
+                  data={topPrepaidByKlasifikasiData}
+                  title="Top 5 Prepaid (Berdasarkan Klasifikasi)"
+                  color="#059669"
+                />
                 <SimpleBarChart
                   data={topPrepaidByAmountData}
                   title="Top 5 Prepaid (Berdasarkan Nilai)"
-                  color="#059669"
+                  color="#0891b2"
                 />
               </div>
 
