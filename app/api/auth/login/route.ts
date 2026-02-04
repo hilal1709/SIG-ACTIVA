@@ -46,6 +46,20 @@ export async function POST(request: NextRequest) {
       user.isApproved = true;
     }
 
+    // Auto-fix: Jika user sudah approved tapi email belum verified, auto verify
+    // Ini untuk handle kasus dimana admin approve sebelum user klik link email
+    if (user.isApproved && !user.emailVerified) {
+      console.log('⚠️ Auto-fixing: User approved but email not verified, verifying now...');
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          emailVerified: true,
+          verificationToken: null,
+        },
+      });
+      user.emailVerified = true;
+    }
+
     // Check if email is verified (skip for admin yang baru di-update)
     if (!user.emailVerified) {
       console.log('❌ Email not verified for:', user.email);

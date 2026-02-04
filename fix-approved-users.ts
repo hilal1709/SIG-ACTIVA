@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import 'dotenv/config';
+import { prisma } from './lib/prisma';
 
 async function fixApprovedUsers() {
   console.log('🔧 Mencari user yang sudah approved tapi email belum terverifikasi...\n');
