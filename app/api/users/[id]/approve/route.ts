@@ -19,11 +19,14 @@ export async function PUT(
     }
 
     // Update user approval status and role
+    // Ketika admin approve, otomatis verifikasi email juga
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
         isApproved: isApproved,
         role: role || 'STAFF_ACCOUNTING',
+        emailVerified: isApproved ? true : undefined, // Auto verify email when approved
+        verificationToken: isApproved ? null : undefined, // Clear token when approved
       },
       select: {
         id: true,
@@ -32,6 +35,7 @@ export async function PUT(
         name: true,
         role: true,
         isApproved: true,
+        emailVerified: true,
       },
     });
 
