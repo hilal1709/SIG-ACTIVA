@@ -222,8 +222,10 @@ export default function MonitoringAccrualPage() {
   const calculateItemAccrual = useCallback((item: Accrual) => {
     return item.periodes?.reduce((sum, p) => {
       if (item.pembagianType === 'manual') {
+        // Untuk manual, langsung tampilkan semua accrual
         return sum + p.amountAccrual;
       }
+      // Untuk otomatis, cek tanggal periode saja
       const [bulanName, tahunStr] = p.bulan.split(' ');
       const bulanMap: Record<string, number> = {
         'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
@@ -233,6 +235,7 @@ export default function MonitoringAccrualPage() {
       const periodeTahun = parseInt(tahunStr);
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
+      // Akui accrual jika sudah jatuh tempo (tidak peduli sudah dibayar atau belum)
       if (today >= periodeDate) {
         return sum + p.amountAccrual;
       }
@@ -392,6 +395,7 @@ export default function MonitoringAccrualPage() {
             const periodeTahun = parseInt(tahunStr);
             const periodeDate = new Date(periodeTahun, periodeBulan, 1);
             const today = new Date();
+            // Akui accrual jika sudah jatuh tempo
             if (today >= periodeDate) {
               return sum + p.amountAccrual;
             }
@@ -761,12 +765,11 @@ export default function MonitoringAccrualPage() {
     
     // Calculate total accrual for this single item
     const totalAccrual = item.periodes?.reduce((sum, p) => {
-      // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
       if (item.pembagianType === 'manual') {
         return sum + p.amountAccrual;
       }
       
-      // Untuk otomatis, cek tanggal periode
+      // Untuk otomatis, cek tanggal periode saja
       // Parse bulan periode (format: "Jan 2026")
       const [bulanName, tahunStr] = p.bulan.split(' ');
       const bulanMap: Record<string, number> = {
@@ -780,7 +783,7 @@ export default function MonitoringAccrualPage() {
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
       
-      // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+      // Akui accrual jika sudah jatuh tempo
       if (today >= periodeDate) {
         return sum + p.amountAccrual;
       }
@@ -895,12 +898,11 @@ export default function MonitoringAccrualPage() {
     
     // Calculate total accrual for this specific item
     const totalAccrual = item.periodes?.reduce((sum, p) => {
-      // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
       if (item.pembagianType === 'manual') {
         return sum + p.amountAccrual;
       }
       
-      // Untuk otomatis, cek tanggal periode
+      // Untuk otomatis, cek tanggal periode saja
       // Parse bulan periode (format: "Jan 2026")
       const [bulanName, tahunStr] = p.bulan.split(' ');
       const bulanMap: Record<string, number> = {
@@ -914,7 +916,7 @@ export default function MonitoringAccrualPage() {
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
       
-      // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+      // Akui accrual jika sudah jatuh tempo
       if (today >= periodeDate) {
         return sum + p.amountAccrual;
       }
@@ -1269,7 +1271,7 @@ export default function MonitoringAccrualPage() {
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to create realisasi');
+      if (!response.ok) throw new Error('Failed to save realisasi');
 
       // Reset form and editing state
       setRealisasiForm({
@@ -1279,20 +1281,20 @@ export default function MonitoringAccrualPage() {
       });
       setEditingRealisasiId(null);
 
-      // Refresh realisasi list
+      // Refresh realisasi list for the modal
       const realisasiResponse = await fetch(`/api/accrual/realisasi?periodeId=${selectedPeriode.id}`);
       if (realisasiResponse.ok) {
         const data = await realisasiResponse.json();
         setRealisasiData(data);
       }
 
-      // Refresh main data and update selectedPeriode
-      await fetchAccrualData();
-      
-      // Update selectedPeriode with fresh data
+      // Refresh main data and get updated periode in one go
       const accrualResponse = await fetch('/api/accrual');
       if (accrualResponse.ok) {
         const accruals = await accrualResponse.json();
+        setAccrualData(accruals);
+        
+        // Update selectedPeriode with fresh data
         const updatedAccrual = accruals.find((acc: Accrual) => 
           acc.periodes?.some(p => p.id === selectedPeriode.id)
         );
@@ -1306,8 +1308,8 @@ export default function MonitoringAccrualPage() {
       
       alert(isEditing ? 'Realisasi berhasil diupdate!' : 'Realisasi berhasil ditambahkan!');
     } catch (error) {
-      console.error('Error creating realisasi:', error);
-      alert('Gagal menambahkan realisasi');
+      console.error('Error saving realisasi:', error);
+      alert('Gagal menyimpan realisasi');
     } finally {
       setSubmittingRealisasi(false);
     }
@@ -1332,14 +1334,14 @@ export default function MonitoringAccrualPage() {
         }
       }
 
-      // Refresh main data and update selectedPeriode
-      await fetchAccrualData();
-      
-      // Update selectedPeriode with fresh data
-      if (selectedPeriode) {
-        const accrualResponse = await fetch('/api/accrual');
-        if (accrualResponse.ok) {
-          const accruals = await accrualResponse.json();
+      // Refresh main data and get updated periode in one go
+      const accrualResponse = await fetch('/api/accrual');
+      if (accrualResponse.ok) {
+        const accruals = await accrualResponse.json();
+        setAccrualData(accruals);
+        
+        // Update selectedPeriode with fresh data
+        if (selectedPeriode) {
           const updatedAccrual = accruals.find((acc: Accrual) => 
             acc.periodes?.some(p => p.id === selectedPeriode.id)
           );
@@ -1906,14 +1908,14 @@ export default function MonitoringAccrualPage() {
                             {item.jumlahPeriode} bulan
                           </td>
                           <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
-                            {formatCurrency(
-                              item.periodes?.reduce((sum, p) => {
-                                // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
+                            {(() => {
+                              const totalAccrual = item.periodes?.reduce((sum, p) => {
+                                // Untuk manual, langsung tampilkan semua accrual
                                 if (item.pembagianType === 'manual') {
                                   return sum + p.amountAccrual;
                                 }
                                 
-                                // Untuk otomatis, cek tanggal periode
+                                // Untuk otomatis, cek tanggal periode saja
                                 // Parse bulan periode (format: "Jan 2026")
                                 const [bulanName, tahunStr] = p.bulan.split(' ');
                                 const bulanMap: Record<string, number> = {
@@ -1927,23 +1929,45 @@ export default function MonitoringAccrualPage() {
                                 const periodeDate = new Date(periodeTahun, periodeBulan, 1);
                                 const today = new Date();
                                 
-                                // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
+                                // Akui accrual jika sudah jatuh tempo (tidak peduli sudah dibayar atau belum)
                                 if (today >= periodeDate) {
                                   return sum + p.amountAccrual;
                                 }
                                 return sum;
-                              }, 0) || 0
-                            )}
+                              }, 0) || 0;
+                              return formatCurrency(totalAccrual);
+                            })()}
                           </td>
                           <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
-                            {formatCurrency(
-                              item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0
-                            )}
+                            {(() => {
+                              const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+                              return formatCurrency(totalRealisasi);
+                            })()}
                           </td>
                           <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
-                            {formatCurrency(
-                              item.totalAmount - (item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0)
-                            )}
+                            {(() => {
+                              const totalAccrual = item.periodes?.reduce((sum, p) => {
+                                if (item.pembagianType === 'manual') {
+                                  return sum + p.amountAccrual;
+                                }
+                                const [bulanName, tahunStr] = p.bulan.split(' ');
+                                const bulanMap: Record<string, number> = {
+                                  'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+                                  'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+                                };
+                                const periodeBulan = bulanMap[bulanName];
+                                const periodeTahun = parseInt(tahunStr);
+                                const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+                                const today = new Date();
+                                if (today >= periodeDate) {
+                                  return sum + p.amountAccrual;
+                                }
+                                return sum;
+                              }, 0) || 0;
+                              const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+                              const saldo = totalAccrual - totalRealisasi;
+                              return formatCurrency(saldo);
+                            })()}
                           </td>
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
@@ -2110,7 +2134,7 @@ export default function MonitoringAccrualPage() {
                                           ) : (
                                             <div className="flex items-center justify-end gap-2">
                                               {formatCurrency(periode.amountAccrual)}
-                                              {item.pembagianType === 'manual' && (
+                                              {canEdit && (
                                                 <button
                                                   onClick={() => {
                                                     setEditingPeriodeId(periode.id);

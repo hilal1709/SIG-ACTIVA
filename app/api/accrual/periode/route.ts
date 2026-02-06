@@ -24,12 +24,39 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Update periode amount
     const periode = await prisma.accrualPeriode.update({
       where: {
         id: parseInt(id),
       },
       data: {
         amountAccrual: parseFloat(amountAccrual),
+      },
+      include: {
+        accrual: {
+          include: {
+            periodes: true,
+          },
+        },
+      },
+    });
+
+    // Recalculate total amount from all periodes
+    const allPeriodes = await prisma.accrualPeriode.findMany({
+      where: {
+        accrualId: periode.accrualId,
+      },
+    });
+
+    const newTotalAmount = allPeriodes.reduce((sum, p) => sum + p.amountAccrual, 0);
+
+    // Update parent accrual totalAmount
+    await prisma.accrual.update({
+      where: {
+        id: periode.accrualId,
+      },
+      data: {
+        totalAmount: newTotalAmount,
       },
     });
 
