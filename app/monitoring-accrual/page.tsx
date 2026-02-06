@@ -225,7 +225,7 @@ export default function MonitoringAccrualPage() {
         // Untuk manual, langsung tampilkan semua accrual
         return sum + p.amountAccrual;
       }
-      // Untuk otomatis, cek tanggal periode saja
+      // Untuk otomatis, cek tanggal periode ATAU jika ada realisasi
       const [bulanName, tahunStr] = p.bulan.split(' ');
       const bulanMap: Record<string, number> = {
         'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
@@ -235,8 +235,9 @@ export default function MonitoringAccrualPage() {
       const periodeTahun = parseInt(tahunStr);
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
-      // Akui accrual jika sudah jatuh tempo (tidak peduli sudah dibayar atau belum)
-      if (today >= periodeDate) {
+      // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
+      const hasRealisasi = (p.totalRealisasi || 0) > 0;
+      if (today >= periodeDate || hasRealisasi) {
         return sum + p.amountAccrual;
       }
       return sum;
@@ -395,8 +396,9 @@ export default function MonitoringAccrualPage() {
             const periodeTahun = parseInt(tahunStr);
             const periodeDate = new Date(periodeTahun, periodeBulan, 1);
             const today = new Date();
-            // Akui accrual jika sudah jatuh tempo
-            if (today >= periodeDate) {
+            // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
+            const hasRealisasi = (p.totalRealisasi || 0) > 0;
+            if (today >= periodeDate || hasRealisasi) {
               return sum + p.amountAccrual;
             }
             return sum;
@@ -549,8 +551,9 @@ export default function MonitoringAccrualPage() {
             const periodeDate = new Date(periodeTahun, periodeBulan, 1);
             const today = new Date();
             
-            // Jika sudah lewat tanggal 1 bulan periode, akui accrualnya
-            if (today >= periodeDate) {
+            // Jika sudah lewat tanggal 1 bulan periode ATAU ada realisasi, akui accrualnya
+            const hasRealisasi = (p.totalRealisasi || 0) > 0;
+            if (today >= periodeDate || hasRealisasi) {
               return sum + p.amountAccrual;
             }
             return sum;
@@ -783,8 +786,9 @@ export default function MonitoringAccrualPage() {
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
       
-      // Akui accrual jika sudah jatuh tempo
-      if (today >= periodeDate) {
+      // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
+      const hasRealisasi = (p.totalRealisasi || 0) > 0;
+      if (today >= periodeDate || hasRealisasi) {
         return sum + p.amountAccrual;
       }
       return sum;
@@ -916,8 +920,9 @@ export default function MonitoringAccrualPage() {
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
       
-      // Akui accrual jika sudah jatuh tempo
-      if (today >= periodeDate) {
+      // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
+      const hasRealisasi = (p.totalRealisasi || 0) > 0;
+      if (today >= periodeDate || hasRealisasi) {
         return sum + p.amountAccrual;
       }
       return sum;
@@ -1929,8 +1934,9 @@ export default function MonitoringAccrualPage() {
                                 const periodeDate = new Date(periodeTahun, periodeBulan, 1);
                                 const today = new Date();
                                 
-                                // Akui accrual jika sudah jatuh tempo (tidak peduli sudah dibayar atau belum)
-                                if (today >= periodeDate) {
+                                // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
+                                const hasRealisasi = (p.totalRealisasi || 0) > 0;
+                                if (today >= periodeDate || hasRealisasi) {
                                   return sum + p.amountAccrual;
                                 }
                                 return sum;
@@ -1959,7 +1965,9 @@ export default function MonitoringAccrualPage() {
                                 const periodeTahun = parseInt(tahunStr);
                                 const periodeDate = new Date(periodeTahun, periodeBulan, 1);
                                 const today = new Date();
-                                if (today >= periodeDate) {
+                                // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
+                                const hasRealisasi = (p.totalRealisasi || 0) > 0;
+                                if (today >= periodeDate || hasRealisasi) {
                                   return sum + p.amountAccrual;
                                 }
                                 return sum;
