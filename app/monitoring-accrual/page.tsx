@@ -1721,6 +1721,7 @@ export default function MonitoringAccrualPage() {
             <style jsx>{`
               .custom-scrollbar::-webkit-scrollbar {
                 height: 10px;
+                width: 10px;
               }
               .custom-scrollbar::-webkit-scrollbar-track {
                 background: #f1f5f9;
@@ -1733,10 +1734,14 @@ export default function MonitoringAccrualPage() {
               .custom-scrollbar::-webkit-scrollbar-thumb:hover {
                 background: #94a3b8;
               }
+              .table-container {
+                max-height: calc(100vh - 450px);
+                overflow: auto;
+              }
             `}</style>
-            <div className="overflow-x-auto custom-scrollbar" style={{ maxWidth: '100%', width: '100%' }}>
+            <div className="table-container custom-scrollbar">
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
                   <tr>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12 bg-gray-50">
                       ▼
