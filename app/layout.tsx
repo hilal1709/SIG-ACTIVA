@@ -5,6 +5,10 @@ import AuthGuard from "./components/AuthGuard";
 export const metadata: Metadata = {
   title: "Dashboard - SIG ACTIVA",
   description: "Sistem Informasi Akuntansi PT Semen Indonesia Grup",
+  icons: {
+    icon: "/Logo Aplikasi.png",
+    apple: "/Logo Aplikasi.png",
+  },
 };
 
 export const viewport: Viewport = {
