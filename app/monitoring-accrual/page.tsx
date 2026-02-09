@@ -114,6 +114,52 @@ interface RealisasiData {
   keterangan?: string;
 }
 
+// Standalone helper function to calculate accrual (can be used outside React component)
+function calculateAccrualAmount(item: Accrual): number {
+  if (!item.periodes || item.periodes.length === 0) return 0;
+  
+  if (item.pembagianType === 'manual') {
+    return item.periodes.reduce((sum, p) => sum + p.amountAccrual, 0);
+  }
+  
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const bulanMap: Record<string, number> = {
+    'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
+    'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
+  };
+  
+  let totalAccrual = 0;
+  let previousPeriodFullyRealized = false;
+  
+  for (let i = 0; i < item.periodes.length; i++) {
+    const p = item.periodes[i];
+    const [bulanName, tahunStr] = p.bulan.split(' ');
+    const periodeBulan = bulanMap[bulanName];
+    const periodeTahun = parseInt(tahunStr);
+    const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
+    
+    const totalRealisasi = p.totalRealisasi ?? 0;
+    const hasRealisasi = totalRealisasi > 0;
+    const isPeriodDue = todayDate >= periodeDateOnly;
+    
+    // Recognize accrual if:
+    // 1. Period is due (date has passed), OR
+    // 2. There is realisasi in this period, OR
+    // 3. Previous period is fully realized (for period 2 onwards)
+    const shouldRecognize = isPeriodDue || hasRealisasi || (i > 0 && previousPeriodFullyRealized);
+    
+    if (shouldRecognize) {
+      totalAccrual += p.amountAccrual;
+    }
+    
+    // Update status for next period: is this period fully realized?
+    previousPeriodFullyRealized = totalRealisasi >= p.amountAccrual;
+  }
+  
+  return totalAccrual;
+}
+
 export default function MonitoringAccrualPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -221,39 +267,7 @@ export default function MonitoringAccrualPage() {
 
   // Helper function to calculate accrual (memoized for better performance)
   const calculateItemAccrual = useCallback((item: Accrual) => {
-    return item.periodes?.reduce((sum, p) => {
-      if (item.pembagianType === 'manual') {
-        // Untuk manual, langsung tampilkan semua accrual
-        return sum + p.amountAccrual;
-      }
-      // Untuk otomatis, cek tanggal periode ATAU jika ada realisasi
-      const [bulanName, tahunStr] = p.bulan.split(' ');
-      const bulanMap: Record<string, number> = {
-        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-      };
-      const periodeBulan = bulanMap[bulanName];
-      const periodeTahun = parseInt(tahunStr);
-      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-      const today = new Date();
-      // Reset time to compare only dates
-      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-      
-      // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-      const totalRealisasi = p.totalRealisasi ?? 0;
-      const hasRealisasi = totalRealisasi > 0;
-      
-      // Debug logging (optional - can be removed after testing)
-      if (hasRealisasi && todayDate < periodeDateOnly) {
-        console.log(`[DEBUG] Recognizing future period ${p.bulan} due to realisasi: ${totalRealisasi}, accrual: ${p.amountAccrual}`);
-      }
-      
-      if (todayDate >= periodeDateOnly || hasRealisasi) {
-        return sum + p.amountAccrual;
-      }
-      return sum;
-    }, 0) || 0;
+    return calculateAccrualAmount(item);
   }, []);
 
   // Helper function to calculate realisasi (memoized)
@@ -270,12 +284,12 @@ export default function MonitoringAccrualPage() {
       const realisasiPeriode = periode.totalRealisasi || 0;
       const totalAvailable = realisasiPeriode + rollover;
       const effectiveRealisasi = Math.min(totalAvailable, periode.amountAccrual);
-      const saldo = periode.amountAccrual - effectiveRealisasi;
+      const saldo = periode.amountAccrual - realisasiPeriode; // Hitung saldo dari realisasi asli, bukan effective
       const rolloverOut = Math.max(0, totalAvailable - periode.amountAccrual);
       
       const result = {
         ...periode,
-        totalRealisasi: effectiveRealisasi, // Override dengan realisasi yang sudah include rollover
+        totalRealisasi: realisasiPeriode, // Gunakan realisasi asli dari database
         saldo
       };
       
@@ -416,32 +430,8 @@ export default function MonitoringAccrualPage() {
     Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
       Object.entries(vendorGroups).forEach(([vendor, items]) => {
         items.forEach((item) => {
-          // Calculate total outstanding for this item
-          const totalAccrual = item.periodes?.reduce((sum, p) => {
-            if (item.pembagianType === 'manual') {
-              return sum + p.amountAccrual;
-            }
-            
-            const [bulanName, tahunStr] = p.bulan.split(' ');
-            const bulanMap: Record<string, number> = {
-              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-            };
-            const periodeBulan = bulanMap[bulanName];
-            const periodeTahun = parseInt(tahunStr);
-            const today = new Date();
-            const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-            
-            // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-            const totalRealisasi = p.totalRealisasi ?? 0;
-            const hasRealisasi = totalRealisasi > 0;
-            if (todayDate >= periodeDateOnly || hasRealisasi) {
-              return sum + p.amountAccrual;
-            }
-            return sum;
-          }, 0) || 0;
-          
+          // Calculate total outstanding for this item using the standalone helper function
+          const totalAccrual = calculateAccrualAmount(item);
           const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
           const totalOutstanding = totalAccrual - totalRealisasi;
           
@@ -568,36 +558,8 @@ export default function MonitoringAccrualPage() {
           const glAccount = item.kdAkr; // Using kode akun accrual
           const vendorName = item.vendor;
           
-          // Calculate total saldo (sum of all accrual amounts)
-          const totalSaldo = item.periodes?.reduce((sum, p) => {
-            // Jika manual, langsung tampilkan semua accrual tanpa cek tanggal
-            if (item.pembagianType === 'manual') {
-              return sum + p.amountAccrual;
-            }
-            
-            // Untuk otomatis, cek tanggal periode
-            // Parse bulan periode (format: "Jan 2026")
-            const [bulanName, tahunStr] = p.bulan.split(' ');
-            const bulanMap: Record<string, number> = {
-              'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-              'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-            };
-            const periodeBulan = bulanMap[bulanName];
-            const periodeTahun = parseInt(tahunStr);
-            
-            // Tanggal 1 bulan periode tersebut
-            const today = new Date();
-            const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-            const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-            
-            // Jika sudah lewat tanggal 1 bulan periode ATAU ada realisasi, akui accrualnya
-            const totalRealisasi = p.totalRealisasi ?? 0;
-            const hasRealisasi = totalRealisasi > 0;
-            if (todayDate >= periodeDateOnly || hasRealisasi) {
-              return sum + p.amountAccrual;
-            }
-            return sum;
-          }, 0) || 0;
+          // Calculate total saldo using the standalone helper function
+          const totalSaldo = calculateAccrualAmount(item);
           
           // Group by GL Account and Vendor
           if (!summaryData[glAccount]) {
@@ -1964,38 +1926,7 @@ export default function MonitoringAccrualPage() {
                             {item.jumlahPeriode} bulan
                           </td>
                           <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
-                            {(() => {
-                              const totalAccrual = item.periodes?.reduce((sum, p) => {
-                                // Untuk manual, langsung tampilkan semua accrual
-                                if (item.pembagianType === 'manual') {
-                                  return sum + p.amountAccrual;
-                                }
-                                
-                                // Untuk otomatis, cek tanggal periode saja
-                                // Parse bulan periode (format: "Jan 2026")
-                                const [bulanName, tahunStr] = p.bulan.split(' ');
-                                const bulanMap: Record<string, number> = {
-                                  'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                                  'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-                                };
-                                const periodeBulan = bulanMap[bulanName];
-                                const periodeTahun = parseInt(tahunStr);
-                                
-                                // Tanggal 1 bulan periode tersebut
-                                const today = new Date();
-                                const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                                const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-                                
-                                // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-                                const totalRealisasi = p.totalRealisasi ?? 0;
-                                const hasRealisasi = totalRealisasi > 0;
-                                if (todayDate >= periodeDateOnly || hasRealisasi) {
-                                  return sum + p.amountAccrual;
-                                }
-                                return sum;
-                              }, 0) || 0;
-                              return formatCurrency(totalAccrual);
-                            })()}
+                            {formatCurrency(calculateItemAccrual(item))}
                           </td>
                           <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
                             {(() => {
@@ -2005,30 +1936,8 @@ export default function MonitoringAccrualPage() {
                           </td>
                           <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
                             {(() => {
-                              const totalAccrual = item.periodes?.reduce((sum, p) => {
-                                if (item.pembagianType === 'manual') {
-                                  return sum + p.amountAccrual;
-                                }
-                                const [bulanName, tahunStr] = p.bulan.split(' ');
-                                const bulanMap: Record<string, number> = {
-                                  'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                                  'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-                                };
-                                const periodeBulan = bulanMap[bulanName];
-                                const periodeTahun = parseInt(tahunStr);
-                                const today = new Date();
-                                const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                                const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-                                
-                                // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-                                const totalRealisasi = p.totalRealisasi ?? 0;
-                                const hasRealisasi = totalRealisasi > 0;
-                                if (todayDate >= periodeDateOnly || hasRealisasi) {
-                                  return sum + p.amountAccrual;
-                                }
-                                return sum;
-                              }, 0) || 0;
-                              const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+                              const totalAccrual = calculateItemAccrual(item);
+                              const totalRealisasi = calculateItemRealisasi(item);
                               const saldo = totalAccrual - totalRealisasi;
                               return formatCurrency(saldo);
                             })()}
@@ -2222,24 +2131,13 @@ export default function MonitoringAccrualPage() {
                                         <td className="px-3 py-2 text-center bg-white">
                                           <div className="flex items-center justify-center gap-1">
                                             {periode.saldo && periode.saldo > 0.01 ? (
-                                              <>
-                                                <button
-                                                  onClick={() => handleOpenRealisasiModal(periode, false)}
-                                                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
-                                                  title="Input realisasi baru"
-                                                >
-                                                  Input Realisasi
-                                                </button>
-                                                {(periode.totalRealisasi || 0) > 0 && (
-                                                  <button
-                                                    onClick={() => handleOpenRealisasiModal(periode, true)}
-                                                    className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded transition-colors"
-                                                    title="Lihat history realisasi"
-                                                  >
-                                                    📋
-                                                  </button>
-                                                )}
-                                              </>
+                                              <button
+                                                onClick={() => handleOpenRealisasiModal(periode, false)}
+                                                className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
+                                                title="Input realisasi baru"
+                                              >
+                                                Input Realisasi
+                                              </button>
                                             ) : (
                                               <button
                                                 onClick={() => handleOpenRealisasiModal(periode, true)}
