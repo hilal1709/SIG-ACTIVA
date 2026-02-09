@@ -130,7 +130,7 @@ function calculateAccrualAmount(item: Accrual): number {
   };
   
   let totalAccrual = 0;
-  let previousPeriodFullyRealized = false;
+  let rollover = 0; // Track rollover to calculate effective realisasi
   
   for (let i = 0; i < item.periodes.length; i++) {
     const p = item.periodes[i];
@@ -139,22 +139,30 @@ function calculateAccrualAmount(item: Accrual): number {
     const periodeTahun = parseInt(tahunStr);
     const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
     
-    const totalRealisasi = p.totalRealisasi ?? 0;
-    const hasRealisasi = totalRealisasi > 0;
+    // Check if previous period had rollover before we update it
+    const hasPreviousRollover = rollover > 0;
+    
+    // Calculate effective realisasi with rollover
+    const realisasiPeriode = p.totalRealisasi ?? 0;
+    const totalAvailable = realisasiPeriode + rollover;
+    const effectiveRealisasi = Math.min(totalAvailable, p.amountAccrual);
+    const newRollover = Math.max(0, totalAvailable - p.amountAccrual);
+    
+    const hasRealisasi = effectiveRealisasi > 0;
     const isPeriodDue = todayDate >= periodeDateOnly;
     
     // Recognize accrual if:
     // 1. Period is due (date has passed), OR
-    // 2. There is realisasi in this period, OR
-    // 3. Previous period is fully realized (for period 2 onwards)
-    const shouldRecognize = isPeriodDue || hasRealisasi || (i > 0 && previousPeriodFullyRealized);
+    // 2. There is effective realisasi in this period, OR
+    // 3. Previous period had rollover (meaning it was over-realized)
+    const shouldRecognize = isPeriodDue || hasRealisasi || (i > 0 && hasPreviousRollover);
     
     if (shouldRecognize) {
       totalAccrual += p.amountAccrual;
     }
     
-    // Update status for next period: is this period fully realized?
-    previousPeriodFullyRealized = totalRealisasi >= p.amountAccrual;
+    // Update rollover for next iteration
+    rollover = newRollover;
   }
   
   return totalAccrual;
