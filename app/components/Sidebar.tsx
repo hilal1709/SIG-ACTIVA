@@ -55,7 +55,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
             <div className="w-14 h-14 flex items-center justify-center">
-              <img src="/Logo Aplikasi.png" alt="SIG ACTIVA Logo" className="w-14 h-14 object-contain" />
+              <img src="/logo sig.png" alt="SIG ACTIVA Logo" className="w-14 h-14 object-contain" />
             </div>
             <div>
               <h2 className="font-bold text-gray-800 text-lg">SIG ACTIVA</h2>

@@ -99,7 +99,7 @@ export default function LoginPage() {
         {/* Logo & Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-24 h-24 mb-4">
-            <img src="/Logo Aplikasi.png" alt="SIG ACTIVA Logo" className="w-24 h-24 object-contain" />
+            <img src="/logo sig.png" alt="SIG ACTIVA Logo" className="w-24 h-24 object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
             SIG ACTIVA
