@@ -98,8 +98,8 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo & Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-24 h-24 mb-4">
-            <img src="/logo sig.png" alt="SIG ACTIVA Logo" className="w-24 h-24 object-contain" />
+          <div className="inline-flex items-center justify-center w-32 h-32 mb-4">
+            <img src="/logo sig.png" alt="SIG ACTIVA Logo" className="w-32 h-32 object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
             SIG ACTIVA
