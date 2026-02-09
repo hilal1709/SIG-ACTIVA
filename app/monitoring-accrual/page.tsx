@@ -2237,7 +2237,7 @@ export default function MonitoringAccrualPage() {
                                             ) : (
                                               <button
                                                 onClick={() => handleOpenRealisasiModal(periode, true)}
-                                                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors"
+                                                className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition-colors"
                                                 title="Accrual sudah terpenuhi"
                                               >
                                                 ✓ Lihat History
