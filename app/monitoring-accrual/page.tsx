@@ -1736,7 +1736,7 @@ export default function MonitoringAccrualPage() {
             `}</style>
             <div className="overflow-x-auto custom-scrollbar" style={{ maxWidth: '100%', width: '100%' }}>
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
-                <thead className="bg-gray-50 border-b border-gray-200">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
                   <tr>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12 bg-gray-50">
                       ▼
