@@ -573,8 +573,10 @@ export default function MonitoringAccrualPage() {
           const glAccount = item.kdAkr; // Using kode akun accrual
           const vendorName = item.vendor;
           
-          // Calculate total saldo using the standalone helper function
-          const totalSaldo = calculateAccrualAmount(item);
+          // Calculate saldo same as display table: Total Accrual - Total Realisasi
+          const totalAccrual = calculateAccrualAmount(item);
+          const totalRealisasi = calculateItemRealisasi(item);
+          const totalSaldo = totalAccrual - totalRealisasi;
           
           // Group by GL Account and Vendor
           if (!summaryData[glAccount]) {
@@ -706,14 +708,16 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const handleDownloadJurnalSAPPerItem = async (item: Accrual, filterCompanyCode: string) => {
+  const handleDownloadJurnalSAPPerItem = async (item: Accrual) => {
     try {
       // Load ExcelJS on demand
       const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
       
-      // Filter by company code
-      if (item.companyCode !== filterCompanyCode) {
-        alert(`Item ini menggunakan company code ${item.companyCode}, tidak bisa didownload untuk company code ${filterCompanyCode}`);
+      // Use company code from item
+      const companyCode = item.companyCode || '2000';
+      
+      if (!item.companyCode) {
+        alert('Company code tidak ditemukan untuk item ini');
         return;
       }
       
@@ -824,7 +828,7 @@ export default function MonitoringAccrualPage() {
       row1.height = 15;
       
       row1.getCell(1).value = ''; // xblnr - kosong
-      row1.getCell(2).value = filterCompanyCode; // bukrs
+      row1.getCell(2).value = companyCode; // bukrs
       row1.getCell(3).value = 'SA'; // blart
       row1.getCell(4).value = docDate; // bldat
       row1.getCell(5).value = docDate; // budat
@@ -860,7 +864,7 @@ export default function MonitoringAccrualPage() {
       row2.height = 15;
       
       row2.getCell(1).value = ''; // xblnr - kosong
-      row2.getCell(2).value = filterCompanyCode; // bukrs
+      row2.getCell(2).value = companyCode; // bukrs
       row2.getCell(3).value = 'SA'; // blart
       row2.getCell(4).value = docDate; // bldat
       row2.getCell(5).value = docDate; // budat
@@ -898,7 +902,7 @@ export default function MonitoringAccrualPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Jurnal_SAP_${filterCompanyCode}_${item.noPo || item.id}_${year}.xlsx`;
+      link.download = `Jurnal_SAP_${companyCode}_${item.noPo || item.id}_${year}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -910,9 +914,12 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const handleDownloadJurnalSAPTxt = (item: Accrual, filterCompanyCode: string) => {
-    // Filter by company code
-    if (item.companyCode !== filterCompanyCode) {
+  const handleDownloadJurnalSAPTxt = (item: Accrual) => {
+    // Use company code from item
+    const companyCode = item.companyCode || '2000';
+    
+    if (!item.companyCode) {
+      alert('Company code tidak ditemukan untuk item ini');
       return;
     }
     
@@ -957,7 +964,7 @@ export default function MonitoringAccrualPage() {
       // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
       rows.push([
         '',
-        filterCompanyCode,
+        companyCode,
         'SA',
         docDate,
         docDate,
@@ -980,7 +987,7 @@ export default function MonitoringAccrualPage() {
       // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
       rows.push([
         '',
-        filterCompanyCode,
+        companyCode,
         'SA',
         docDate,
         docDate,
@@ -1008,7 +1015,7 @@ export default function MonitoringAccrualPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Jurnal_SAP_${filterCompanyCode}_${item.noPo || item.id}_${year}.txt`;
+      link.download = `Jurnal_SAP_${companyCode}_${item.noPo || item.id}_${year}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1985,9 +1992,12 @@ export default function MonitoringAccrualPage() {
                                 {expandedRows.has(`jurnal-${item.id}`) && (
                                   <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[60]">
                                     <div className="py-1">
+                                      <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
+                                        Company: {item.companyCode || 'N/A'}
+                                      </div>
                                       <button
                                         onClick={() => {
-                                          handleDownloadJurnalSAPPerItem(item, '2000');
+                                          handleDownloadJurnalSAPPerItem(item);
                                           setExpandedRows(prev => {
                                             const newSet = new Set(prev);
                                             newSet.delete(`jurnal-${item.id}`);
@@ -1996,11 +2006,11 @@ export default function MonitoringAccrualPage() {
                                         }}
                                         className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
                                       >
-                                        2000 Excel
+                                        Download Excel
                                       </button>
                                       <button
                                         onClick={() => {
-                                          handleDownloadJurnalSAPPerItem(item, '7000');
+                                          handleDownloadJurnalSAPTxt(item);
                                           setExpandedRows(prev => {
                                             const newSet = new Set(prev);
                                             newSet.delete(`jurnal-${item.id}`);
@@ -2009,34 +2019,7 @@ export default function MonitoringAccrualPage() {
                                         }}
                                         className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
                                       >
-                                        7000 Excel
-                                      </button>
-                                      <div className="border-t border-gray-200 my-1"></div>
-                                      <button
-                                        onClick={() => {
-                                          handleDownloadJurnalSAPTxt(item, '2000');
-                                          setExpandedRows(prev => {
-                                            const newSet = new Set(prev);
-                                            newSet.delete(`jurnal-${item.id}`);
-                                            return newSet;
-                                          });
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
-                                      >
-                                        2000 TXT
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleDownloadJurnalSAPTxt(item, '7000');
-                                          setExpandedRows(prev => {
-                                            const newSet = new Set(prev);
-                                            newSet.delete(`jurnal-${item.id}`);
-                                            return newSet;
-                                          });
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
-                                      >
-                                        7000 TXT
+                                        Download TXT
                                       </button>
                                     </div>
                                   </div>
