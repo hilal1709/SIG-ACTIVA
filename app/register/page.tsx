@@ -80,7 +80,7 @@ export default function RegisterPage() {
         {/* Logo & Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-32 h-32 mb-4">
-            <img src="/logo sig.png" alt="SIG ACTIVA Logo" className="w-32 h-32 object-contain" />
+            <img src="/logo aplikasi.png" alt="SIG ACTIVA Logo" className="w-32 h-32 object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
             SIG ACTIVA
