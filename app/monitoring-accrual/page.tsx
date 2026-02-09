@@ -139,23 +139,19 @@ function calculateAccrualAmount(item: Accrual): number {
     const periodeTahun = parseInt(tahunStr);
     const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
     
-    // Check if previous period had rollover before we update it
-    const hasPreviousRollover = rollover > 0;
-    
     // Calculate effective realisasi with rollover
     const realisasiPeriode = p.totalRealisasi ?? 0;
     const totalAvailable = realisasiPeriode + rollover;
     const effectiveRealisasi = Math.min(totalAvailable, p.amountAccrual);
     const newRollover = Math.max(0, totalAvailable - p.amountAccrual);
     
-    const hasRealisasi = effectiveRealisasi > 0;
     const isPeriodDue = todayDate >= periodeDateOnly;
     
-    // Recognize accrual if:
+    // Recognize accrual ONLY if:
     // 1. Period is due (date has passed), OR
-    // 2. There is effective realisasi in this period, OR
-    // 3. Previous period had rollover (meaning it was over-realized)
-    const shouldRecognize = isPeriodDue || hasRealisasi || (i > 0 && hasPreviousRollover);
+    // 2. There is effective realisasi in this period (from direct input or rollover)
+    const hasEffectiveRealisasi = effectiveRealisasi > 0;
+    const shouldRecognize = isPeriodDue || hasEffectiveRealisasi;
     
     if (shouldRecognize) {
       totalAccrual += p.amountAccrual;
