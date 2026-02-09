@@ -2142,7 +2142,7 @@ export default function MonitoringAccrualPage() {
                                         </td>
                                         <td className="px-3 py-2 text-center bg-white">
                                           <div className="flex items-center justify-center gap-1">
-                                            {periode.saldo && periode.saldo > 0.01 ? (
+                                            {(periode.saldo ?? 0) >= 1 ? (
                                               <button
                                                 onClick={() => handleOpenRealisasiModal(periode, false)}
                                                 className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
