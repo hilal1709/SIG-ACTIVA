@@ -1735,7 +1735,8 @@ export default function MonitoringAccrualPage() {
                 background: #94a3b8;
               }
               .table-container {
-                max-height: calc(100vh - 450px);
+                min-height: calc(100vh - 400px);
+                max-height: calc(100vh - 350px);
                 overflow: auto;
               }
             `}</style>
