@@ -284,12 +284,12 @@ export default function MonitoringAccrualPage() {
       const realisasiPeriode = periode.totalRealisasi || 0;
       const totalAvailable = realisasiPeriode + rollover;
       const effectiveRealisasi = Math.min(totalAvailable, periode.amountAccrual);
-      const saldo = periode.amountAccrual - realisasiPeriode; // Hitung saldo dari realisasi asli, bukan effective
+      const saldo = periode.amountAccrual - effectiveRealisasi; // Hitung saldo dari effective realisasi (sudah termasuk rollover)
       const rolloverOut = Math.max(0, totalAvailable - periode.amountAccrual);
       
       const result = {
         ...periode,
-        totalRealisasi: realisasiPeriode, // Gunakan realisasi asli dari database
+        totalRealisasi: effectiveRealisasi, // Gunakan effective realisasi untuk ditampilkan (include rollover)
         saldo
       };
       
