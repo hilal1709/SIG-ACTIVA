@@ -149,6 +149,7 @@ export default function MonitoringAccrualPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showRealisasiModal, setShowRealisasiModal] = useState(false);
   const [selectedPeriode, setSelectedPeriode] = useState<AccrualPeriode | null>(null);
+  const [realisasiViewOnly, setRealisasiViewOnly] = useState(false);
   const [realisasiData, setRealisasiData] = useState<RealisasiData[]>([]);
   const [realisasiForm, setRealisasiForm] = useState<RealisasiFormData>({
     tanggalRealisasi: new Date().toISOString().split('T')[0],
@@ -247,6 +248,32 @@ export default function MonitoringAccrualPage() {
   // Helper function to calculate realisasi (memoized)
   const calculateItemRealisasi = useCallback((item: Accrual) => {
     return item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
+  }, []);
+
+  // Helper function to calculate periode allocations with rollover
+  const calculatePeriodeAllocations = useCallback((periodes: AccrualPeriode[]) => {
+    if (!periodes || periodes.length === 0) return [];
+    
+    let rollover = 0;
+    return periodes.map((periode) => {
+      const realisasiPeriode = periode.totalRealisasi || 0;
+      const totalAvailable = realisasiPeriode + rollover;
+      const allocated = Math.min(totalAvailable, periode.amountAccrual);
+      const saldo = periode.amountAccrual - allocated;
+      const rolloverOut = Math.max(0, totalAvailable - periode.amountAccrual);
+      
+      const result = {
+        ...periode,
+        rolloverIn: rollover,
+        realisasiPeriode,
+        allocated,
+        saldo,
+        rolloverOut
+      };
+      
+      rollover = rolloverOut;
+      return result;
+    });
   }, []);
 
   // Fetch accrual data
@@ -1144,8 +1171,9 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const handleOpenRealisasiModal = async (periode: AccrualPeriode) => {
+  const handleOpenRealisasiModal = async (periode: AccrualPeriode, viewOnly = false) => {
     setSelectedPeriode(periode);
+    setRealisasiViewOnly(viewOnly);
     setShowRealisasiModal(true);
     
     // Fetch existing realisasi
@@ -2099,13 +2127,16 @@ export default function MonitoringAccrualPage() {
                                       <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Periode</th>
                                       <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Bulan</th>
                                       <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Accrual</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Total Realisasi</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-orange-700 bg-white">Roll In</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-blue-700 bg-white">Realisasi</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-green-700 bg-white">Alokasi</th>
                                       <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Saldo</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-orange-700 bg-white">Roll Out</th>
                                       <th className="px-3 py-2 text-center font-semibold text-gray-700 bg-white">Action</th>
                                     </tr>
                                   </thead>
                                   <tbody className="bg-white divide-y divide-gray-200">
-                                    {item.periodes.map((periode) => (
+                                    {calculatePeriodeAllocations(item.periodes).map((periode) => (
                                       <tr key={periode.id} className="hover:bg-gray-50">
                                         <td className="px-3 py-2 text-gray-700 bg-white">Periode {periode.periodeKe}</td>
                                         <td className="px-3 py-2 text-gray-700 bg-white">{periode.bulan}</td>
@@ -2157,19 +2188,52 @@ export default function MonitoringAccrualPage() {
                                             </div>
                                           )}
                                         </td>
+                                        <td className="px-3 py-2 text-right text-orange-600 bg-white">
+                                          {periode.rolloverIn > 0 ? formatCurrency(periode.rolloverIn) : '-'}
+                                        </td>
                                         <td className="px-3 py-2 text-right text-blue-700 bg-white">
-                                          {formatCurrency(periode.totalRealisasi || 0)}
+                                          {formatCurrency(periode.realisasiPeriode || 0)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-green-700 font-medium bg-white">
+                                          {formatCurrency(periode.allocated || 0)}
                                         </td>
                                         <td className="px-3 py-2 text-right text-gray-800 font-semibold bg-white">
-                                          {formatCurrency(periode.saldo || periode.amountAccrual)}
+                                          {formatCurrency(periode.saldo || 0)}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-orange-600 bg-white">
+                                          {periode.rolloverOut > 0 ? formatCurrency(periode.rolloverOut) : '-'}
                                         </td>
                                         <td className="px-3 py-2 text-center bg-white">
-                                          <button
-                                            onClick={() => handleOpenRealisasiModal(periode)}
-                                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
-                                          >
-                                            Input Realisasi
-                                          </button>
+                                          <div className="flex items-center justify-center gap-1">
+                                            {periode.saldo && periode.saldo > 0.01 ? (
+                                              <>
+                                                <button
+                                                  onClick={() => handleOpenRealisasiModal(periode, false)}
+                                                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
+                                                  title="Input realisasi baru"
+                                                >
+                                                  Input Realisasi
+                                                </button>
+                                                {(periode.totalRealisasi || 0) > 0 && (
+                                                  <button
+                                                    onClick={() => handleOpenRealisasiModal(periode, true)}
+                                                    className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded transition-colors"
+                                                    title="Lihat history realisasi"
+                                                  >
+                                                    📋
+                                                  </button>
+                                                )}
+                                              </>
+                                            ) : (
+                                              <button
+                                                onClick={() => handleOpenRealisasiModal(periode, true)}
+                                                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors"
+                                                title="Accrual sudah terpenuhi"
+                                              >
+                                                ✓ Lihat History
+                                              </button>
+                                            )}
+                                          </div>
                                         </td>
                                       </tr>
                                     ))}
@@ -2557,17 +2621,21 @@ export default function MonitoringAccrualPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-3xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
+            <div className={`sticky top-0 bg-gradient-to-r ${realisasiViewOnly ? 'from-green-600 to-green-700' : 'from-red-600 to-red-700'} px-6 py-5 flex items-center justify-between`}>
               <div>
-                <h2 className="text-xl font-bold text-white">Input Realisasi</h2>
+                <h2 className="text-xl font-bold text-white">
+                  {realisasiViewOnly ? '✓ History Realisasi' : 'Input Realisasi'}
+                </h2>
                 <p className="text-sm text-red-100 mt-1">
                   {selectedPeriode.bulan} - Periode {selectedPeriode.periodeKe}
+                  {realisasiViewOnly && ' (Sudah Terpenuhi)'}
                 </p>
               </div>
               <button
                 onClick={() => {
                   setShowRealisasiModal(false);
                   setSelectedPeriode(null);
+                  setRealisasiViewOnly(false);
                   setRealisasiData([]);
                   setRealisasiForm({
                     tanggalRealisasi: new Date().toISOString().split('T')[0],
@@ -2585,23 +2653,58 @@ export default function MonitoringAccrualPage() {
             <div className="overflow-y-auto p-6 bg-gray-50" style={{ maxHeight: 'calc(90vh - 180px)' }}>
               {/* Info Periode */}
               <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-                <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Accrual</p>
                     <p className="text-lg font-bold text-gray-800">{formatCurrency(selectedPeriode.amountAccrual)}</p>
                   </div>
+                  {(selectedPeriode as any).rolloverIn > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">Rollover In</p>
+                      <p className="text-lg font-bold text-orange-600">{formatCurrency((selectedPeriode as any).rolloverIn || 0)}</p>
+                    </div>
+                  )}
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Total Realisasi</p>
-                    <p className="text-lg font-bold text-blue-700">{formatCurrency(selectedPeriode.totalRealisasi || 0)}</p>
+                    <p className="text-xs text-gray-600 mb-1">Realisasi Periode</p>
+                    <p className="text-lg font-bold text-blue-700">{formatCurrency((selectedPeriode as any).realisasiPeriode || selectedPeriode.totalRealisasi || 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-600 mb-1">Alokasi</p>
+                    <p className="text-lg font-bold text-green-700">{formatCurrency((selectedPeriode as any).allocated || 0)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Saldo</p>
-                    <p className="text-lg font-bold text-red-700">{formatCurrency(selectedPeriode.saldo || selectedPeriode.amountAccrual)}</p>
+                    <p className="text-lg font-bold text-red-700">{formatCurrency((selectedPeriode as any).saldo || selectedPeriode.saldo || selectedPeriode.amountAccrual)}</p>
                   </div>
+                  {(selectedPeriode as any).rolloverOut > 0 && (
+                    <div>
+                      <p className="text-xs text-gray-600 mb-1">Rollover Out</p>
+                      <p className="text-lg font-bold text-orange-600">{formatCurrency((selectedPeriode as any).rolloverOut || 0)}</p>
+                    </div>
+                  )}
                 </div>
+                {(selectedPeriode as any).rolloverOut > 0 && (
+                  <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800 text-center">
+                    ℹ️ Kelebihan realisasi sebesar {formatCurrency((selectedPeriode as any).rolloverOut)} akan dialokasikan ke periode berikutnya
+                  </div>
+                )}
               </div>
 
+              {/* Notif jika view only */}
+              {realisasiViewOnly && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                  <div className="flex items-center gap-2 text-green-800">
+                    <span className="text-2xl">✓</span>
+                    <div>
+                      <p className="font-semibold">Accrual Sudah Terpenuhi</p>
+                      <p className="text-sm">Periode ini sudah direalisasi sepenuhnya. Anda hanya dapat melihat history realisasi.</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Upload Excel */}
+              {!realisasiViewOnly && (
               <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Import dari Excel</h3>
                 <div className="flex items-center gap-3">
@@ -2625,8 +2728,10 @@ export default function MonitoringAccrualPage() {
                   * Nilai realisasi akan diambil dari kolom J pada file Excel
                 </p>
               </div>
+              )}
 
               {/* Form Input Realisasi */}
+              {!realisasiViewOnly && (
               <form onSubmit={handleRealisasiSubmit} className="bg-white rounded-lg border border-gray-200 p-5 mb-6">
                 <h3 className="text-sm font-semibold text-gray-700 mb-4">Tambah Realisasi Manual</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2699,6 +2804,7 @@ export default function MonitoringAccrualPage() {
                   </button>
                 </div>
               </form>
+              )}
 
               {/* List Realisasi */}
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -2717,7 +2823,9 @@ export default function MonitoringAccrualPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Tanggal</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Keterangan</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Action</th>
+                          {!realisasiViewOnly && (
+                            <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Action</th>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-200">
@@ -2726,31 +2834,33 @@ export default function MonitoringAccrualPage() {
                             <td className="px-4 py-3 text-gray-700">{formatDate(realisasi.tanggalRealisasi)}</td>
                             <td className="px-4 py-3 text-right text-gray-800 font-medium">{formatCurrency(realisasi.amount)}</td>
                             <td className="px-4 py-3 text-gray-600">{realisasi.keterangan || '-'}</td>
-                            <td className="px-4 py-3 text-center">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => {
-                                    setEditingRealisasiId(realisasi.id);
-                                    setRealisasiForm({
-                                      tanggalRealisasi: realisasi.tanggalRealisasi.split('T')[0],
-                                      amount: realisasi.amount.toString(),
-                                      keterangan: realisasi.keterangan || '',
-                                    });
-                                  }}
-                                  className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
-                                  title="Edit"
-                                >
-                                  <Edit2 size={16} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteRealisasi(realisasi.id)}
-                                  className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
-                                  title="Hapus"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
+                            {!realisasiViewOnly && (
+                              <td className="px-4 py-3 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditingRealisasiId(realisasi.id);
+                                      setRealisasiForm({
+                                        tanggalRealisasi: realisasi.tanggalRealisasi.split('T')[0],
+                                        amount: realisasi.amount.toString(),
+                                        keterangan: realisasi.keterangan || '',
+                                      });
+                                    }}
+                                    className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
+                                    title="Edit"
+                                  >
+                                    <Edit2 size={16} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteRealisasi(realisasi.id)}
+                                    className="text-red-600 hover:text-red-800 transition-colors p-1 hover:bg-red-50 rounded"
+                                    title="Hapus"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
@@ -2766,6 +2876,7 @@ export default function MonitoringAccrualPage() {
                 onClick={() => {
                   setShowRealisasiModal(false);
                   setSelectedPeriode(null);
+                  setRealisasiViewOnly(false);
                   setRealisasiData([]);
                   setEditingRealisasiId(null);
                   setRealisasiForm({
