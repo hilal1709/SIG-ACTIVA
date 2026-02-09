@@ -78,23 +78,37 @@ export async function GET(request: NextRequest) {
       take: 1000
     });
 
-    // Calculate total realisasi and saldo for each periode
+    // Calculate total realisasi and saldo for each periode with rollover
     const accrualsWithCalculations = accruals.map((accrual: any) => {
+      let rollover = 0; // Track kelebihan realisasi dari periode sebelumnya
+      
       return {
         ...accrual,
         periodes: accrual.periodes.map((periode: any) => {
           // Calculate totalRealisasi from actual realisasi data
           const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0;
           
-          // Log for debugging (optional - remove after testing)
-          if (totalRealisasi > 0) {
-            console.log(`Periode ${periode.bulan} has realisasi: ${totalRealisasi}, accrual: ${periode.amountAccrual}`);
+          // Total available termasuk rollover dari periode sebelumnya
+          const totalAvailable = totalRealisasi + rollover;
+          
+          // Efektif realisasi adalah minimum antara available dan accrual
+          const effectiveRealisasi = Math.min(totalAvailable, periode.amountAccrual);
+          
+          // Hitung saldo (jika ada rollover yang mencukupi, saldo bisa 0)
+          const saldo = Math.max(0, periode.amountAccrual - totalAvailable);
+          
+          // Update rollover untuk periode berikutnya (kelebihan realisasi)
+          rollover = Math.max(0, totalAvailable - periode.amountAccrual);
+          
+          // Log for debugging
+          if (totalRealisasi > 0 || rollover > 0) {
+            console.log(`Periode ${periode.bulan} - Realisasi: ${totalRealisasi}, Rollover in: ${totalAvailable - totalRealisasi}, Rollover out: ${rollover}, Saldo: ${saldo}`);
           }
           
           return {
             ...periode,
             totalRealisasi,
-            saldo: periode.amountAccrual - totalRealisasi,
+            saldo,
           };
         }),
       };
