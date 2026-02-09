@@ -258,17 +258,14 @@ export default function MonitoringAccrualPage() {
     return periodes.map((periode) => {
       const realisasiPeriode = periode.totalRealisasi || 0;
       const totalAvailable = realisasiPeriode + rollover;
-      const allocated = Math.min(totalAvailable, periode.amountAccrual);
-      const saldo = periode.amountAccrual - allocated;
+      const effectiveRealisasi = Math.min(totalAvailable, periode.amountAccrual);
+      const saldo = periode.amountAccrual - effectiveRealisasi;
       const rolloverOut = Math.max(0, totalAvailable - periode.amountAccrual);
       
       const result = {
         ...periode,
-        rolloverIn: rollover,
-        realisasiPeriode,
-        allocated,
-        saldo,
-        rolloverOut
+        totalRealisasi: effectiveRealisasi, // Override dengan realisasi yang sudah include rollover
+        saldo
       };
       
       rollover = rolloverOut;
@@ -2127,11 +2124,8 @@ export default function MonitoringAccrualPage() {
                                       <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Periode</th>
                                       <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Bulan</th>
                                       <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Accrual</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-orange-700 bg-white">Roll In</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-blue-700 bg-white">Realisasi</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-green-700 bg-white">Alokasi</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-blue-700 bg-white">Total Realisasi</th>
                                       <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Saldo</th>
-                                      <th className="px-3 py-2 text-right font-semibold text-orange-700 bg-white">Roll Out</th>
                                       <th className="px-3 py-2 text-center font-semibold text-gray-700 bg-white">Action</th>
                                     </tr>
                                   </thead>
@@ -2188,20 +2182,11 @@ export default function MonitoringAccrualPage() {
                                             </div>
                                           )}
                                         </td>
-                                        <td className="px-3 py-2 text-right text-orange-600 bg-white">
-                                          {periode.rolloverIn > 0 ? formatCurrency(periode.rolloverIn) : '-'}
-                                        </td>
                                         <td className="px-3 py-2 text-right text-blue-700 bg-white">
-                                          {formatCurrency(periode.realisasiPeriode || 0)}
-                                        </td>
-                                        <td className="px-3 py-2 text-right text-green-700 font-medium bg-white">
-                                          {formatCurrency(periode.allocated || 0)}
+                                          {formatCurrency(periode.totalRealisasi || 0)}
                                         </td>
                                         <td className="px-3 py-2 text-right text-gray-800 font-semibold bg-white">
                                           {formatCurrency(periode.saldo || 0)}
-                                        </td>
-                                        <td className="px-3 py-2 text-right text-orange-600 bg-white">
-                                          {periode.rolloverOut > 0 ? formatCurrency(periode.rolloverOut) : '-'}
                                         </td>
                                         <td className="px-3 py-2 text-center bg-white">
                                           <div className="flex items-center justify-center gap-1">
@@ -2653,41 +2638,20 @@ export default function MonitoringAccrualPage() {
             <div className="overflow-y-auto p-6 bg-gray-50" style={{ maxHeight: 'calc(90vh - 180px)' }}>
               {/* Info Periode */}
               <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Accrual</p>
                     <p className="text-lg font-bold text-gray-800">{formatCurrency(selectedPeriode.amountAccrual)}</p>
                   </div>
-                  {(selectedPeriode as any).rolloverIn > 0 && (
-                    <div>
-                      <p className="text-xs text-gray-600 mb-1">Rollover In</p>
-                      <p className="text-lg font-bold text-orange-600">{formatCurrency((selectedPeriode as any).rolloverIn || 0)}</p>
-                    </div>
-                  )}
                   <div>
-                    <p className="text-xs text-gray-600 mb-1">Realisasi Periode</p>
-                    <p className="text-lg font-bold text-blue-700">{formatCurrency((selectedPeriode as any).realisasiPeriode || selectedPeriode.totalRealisasi || 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-600 mb-1">Alokasi</p>
-                    <p className="text-lg font-bold text-green-700">{formatCurrency((selectedPeriode as any).allocated || 0)}</p>
+                    <p className="text-xs text-gray-600 mb-1">Total Realisasi</p>
+                    <p className="text-lg font-bold text-blue-700">{formatCurrency(selectedPeriode.totalRealisasi || 0)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Saldo</p>
                     <p className="text-lg font-bold text-red-700">{formatCurrency((selectedPeriode as any).saldo || selectedPeriode.saldo || selectedPeriode.amountAccrual)}</p>
                   </div>
-                  {(selectedPeriode as any).rolloverOut > 0 && (
-                    <div>
-                      <p className="text-xs text-gray-600 mb-1">Rollover Out</p>
-                      <p className="text-lg font-bold text-orange-600">{formatCurrency((selectedPeriode as any).rolloverOut || 0)}</p>
-                    </div>
-                  )}
                 </div>
-                {(selectedPeriode as any).rolloverOut > 0 && (
-                  <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs text-orange-800 text-center">
-                    ℹ️ Kelebihan realisasi sebesar {formatCurrency((selectedPeriode as any).rolloverOut)} akan dialokasikan ke periode berikutnya
-                  </div>
-                )}
               </div>
 
               {/* Notif jika view only */}
