@@ -270,11 +270,6 @@ export default function MonitoringAccrualPage() {
     return calculateAccrualAmount(item);
   }, []);
 
-  // Helper function to calculate realisasi (memoized)
-  const calculateItemRealisasi = useCallback((item: Accrual) => {
-    return item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
-  }, []);
-
   // Helper function to calculate periode allocations with rollover
   const calculatePeriodeAllocations = useCallback((periodes: AccrualPeriode[]) => {
     if (!periodes || periodes.length === 0) return [];
@@ -296,6 +291,22 @@ export default function MonitoringAccrualPage() {
       rollover = rolloverOut;
       return result;
     });
+  }, []);
+
+  // Helper function to calculate realisasi (memoized) - uses effective realisasi with rollover
+  const calculateItemRealisasi = useCallback((item: Accrual) => {
+    if (!item.periodes || item.periodes.length === 0) return 0;
+    // Calculate manually to avoid circular dependency
+    let rollover = 0;
+    let total = 0;
+    for (const periode of item.periodes) {
+      const realisasiPeriode = periode.totalRealisasi || 0;
+      const totalAvailable = realisasiPeriode + rollover;
+      const effectiveRealisasi = Math.min(totalAvailable, periode.amountAccrual);
+      total += effectiveRealisasi;
+      rollover = Math.max(0, totalAvailable - periode.amountAccrual);
+    }
+    return total;
   }, []);
 
   // Fetch accrual data
@@ -1929,10 +1940,7 @@ export default function MonitoringAccrualPage() {
                             {formatCurrency(calculateItemAccrual(item))}
                           </td>
                           <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
-                            {(() => {
-                              const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
-                              return formatCurrency(totalRealisasi);
-                            })()}
+                            {formatCurrency(calculateItemRealisasi(item))}
                           </td>
                           <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
                             {(() => {
