@@ -86,6 +86,11 @@ export async function GET(request: NextRequest) {
           // Calculate totalRealisasi from actual realisasi data
           const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0;
           
+          // Log for debugging (optional - remove after testing)
+          if (totalRealisasi > 0) {
+            console.log(`Periode ${periode.bulan} has realisasi: ${totalRealisasi}, accrual: ${periode.amountAccrual}`);
+          }
+          
           return {
             ...periode,
             totalRealisasi,

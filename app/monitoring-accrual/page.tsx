@@ -236,9 +236,20 @@ export default function MonitoringAccrualPage() {
       const periodeTahun = parseInt(tahunStr);
       const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
+      // Reset time to compare only dates
+      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
+      
       // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-      const hasRealisasi = (p.totalRealisasi || 0) > 0;
-      if (today >= periodeDate || hasRealisasi) {
+      const totalRealisasi = p.totalRealisasi ?? 0;
+      const hasRealisasi = totalRealisasi > 0;
+      
+      // Debug logging (optional - can be removed after testing)
+      if (hasRealisasi && todayDate < periodeDateOnly) {
+        console.log(`[DEBUG] Recognizing future period ${p.bulan} due to realisasi: ${totalRealisasi}, accrual: ${p.amountAccrual}`);
+      }
+      
+      if (todayDate >= periodeDateOnly || hasRealisasi) {
         return sum + p.amountAccrual;
       }
       return sum;
@@ -418,11 +429,14 @@ export default function MonitoringAccrualPage() {
             };
             const periodeBulan = bulanMap[bulanName];
             const periodeTahun = parseInt(tahunStr);
-            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
             const today = new Date();
+            const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
+            
             // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-            const hasRealisasi = (p.totalRealisasi || 0) > 0;
-            if (today >= periodeDate || hasRealisasi) {
+            const totalRealisasi = p.totalRealisasi ?? 0;
+            const hasRealisasi = totalRealisasi > 0;
+            if (todayDate >= periodeDateOnly || hasRealisasi) {
               return sum + p.amountAccrual;
             }
             return sum;
@@ -572,12 +586,14 @@ export default function MonitoringAccrualPage() {
             const periodeTahun = parseInt(tahunStr);
             
             // Tanggal 1 bulan periode tersebut
-            const periodeDate = new Date(periodeTahun, periodeBulan, 1);
             const today = new Date();
+            const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
             
             // Jika sudah lewat tanggal 1 bulan periode ATAU ada realisasi, akui accrualnya
-            const hasRealisasi = (p.totalRealisasi || 0) > 0;
-            if (today >= periodeDate || hasRealisasi) {
+            const totalRealisasi = p.totalRealisasi ?? 0;
+            const hasRealisasi = totalRealisasi > 0;
+            if (todayDate >= periodeDateOnly || hasRealisasi) {
               return sum + p.amountAccrual;
             }
             return sum;
@@ -807,12 +823,14 @@ export default function MonitoringAccrualPage() {
       const periodeTahun = parseInt(tahunStr);
       
       // Tanggal 1 bulan periode tersebut
-      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
+      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
       
       // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-      const hasRealisasi = (p.totalRealisasi || 0) > 0;
-      if (today >= periodeDate || hasRealisasi) {
+      const totalRealisasi = p.totalRealisasi ?? 0;
+      const hasRealisasi = totalRealisasi > 0;
+      if (todayDate >= periodeDateOnly || hasRealisasi) {
         return sum + p.amountAccrual;
       }
       return sum;
@@ -941,12 +959,14 @@ export default function MonitoringAccrualPage() {
       const periodeTahun = parseInt(tahunStr);
       
       // Tanggal 1 bulan periode tersebut
-      const periodeDate = new Date(periodeTahun, periodeBulan, 1);
       const today = new Date();
+      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
       
       // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-      const hasRealisasi = (p.totalRealisasi || 0) > 0;
-      if (today >= periodeDate || hasRealisasi) {
+      const totalRealisasi = p.totalRealisasi ?? 0;
+      const hasRealisasi = totalRealisasi > 0;
+      if (todayDate >= periodeDateOnly || hasRealisasi) {
         return sum + p.amountAccrual;
       }
       return sum;
@@ -1956,12 +1976,14 @@ export default function MonitoringAccrualPage() {
                                 const periodeTahun = parseInt(tahunStr);
                                 
                                 // Tanggal 1 bulan periode tersebut
-                                const periodeDate = new Date(periodeTahun, periodeBulan, 1);
                                 const today = new Date();
+                                const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                                const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
                                 
                                 // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-                                const hasRealisasi = (p.totalRealisasi || 0) > 0;
-                                if (today >= periodeDate || hasRealisasi) {
+                                const totalRealisasi = p.totalRealisasi ?? 0;
+                                const hasRealisasi = totalRealisasi > 0;
+                                if (todayDate >= periodeDateOnly || hasRealisasi) {
                                   return sum + p.amountAccrual;
                                 }
                                 return sum;
@@ -1988,11 +2010,14 @@ export default function MonitoringAccrualPage() {
                                 };
                                 const periodeBulan = bulanMap[bulanName];
                                 const periodeTahun = parseInt(tahunStr);
-                                const periodeDate = new Date(periodeTahun, periodeBulan, 1);
                                 const today = new Date();
+                                const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                                const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
+                                
                                 // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-                                const hasRealisasi = (p.totalRealisasi || 0) > 0;
-                                if (today >= periodeDate || hasRealisasi) {
+                                const totalRealisasi = p.totalRealisasi ?? 0;
+                                const hasRealisasi = totalRealisasi > 0;
+                                if (todayDate >= periodeDateOnly || hasRealisasi) {
                                   return sum + p.amountAccrual;
                                 }
                                 return sum;
