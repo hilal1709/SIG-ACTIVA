@@ -259,41 +259,23 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Generate new periodes data
-    const start = new Date(startDate);
-    const periodes = [];
-    
-    for (let i = 0; i < parseInt(jumlahPeriode); i++) {
-      const periodeDate = new Date(start);
-      periodeDate.setMonth(start.getMonth() + i);
-      
-      const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-      const bulan = `${bulanNames[periodeDate.getMonth()]} ${periodeDate.getFullYear()}`;
-      
-      let amountAccrual;
-      if (pembagianType === 'otomatis') {
-        amountAccrual = parseFloat(totalAmount) / parseInt(jumlahPeriode);
-      } else {
-        amountAccrual = periodeAmounts && periodeAmounts[i] ? parseFloat(periodeAmounts[i]) : 0;
-      }
-      
-      periodes.push({
-        periodeKe: i + 1,
-        bulan,
-        tahun: periodeDate.getFullYear(),
-        amountAccrual,
-      });
-    }
-
-    // Delete existing periodes and create new ones
-    await prisma.accrualPeriode.deleteMany({
+    // Get existing periodes
+    const existingPeriodes = await prisma.accrualPeriode.findMany({
       where: {
         accrualId: parseInt(id),
       },
+      orderBy: {
+        periodeKe: 'asc',
+      },
     });
 
-    // Update accrual with new periodes
-    const accrual = await prisma.accrual.update({
+    // Generate new periodes data
+    const start = new Date(startDate);
+    const newJumlahPeriode = parseInt(jumlahPeriode);
+    const existingCount = existingPeriodes.length;
+    
+    // Update accrual basic info first
+    await prisma.accrual.update({
       where: {
         id: parseInt(id),
       },
@@ -310,14 +292,76 @@ export async function PATCH(request: NextRequest) {
         totalAmount: parseFloat(totalAmount),
         costCenter: costCenter || null,
         startDate: new Date(startDate),
-        jumlahPeriode: parseInt(jumlahPeriode),
+        jumlahPeriode: newJumlahPeriode,
         pembagianType,
-        periodes: {
-          create: periodes,
+      },
+    });
+
+    // Update or create periodes
+    for (let i = 0; i < newJumlahPeriode; i++) {
+      const periodeDate = new Date(start);
+      periodeDate.setMonth(start.getMonth() + i);
+      
+      const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+      const bulan = `${bulanNames[periodeDate.getMonth()]} ${periodeDate.getFullYear()}`;
+      
+      let amountAccrual;
+      if (pembagianType === 'otomatis') {
+        amountAccrual = parseFloat(totalAmount) / newJumlahPeriode;
+      } else {
+        amountAccrual = periodeAmounts && periodeAmounts[i] ? parseFloat(periodeAmounts[i]) : 0;
+      }
+
+      // If periode already exists, update it (preserve realisasi data)
+      if (i < existingCount) {
+        await prisma.accrualPeriode.update({
+          where: {
+            id: existingPeriodes[i].id,
+          },
+          data: {
+            bulan,
+            tahun: periodeDate.getFullYear(),
+            amountAccrual,
+            periodeKe: i + 1,
+          },
+        });
+      } else {
+        // Create new periode if it doesn't exist
+        await prisma.accrualPeriode.create({
+          data: {
+            accrualId: parseInt(id),
+            periodeKe: i + 1,
+            bulan,
+            tahun: periodeDate.getFullYear(),
+            amountAccrual,
+          },
+        });
+      }
+    }
+
+    // Delete excess periodes if jumlah periode decreased
+    if (newJumlahPeriode < existingCount) {
+      const periodesToDelete = existingPeriodes.slice(newJumlahPeriode);
+      await prisma.accrualPeriode.deleteMany({
+        where: {
+          id: {
+            in: periodesToDelete.map(p => p.id),
+          },
         },
+      });
+    }
+
+    // Fetch updated accrual with periodes
+    const accrual = await prisma.accrual.findUnique({
+      where: {
+        id: parseInt(id),
       },
       include: {
-        periodes: true,
+        periodes: {
+          orderBy: {
+            periodeKe: 'asc',
+          },
+        },
       },
     });
 
