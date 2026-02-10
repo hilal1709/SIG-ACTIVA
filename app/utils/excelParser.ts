@@ -57,61 +57,33 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
         const outstandingColumn = findColumnIndex(headerRow, ['OUTSTANDING', 'SALDO AKHIR', 'SALDO']);
         
         if (kodeAkunColumn !== -1 && outstandingColumn !== -1) {
-          // Look for the last row with data (typically the balance)
-          let lastBalance = 0;
-          let lastKlasifikasi = '';
-          let lastVendor = '';
-          let lastNoPo = '';
-          let lastAlokasi = '';
-          let lastKeterangan = '';
-          let lastNilaiPo = 0;
-          
+          // Process ALL rows in sheet kode akun (not just last row)
           const startRowIndex = Math.max(0, data.indexOf(headerRow) + 1);
           for (let i = startRowIndex; i < data.length; i++) {
             const row = data[i];
             if (!row) continue;
 
             const outstandingValue = parseNumber(row[outstandingColumn]);
-            if (outstandingValue !== null) {
-              lastBalance = outstandingValue;
-            }
+            const klasifikasiValue = klasifikasiColumn !== -1 && row[klasifikasiColumn] ? String(row[klasifikasiColumn]).trim() : '';
+            const vendorValue = vendorColumn !== -1 && row[vendorColumn] ? String(row[vendorColumn]).trim() : '';
+            const noPoValue = noPoColumn !== -1 && row[noPoColumn] ? String(row[noPoColumn]).trim() : '';
+            const alokasiValue = alokasiColumn !== -1 && row[alokasiColumn] ? String(row[alokasiColumn]).trim() : '';
+            const keteranganValue = keteranganColumn !== -1 && row[keteranganColumn] ? String(row[keteranganColumn]).trim() : '';
+            const nilaiPoValue = nilaiPoColumn !== -1 ? parseNumber(row[nilaiPoColumn]) : null;
             
-            // Capture other fields from the last non-empty row
-            if (klasifikasiColumn !== -1 && row[klasifikasiColumn]) {
-              lastKlasifikasi = String(row[klasifikasiColumn]).trim();
+            // Only add if outstanding has value and not zero
+            if (outstandingValue !== null && outstandingValue !== 0) {
+              accruals.push({
+                kdAkr: String(sheetName ?? '').trim(),
+                saldo: outstandingValue,
+                ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
+                ...(vendorValue ? { vendor: vendorValue } : {}),
+                ...(noPoValue ? { noPo: noPoValue } : {}),
+                ...(alokasiValue ? { alokasi: alokasiValue } : {}),
+                ...(keteranganValue ? { deskripsi: keteranganValue } : {}),
+                ...(nilaiPoValue !== null && nilaiPoValue !== 0 ? { totalAmount: nilaiPoValue } : {})
+              });
             }
-            if (vendorColumn !== -1 && row[vendorColumn]) {
-              lastVendor = String(row[vendorColumn]).trim();
-            }
-            if (noPoColumn !== -1 && row[noPoColumn]) {
-              lastNoPo = String(row[noPoColumn]).trim();
-            }
-            if (alokasiColumn !== -1 && row[alokasiColumn]) {
-              lastAlokasi = String(row[alokasiColumn]).trim();
-            }
-            if (keteranganColumn !== -1 && row[keteranganColumn]) {
-              lastKeterangan = String(row[keteranganColumn]).trim();
-            }
-            if (nilaiPoColumn !== -1) {
-              const nilaiPoValue = parseNumber(row[nilaiPoColumn]);
-              if (nilaiPoValue !== null) {
-                lastNilaiPo = nilaiPoValue;
-              }
-            }
-          }
-          
-          // Allow negative/positive saldo; ignore exact zero
-          if (lastBalance !== 0) {
-            accruals.push({
-              kdAkr: String(sheetName ?? '').trim(),
-              saldo: lastBalance,
-              ...(lastKlasifikasi ? { klasifikasi: lastKlasifikasi } : {}),
-              ...(lastVendor ? { vendor: lastVendor } : {}),
-              ...(lastNoPo ? { noPo: lastNoPo } : {}),
-              ...(lastAlokasi ? { alokasi: lastAlokasi } : {}),
-              ...(lastKeterangan ? { deskripsi: lastKeterangan } : {}),
-              ...(lastNilaiPo !== 0 ? { totalAmount: lastNilaiPo } : {})
-            });
           }
         } else {
           errors.push(
