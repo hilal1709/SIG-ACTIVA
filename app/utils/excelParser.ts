@@ -3,9 +3,13 @@ import * as XLSX from 'xlsx';
 export interface ExcelAccrualData {
   kdAkr: string;
   saldo: number;
+  klasifikasi?: string;
   vendor?: string;
   deskripsi?: string;
   kdAkunBiaya?: string;
+  noPo?: string;
+  alokasi?: string;
+  totalAmount?: number;
 }
 
 export interface ParsedExcelData {
@@ -32,33 +36,81 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
         
-        // Find the header row (sometimes it isn't the first row)
+        // Find header row (sometimes it isn't first row)
         const headerSearchRows = data.slice(0, 25);
         const headerRow =
-          headerSearchRows.find((row) => findColumnIndex(row, ['OUTSTANDING', 'SALDO AKHIR', 'SALDO']) !== -1) ??
+          headerSearchRows.find((row) => {
+            const kodeAkunColumn = findColumnIndex(row, ['KODE AKUN', 'KODE', 'KD AKR', 'KDAKR']);
+            const outstandingColumn = findColumnIndex(row, ['OUTSTANDING', 'SALDO AKHIR', 'SALDO']);
+            return kodeAkunColumn !== -1 && outstandingColumn !== -1;
+          }) ??
           data[0];
 
-        // Find the outstanding/saldo column and data rows
+        // Find columns based on export format
+        const kodeAkunColumn = findColumnIndex(headerRow, ['KODE AKUN', 'KODE', 'KD AKR', 'KDAKR']);
+        const klasifikasiColumn = findColumnIndex(headerRow, ['KLASIFIKASI', 'PEKERJAAN']);
+        const vendorColumn = findColumnIndex(headerRow, ['VENDOR', 'NAMA VENDOR']);
+        const noPoColumn = findColumnIndex(headerRow, ['PO/PR', 'PO', 'NO PO', 'PR']);
+        const alokasiColumn = findColumnIndex(headerRow, ['ORDER', 'ALOKASI']);
+        const keteranganColumn = findColumnIndex(headerRow, ['KETERANGAN', 'DESKRIPSI']);
+        const nilaiPoColumn = findColumnIndex(headerRow, ['NILAI PO', 'TOTAL AMOUNT', 'AMOUNT']);
         const outstandingColumn = findColumnIndex(headerRow, ['OUTSTANDING', 'SALDO AKHIR', 'SALDO']);
         
-        if (outstandingColumn !== -1) {
+        if (kodeAkunColumn !== -1 && outstandingColumn !== -1) {
           // Look for the last row with data (typically the balance)
           let lastBalance = 0;
+          let lastKlasifikasi = '';
+          let lastVendor = '';
+          let lastNoPo = '';
+          let lastAlokasi = '';
+          let lastKeterangan = '';
+          let lastNilaiPo = 0;
+          
           const startRowIndex = Math.max(0, data.indexOf(headerRow) + 1);
           for (let i = startRowIndex; i < data.length; i++) {
             const row = data[i];
             if (!row) continue;
 
-            const value = parseNumber(row[outstandingColumn]);
-            if (value !== null) {
-              lastBalance = value;
+            const outstandingValue = parseNumber(row[outstandingColumn]);
+            if (outstandingValue !== null) {
+              lastBalance = outstandingValue;
+            }
+            
+            // Capture other fields from the last non-empty row
+            if (klasifikasiColumn !== -1 && row[klasifikasiColumn]) {
+              lastKlasifikasi = String(row[klasifikasiColumn]).trim();
+            }
+            if (vendorColumn !== -1 && row[vendorColumn]) {
+              lastVendor = String(row[vendorColumn]).trim();
+            }
+            if (noPoColumn !== -1 && row[noPoColumn]) {
+              lastNoPo = String(row[noPoColumn]).trim();
+            }
+            if (alokasiColumn !== -1 && row[alokasiColumn]) {
+              lastAlokasi = String(row[alokasiColumn]).trim();
+            }
+            if (keteranganColumn !== -1 && row[keteranganColumn]) {
+              lastKeterangan = String(row[keteranganColumn]).trim();
+            }
+            if (nilaiPoColumn !== -1) {
+              const nilaiPoValue = parseNumber(row[nilaiPoColumn]);
+              if (nilaiPoValue !== null) {
+                lastNilaiPo = nilaiPoValue;
+              }
             }
           }
           
-          if (lastBalance > 0) {
+          // Allow negative/positive saldo; ignore exact zero
+          if (lastBalance !== 0) {
             accruals.push({
               kdAkr: String(sheetName ?? '').trim(),
-              saldo: lastBalance
+              saldo: lastBalance,
+              ...(lastKlasifikasi ? { klasifikasi: lastKlasifikasi } : {}),
+              ...(lastVendor ? { vendor: lastVendor } : {}),
+              ...(lastNoPo ? { noPo: lastNoPo } : {}),
+              ...(lastAlokasi ? { alokasi: lastAlokasi } : {}),
+              ...(lastKeterangan ? { deskripsi: lastKeterangan } : {}),
+              ...(lastNilaiPo !== 0 ? { totalAmount: lastNilaiPo } : {})
             });
           }
         } else {
@@ -85,45 +137,98 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
         const headerSearchRows = data.slice(0, 50);
         const headerRow =
           headerSearchRows.find((row) => {
-            const kdAkrColumn = findColumnIndex(row, ['KODE', 'KODE AKR', 'KODE AKRUAL', 'KD AKR', 'KDAKR', 'AKRUAL']);
+            const akunColumn = findColumnIndex(row, [
+              'AKUN',
+              'KODE',
+              'KODE AKR',
+              'KODE AKRUAL',
+              'KD AKR',
+              'KDAKR',
+              'AKRUAL'
+            ]);
+            const keteranganColumn = findColumnIndex(row, [
+              'KETERANGAN',
+              'KLASIFIKASI',
+              'DESKRIPSI'
+            ]);
             const saldoAkhirColumn = findColumnIndex(row, ['SALDO AKHIR', 'SALDOAKHIR', 'OUTSTANDING', 'SALDO']);
-            return kdAkrColumn !== -1 && saldoAkhirColumn !== -1;
+            return akunColumn !== -1 && keteranganColumn !== -1 && saldoAkhirColumn !== -1;
           }) ?? null;
         
         if (headerRow) {
           const headerIndex = data.indexOf(headerRow);
-          const kdAkrColumn = findColumnIndex(headerRow, ['KODE', 'KODE AKR', 'KODE AKRUAL', 'KD AKR', 'KDAKR', 'AKRUAL']);
+          const akunColumn = findColumnIndex(headerRow, [
+            'AKUN',
+            'KODE',
+            'KODE AKR',
+            'KODE AKRUAL',
+            'KD AKR',
+            'KDAKR',
+            'AKRUAL'
+          ]);
+          const keteranganColumn = findColumnIndex(headerRow, [
+            'KETERANGAN',
+            'KLASIFIKASI',
+            'DESKRIPSI'
+          ]);
           const saldoAkhirColumn = findColumnIndex(headerRow, ['SALDO AKHIR', 'SALDOAKHIR', 'OUTSTANDING', 'SALDO']);
-          
-          if (kdAkrColumn !== -1 && saldoAkhirColumn !== -1) {
+          const vendorColumn = findColumnIndex(headerRow, [
+            'VENDOR',
+            'NAMA VENDOR',
+            'NAMA SUPPLIER',
+            'SUPPLIER'
+          ]);
+          const kdAkunBiayaColumn = findColumnIndex(headerRow, [
+            'KD AKUN BIAYA',
+            'KODE AKUN BIAYA',
+            'AKUN BIAYA'
+          ]);
+          if (akunColumn !== -1 && keteranganColumn !== -1 && saldoAkhirColumn !== -1) {
             // Process data rows
             for (let i = headerIndex + 1; i < data.length; i++) {
               const row = data[i];
               if (!row || row.length === 0) continue;
               
-              const kdAkr = row[kdAkrColumn];
+              const kdAkr = row[akunColumn];
               const saldoAkhir = row[saldoAkhirColumn];
               
               const kdAkrStr = kdAkr ? String(kdAkr).trim() : '';
               const saldoValue = parseNumber(saldoAkhir);
+              const klasifikasiValue =
+                keteranganColumn !== -1 && row[keteranganColumn] !== null && row[keteranganColumn] !== undefined
+                  ? String(row[keteranganColumn]).trim()
+                  : undefined;
+              const vendorValue =
+                vendorColumn !== -1 && row[vendorColumn] !== null && row[vendorColumn] !== undefined
+                  ? String(row[vendorColumn]).trim()
+                  : undefined;
+              const kdAkunBiayaValue =
+                kdAkunBiayaColumn !== -1 && row[kdAkunBiayaColumn] !== null && row[kdAkunBiayaColumn] !== undefined
+                  ? String(row[kdAkunBiayaColumn]).trim()
+                  : undefined;
+                  
               if (kdAkrStr && saldoValue !== null) {
                 
                 // Only add if not already processed from individual sheet
-                if (!accruals.find(a => a.kdAkr === kdAkrStr) && saldoValue > 0) {
+                // Allow negative/positive saldo; ignore exact zero
+                if (!accruals.find(a => a.kdAkr === kdAkrStr) && saldoValue !== 0) {
                   accruals.push({
                     kdAkr: kdAkrStr,
-                    saldo: saldoValue
+                    saldo: saldoValue,
+                    ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
+                    ...(vendorValue ? { vendor: vendorValue } : {}),
+                    ...(kdAkunBiayaValue ? { kdAkunBiaya: kdAkunBiayaValue } : {})
                   });
                 }
               }
             }
           } else {
             errors.push(
-              `Sheet ${rekapSheetName}: header ditemukan tapi kolom KODE/SALDO tidak lengkap`
+              `Sheet ${rekapSheetName}: header ditemukan tapi kolom AKUN/KETERANGAN/SALDO tidak lengkap`
             );
           }
         } else {
-          errors.push(`Sheet ${rekapSheetName}: header tidak ditemukan (butuh kolom KODE + SALDO AKHIR/OUTSTANDING/SALDO)`);
+          errors.push(`Sheet ${rekapSheetName}: header tidak ditemukan (butuh kolom AKUN + KETERANGAN + SALDO AKHIR/OUTSTANDING/SALDO)`);
         }
       } catch (error) {
         errors.push(`Error processing REKAP sheet: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -160,9 +265,14 @@ function parseNumber(value: unknown): number | null {
 
   const raw = String(value).trim();
   if (!raw) return null;
+  if (raw === '-' || raw.toUpperCase() === 'N/A') return null;
+
+  // Parentheses mean negative in accounting formats: (1.234) => -1234
+  const isParenNegative = raw.startsWith('(') && raw.endsWith(')');
+  const rawWithoutParens = isParenNegative ? raw.slice(1, -1) : raw;
 
   // Remove currency/space and keep digits, separators, minus
-  const cleaned = raw
+  const cleaned = rawWithoutParens
     .replace(/[^\d.,-]/g, '')
     .replace(/\s+/g, '');
 
@@ -180,5 +290,6 @@ function parseNumber(value: unknown): number | null {
   }
 
   const num = Number(normalized);
-  return Number.isFinite(num) ? num : null;
+  if (!Number.isFinite(num)) return null;
+  return isParenNegative ? -Math.abs(num) : num;
 }

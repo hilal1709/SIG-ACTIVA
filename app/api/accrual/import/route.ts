@@ -58,11 +58,14 @@ export async function POST(request: NextRequest) {
           const updatedAccrual = await prisma.accrual.update({
             where: { id: existingAccrual.id },
             data: {
-              totalAmount: excelAccrual.saldo,
+              totalAmount: excelAccrual.totalAmount || excelAccrual.saldo,
               // Update other fields if provided
               ...(excelAccrual.vendor && { vendor: excelAccrual.vendor }),
               ...(excelAccrual.deskripsi && { deskripsi: excelAccrual.deskripsi }),
               ...(excelAccrual.kdAkunBiaya && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
+              ...(excelAccrual.klasifikasi && { klasifikasi: excelAccrual.klasifikasi }),
+              ...(excelAccrual.noPo && { noPo: excelAccrual.noPo }),
+              ...(excelAccrual.alokasi && { alokasi: excelAccrual.alokasi }),
             },
             include: {
               periodes: true
@@ -71,7 +74,7 @@ export async function POST(request: NextRequest) {
 
           // Update periodes to match new total
           if (updatedAccrual.periodes.length > 0) {
-            const amountPerPeriode = excelAccrual.saldo / updatedAccrual.periodes.length;
+            const amountPerPeriode = (excelAccrual.totalAmount || excelAccrual.saldo) / updatedAccrual.periodes.length;
             
             await prisma.accrualPeriode.updateMany({
               where: {
@@ -97,7 +100,10 @@ export async function POST(request: NextRequest) {
               kdAkunBiaya: excelAccrual.kdAkunBiaya || 'DEFAULT',
               vendor: excelAccrual.vendor || 'IMPORTED FROM EXCEL',
               deskripsi: excelAccrual.deskripsi || `Imported from Excel - ${excelAccrual.kdAkr}`,
-              totalAmount: excelAccrual.saldo,
+              klasifikasi: excelAccrual.klasifikasi,
+              totalAmount: excelAccrual.totalAmount || excelAccrual.saldo,
+              noPo: excelAccrual.noPo,
+              alokasi: excelAccrual.alokasi,
               startDate: new Date(),
               jumlahPeriode: 1,
               pembagianType: 'otomatis',
