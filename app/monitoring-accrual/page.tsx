@@ -1180,9 +1180,20 @@ export default function MonitoringAccrualPage() {
     if (name === 'kdAkr') {
       setFormData(prev => ({ ...prev, [name]: value, klasifikasi: '' }));
     } else if (name === 'jumlahPeriode') {
-      // Reset periodeAmounts when jumlahPeriode changes
-      const newPeriodeAmounts = Array(parseInt(value) || 0).fill('');
-      setFormData(prev => ({ ...prev, [name]: value, periodeAmounts: newPeriodeAmounts }));
+      // Saat ubah jumlah periode: pertahankan nilai yang sudah ada, hanya tambah/kurangi slot
+      const newCount = parseInt(value) || 0;
+      setFormData(prev => {
+        const prevAmounts = prev.periodeAmounts || [];
+        let newPeriodeAmounts: string[];
+        if (newCount > prevAmounts.length) {
+          newPeriodeAmounts = [...prevAmounts, ...Array(newCount - prevAmounts.length).fill('')];
+        } else if (newCount < prevAmounts.length) {
+          newPeriodeAmounts = prevAmounts.slice(0, newCount);
+        } else {
+          newPeriodeAmounts = prevAmounts.length ? [...prevAmounts] : Array(newCount).fill('');
+        }
+        return { ...prev, [name]: value, periodeAmounts: newPeriodeAmounts };
+      });
     } else if (name === 'pembagianType') {
       // Initialize periodeAmounts for manual mode
       if (value === 'manual') {
@@ -1259,6 +1270,10 @@ export default function MonitoringAccrualPage() {
       const isEditing = editingId !== null;
       const url = isEditing ? `/api/accrual?id=${editingId}` : '/api/accrual';
       const method = isEditing ? 'PUT' : 'POST';
+      // Manual: total amount = jumlah semua nilai periode (termasuk periode baru)
+      const totalAmountToSend = formData.pembagianType === 'manual' && formData.periodeAmounts?.length
+        ? formData.periodeAmounts.reduce((sum, a) => sum + (parseFloat(a) || 0), 0)
+        : parseFloat(formData.totalAmount);
       
       const response = await fetch(url, {
         method,
@@ -1275,7 +1290,7 @@ export default function MonitoringAccrualPage() {
           deskripsi: formData.deskripsi,
           headerText: formData.headerText || null,
           klasifikasi: formData.klasifikasi,
-          totalAmount: parseFloat(formData.totalAmount),
+          totalAmount: totalAmountToSend,
           costCenter: formData.costCenter || null,
           startDate: formData.startDate,
           jumlahPeriode: parseInt(formData.jumlahPeriode),
@@ -2513,16 +2528,22 @@ export default function MonitoringAccrualPage() {
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Amount <span className="text-red-600">*</span>
+                    {formData.pembagianType === 'manual' && formData.periodeAmounts?.length > 0 && (
+                      <span className="text-gray-500 font-normal ml-1">(otomatis = jumlah tiap periode)</span>
+                    )}
                   </label>
                   <input
                     type="number"
                     name="totalAmount"
-                    value={formData.totalAmount}
+                    value={formData.pembagianType === 'manual' && formData.periodeAmounts?.length
+                      ? formData.periodeAmounts.reduce((s, a) => s + (parseFloat(a) || 0), 0).toString()
+                      : formData.totalAmount}
                     onChange={handleInputChange}
                     required
                     min="0"
                     step="0.01"
-                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                    readOnly={formData.pembagianType === 'manual'}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all disabled:bg-gray-100 disabled:text-gray-700"
                     placeholder="Contoh: 50000000 (total)"
                   />
                 </div>
