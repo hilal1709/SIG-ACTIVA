@@ -1002,6 +1002,161 @@ export default function MonitoringAccrualPage() {
     }
   };
 
+  // Jurnal SAP untuk Realisasi: template sama, kode akun biaya di bawah kode akun accrual (row1 = accrual, row2 = biaya)
+  const handleDownloadJurnalSAPRealisasiPerItem = async (item: Accrual) => {
+    try {
+      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+      const companyCode = item.companyCode || '2000';
+      if (!item.companyCode) {
+        alert('Company code tidak ditemukan untuk item ini');
+        return;
+      }
+      const totalRealisasi = calculateItemRealisasi(item);
+      if (totalRealisasi <= 0) {
+        alert('Tidak ada realisasi untuk item ini.');
+        return;
+      }
+      const workbook = new ExcelJSLib.Workbook();
+      const worksheet = workbook.addWorksheet('Jurnal SAP Realisasi');
+      worksheet.getRow(1).height = 15;
+      const headers1 = [
+        'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt',
+        'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+      ];
+      const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
+      worksheet.getRow(1).values = headers1;
+      worksheet.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill;
+        cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+      });
+      worksheet.getRow(2).height = 15;
+      const headers2 = [
+        'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs',
+        'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center',
+        'cost center', '', 'Network', 'order numi', 'value date', ''
+      ];
+      worksheet.getRow(2).values = headers2;
+      worksheet.getRow(2).eachCell((cell: any) => {
+        cell.fill = headerFill;
+        cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+      });
+      worksheet.columns = [
+        { width: 12 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 12 }, { width: 10 }, { width: 8 },
+        { width: 30 }, { width: 12 }, { width: 12 }, { width: 15 }, { width: 30 }, { width: 12 }, { width: 12 },
+        { width: 3 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 5 }
+      ];
+      const startDate = new Date(item.startDate);
+      const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+      const year = startDate.getFullYear();
+      const amountRounded = Math.round(totalRealisasi);
+
+      // Entry 1: KREDIT - Kode Akun Accrual (di atas), amount negatif
+      const row1 = worksheet.getRow(3);
+      row1.height = 15;
+      row1.getCell(1).value = '';
+      row1.getCell(2).value = companyCode;
+      row1.getCell(3).value = 'SA';
+      row1.getCell(4).value = docDate;
+      row1.getCell(5).value = docDate;
+      row1.getCell(6).value = 'IDR';
+      row1.getCell(7).value = '';
+      row1.getCell(8).value = item.headerText || '';
+      row1.getCell(9).value = '';
+      row1.getCell(10).value = item.kdAkr; // hkont = kode akun accrual
+      row1.getCell(11).value = -amountRounded;
+      row1.getCell(11).numFmt = '0';
+      row1.getCell(12).value = item.headerText || '';
+      row1.getCell(13).value = '';
+      row1.getCell(14).value = ''; // kostl kosong untuk akun accrual
+      row1.getCell(15).value = '';
+      row1.getCell(16).value = '';
+      row1.getCell(17).value = '';
+      row1.getCell(18).value = '';
+      row1.getCell(19).value = 'G';
+      for (let col = 1; col <= 19; col++) {
+        const cell = row1.getCell(col);
+        cell.font = { name: 'Aptos Narrow', size: 12 };
+        cell.alignment = { horizontal: col === 11 ? 'right' : 'left', vertical: 'bottom' };
+      }
+
+      // Entry 2: DEBIT - Kode Akun Biaya (di bawah), amount positif
+      const row2 = worksheet.getRow(4);
+      row2.height = 15;
+      row2.getCell(1).value = '';
+      row2.getCell(2).value = companyCode;
+      row2.getCell(3).value = 'SA';
+      row2.getCell(4).value = docDate;
+      row2.getCell(5).value = docDate;
+      row2.getCell(6).value = 'IDR';
+      row2.getCell(7).value = '';
+      row2.getCell(8).value = item.headerText || '';
+      row2.getCell(9).value = '';
+      row2.getCell(10).value = item.kdAkunBiaya; // hkont = kode akun biaya
+      row2.getCell(11).value = amountRounded;
+      row2.getCell(11).numFmt = '0';
+      row2.getCell(12).value = item.headerText || '';
+      row2.getCell(13).value = '';
+      row2.getCell(14).value = item.costCenter || '';
+      row2.getCell(15).value = '';
+      row2.getCell(16).value = '';
+      row2.getCell(17).value = '';
+      row2.getCell(18).value = '';
+      row2.getCell(19).value = 'G';
+      for (let col = 1; col <= 19; col++) {
+        const cell = row2.getCell(col);
+        cell.font = { name: 'Aptos Narrow', size: 12 };
+        cell.alignment = { horizontal: col === 11 ? 'right' : 'left', vertical: 'bottom' };
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Jurnal_SAP_Realisasi_${companyCode}_${item.noPo || item.id}_${year}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating Jurnal SAP Realisasi:', error);
+      alert('Gagal membuat jurnal SAP realisasi. Silakan coba lagi.');
+    }
+  };
+
+  const handleDownloadJurnalSAPRealisasiTxt = (item: Accrual) => {
+    const companyCode = item.companyCode || '2000';
+    if (!item.companyCode) {
+      alert('Company code tidak ditemukan untuk item ini');
+      return;
+    }
+    const totalRealisasi = calculateItemRealisasi(item);
+    if (totalRealisasi <= 0) {
+      alert('Tidak ada realisasi untuk item ini.');
+      return;
+    }
+    const startDate = new Date(item.startDate);
+    const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+    const year = startDate.getFullYear();
+    const amountRounded = Math.round(totalRealisasi).toString();
+    // Entry 1: KREDIT - Kode Akun Accrual
+    const row1 = ['', companyCode, 'SA', docDate, docDate, 'IDR', '', item.headerText || '', '', item.kdAkr, (-Math.round(totalRealisasi)).toString(), item.headerText || '', '', '', '', '', '', '', 'G'];
+    // Entry 2: DEBIT - Kode Akun Biaya
+    const row2 = ['', companyCode, 'SA', docDate, docDate, 'IDR', '', item.headerText || '', '', item.kdAkunBiaya, amountRounded, item.headerText || '', '', item.costCenter || '', '', '', '', 'G'];
+    const txtContent = [row1, row2].map(row => row.join('\t')).join('\n');
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_Realisasi_${companyCode}_${item.noPo || item.id}_${year}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     
@@ -1999,6 +2154,36 @@ export default function MonitoringAccrualPage() {
                                         className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
                                       >
                                         Download TXT
+                                      </button>
+                                      <div className="border-t border-gray-100 my-1" />
+                                      <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
+                                        Jurnal Realisasi
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPRealisasiPerItem(item);
+                                          setExpandedRows(prev => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(`jurnal-${item.id}`);
+                                            return newSet;
+                                          });
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
+                                      >
+                                        Download Excel (Realisasi)
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPRealisasiTxt(item);
+                                          setExpandedRows(prev => {
+                                            const newSet = new Set(prev);
+                                            newSet.delete(`jurnal-${item.id}`);
+                                            return newSet;
+                                          });
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
+                                      >
+                                        Download TXT (Realisasi)
                                       </button>
                                     </div>
                                   </div>
