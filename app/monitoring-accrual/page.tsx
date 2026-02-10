@@ -1920,7 +1920,7 @@ export default function MonitoringAccrualPage() {
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto">
                     <button 
                       onClick={() => setShowImportExcelModal(true)}
-                      className="flex items-center gap-1 sm:gap-2 bg-green-600 hover:bg-green-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
+                      className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
                     >
                       <Upload size={16} className="sm:w-[18px] sm:h-[18px]" />
                       <span className="hidden sm:inline">Import Excel Accrual</span>
@@ -3139,7 +3139,7 @@ export default function MonitoringAccrualPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
           <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
             {/* Modal Header */}
-            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 px-6 py-5 flex items-center justify-between">
+            <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">Import Data Accrual dari Excel</h2>
               <button
                 onClick={() => setShowImportExcelModal(false)}
@@ -3171,7 +3171,7 @@ export default function MonitoringAccrualPage() {
                     className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
                       uploadingImportExcel
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        : 'bg-green-600 text-white hover:bg-green-700'
+                        : 'bg-red-600 text-white hover:bg-red-700'
                     }`}
                   >
                     <Upload size={18} />
