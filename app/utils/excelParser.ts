@@ -35,10 +35,11 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
         // Find the header row (sometimes it isn't the first row)
         const headerSearchRows = data.slice(0, 25);
         const headerRow =
-          headerSearchRows.find((row) => findColumnIndex(row, ['OUTSTANDING', 'SALDO']) !== -1) ?? data[0];
+          headerSearchRows.find((row) => findColumnIndex(row, ['OUTSTANDING', 'SALDO AKHIR', 'SALDO']) !== -1) ??
+          data[0];
 
         // Find the outstanding/saldo column and data rows
-        const outstandingColumn = findColumnIndex(headerRow, ['OUTSTANDING', 'SALDO']);
+        const outstandingColumn = findColumnIndex(headerRow, ['OUTSTANDING', 'SALDO AKHIR', 'SALDO']);
         
         if (outstandingColumn !== -1) {
           // Look for the last row with data (typically the balance)
@@ -60,6 +61,10 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               saldo: lastBalance
             });
           }
+        } else {
+          errors.push(
+            `Sheet ${String(sheetName ?? '').trim()}: kolom saldo tidak ditemukan (cari: OUTSTANDING / SALDO AKHIR / SALDO)`
+          );
         }
       } catch (error) {
         errors.push(`Error processing sheet ${sheetName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -76,21 +81,19 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
         const worksheet = workbook.Sheets[rekapSheetName];
         const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
         
-        // Find header row with relevant columns
-        const headerRow = data.find(row => 
-          row && row.some((cell: any) => 
-            typeof cell === 'string' && (
-              cell.toUpperCase().includes('KODE') || 
-              cell.toUpperCase().includes('SALDO AKHIR') ||
-              cell.toUpperCase().includes('SALDOAKHIR')
-            )
-          )
-        );
+        // Find header row: must contain BOTH kdAkr and saldo columns
+        const headerSearchRows = data.slice(0, 50);
+        const headerRow =
+          headerSearchRows.find((row) => {
+            const kdAkrColumn = findColumnIndex(row, ['KODE', 'KODE AKR', 'KODE AKRUAL', 'KD AKR', 'KDAKR', 'AKRUAL']);
+            const saldoAkhirColumn = findColumnIndex(row, ['SALDO AKHIR', 'SALDOAKHIR', 'OUTSTANDING', 'SALDO']);
+            return kdAkrColumn !== -1 && saldoAkhirColumn !== -1;
+          }) ?? null;
         
         if (headerRow) {
           const headerIndex = data.indexOf(headerRow);
-          const kdAkrColumn = findColumnIndex(headerRow, ['KODE', 'KODE AKR', 'KD AKR', 'KDAKR']);
-          const saldoAkhirColumn = findColumnIndex(headerRow, ['SALDO AKHIR', 'SALDOAKHIR', 'SALDO']);
+          const kdAkrColumn = findColumnIndex(headerRow, ['KODE', 'KODE AKR', 'KODE AKRUAL', 'KD AKR', 'KDAKR', 'AKRUAL']);
+          const saldoAkhirColumn = findColumnIndex(headerRow, ['SALDO AKHIR', 'SALDOAKHIR', 'OUTSTANDING', 'SALDO']);
           
           if (kdAkrColumn !== -1 && saldoAkhirColumn !== -1) {
             // Process data rows
@@ -114,7 +117,13 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 }
               }
             }
+          } else {
+            errors.push(
+              `Sheet ${rekapSheetName}: header ditemukan tapi kolom KODE/SALDO tidak lengkap`
+            );
           }
+        } else {
+          errors.push(`Sheet ${rekapSheetName}: header tidak ditemukan (butuh kolom KODE + SALDO AKHIR/OUTSTANDING/SALDO)`);
         }
       } catch (error) {
         errors.push(`Error processing REKAP sheet: ${error instanceof Error ? error.message : 'Unknown error'}`);

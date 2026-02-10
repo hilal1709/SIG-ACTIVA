@@ -1744,7 +1744,11 @@ export default function MonitoringAccrualPage() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to import Excel file');
+        const warningText =
+          errorData?.warnings && Array.isArray(errorData.warnings) && errorData.warnings.length > 0
+            ? `\n\nDetail:\n${errorData.warnings.slice(0, 10).join('\n')}${errorData.warnings.length > 10 ? `\n... dan ${errorData.warnings.length - 10} info lainnya` : ''}`
+            : '';
+        throw new Error((errorData.error || 'Failed to import Excel file') + warningText);
       }
 
       const result = await response.json();
