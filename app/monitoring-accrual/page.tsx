@@ -1860,7 +1860,7 @@ export default function MonitoringAccrualPage() {
             `}</style>
             <div className="table-container custom-scrollbar">
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
-                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-[5] shadow-sm">
                   <tr>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12 bg-gray-50">
                       ▼
@@ -2098,7 +2098,7 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
                               {/* Jurnal SAP Dropdown */}
-                              <div className="relative jurnal-dropdown-container">
+                              <div className="relative jurnal-dropdown-container z-[100]">
                                 <button
                                   onClick={() => {
                                     const itemId = item.id;
@@ -2124,7 +2124,7 @@ export default function MonitoringAccrualPage() {
                                   <Download size={16} />
                                 </button>
                                 {expandedRows.has(`jurnal-${item.id}`) && (
-                                  <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[60]">
+                                  <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[100]">
                                     <div className="py-1">
                                       <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
                                         Company: {item.companyCode || 'N/A'}
