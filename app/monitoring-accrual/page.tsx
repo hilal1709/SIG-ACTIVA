@@ -214,6 +214,8 @@ export default function MonitoringAccrualPage() {
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [showImportGlobalModal, setShowImportGlobalModal] = useState(false);
   const [uploadingGlobalExcel, setUploadingGlobalExcel] = useState(false);
+  const [showImportExcelModal, setShowImportExcelModal] = useState(false);
+  const [uploadingImportExcel, setUploadingImportExcel] = useState(false);
   // Portal dropdown Jurnal SAP (agar tidak tertutup header tabel)
   const [openJurnalRect, setOpenJurnalRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
   const [openJurnalItem, setOpenJurnalItem] = useState<Accrual | null>(null);
@@ -1725,6 +1727,55 @@ export default function MonitoringAccrualPage() {
     }
   };
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingImportExcel(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/accrual/import', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to import Excel file');
+      }
+
+      const result = await response.json();
+      
+      // Refresh data
+      await fetchAccrualData();
+
+      let message = `Import Excel selesai!\n\nBerhasil memproses ${result.results.length} accruals`;
+      
+      if (result.errors && result.errors.length > 0) {
+        message += `\n\nError (${result.errors.length}):\n${result.errors.slice(0, 5).map((e: any) => `${e.kdAkr}: ${e.error}`).join('\n')}`;
+        if (result.errors.length > 5) {
+          message += `\n... dan ${result.errors.length - 5} error lainnya`;
+        }
+      }
+
+      if (result.warnings && result.warnings.length > 0) {
+        message += `\n\nWarnings:\n${result.warnings.slice(0, 3).join('\n')}`;
+      }
+
+      alert(message);
+      setShowImportExcelModal(false);
+    } catch (error) {
+      console.error('Error importing Excel file:', error);
+      alert(`Gagal mengimport file Excel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setUploadingImportExcel(false);
+      e.target.value = '';
+    }
+  };
+
   const handleUpdatePeriodeAmount = async (periodeId: number, newAmount: string) => {
     try {
       const response = await fetch(`/api/accrual/periode?id=${periodeId}`, {
@@ -1867,6 +1918,14 @@ export default function MonitoringAccrualPage() {
 
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto">
+                    <button 
+                      onClick={() => setShowImportExcelModal(true)}
+                      className="flex items-center gap-1 sm:gap-2 bg-green-600 hover:bg-green-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
+                    >
+                      <Upload size={16} className="sm:w-[18px] sm:h-[18px]" />
+                      <span className="hidden sm:inline">Import Excel Accrual</span>
+                      <span className="sm:hidden">Excel</span>
+                    </button>
                     <button 
                       onClick={() => setShowImportGlobalModal(true)}
                       className="flex items-center gap-1 sm:gap-2 bg-red-600 hover:bg-red-700 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
@@ -3070,6 +3129,87 @@ export default function MonitoringAccrualPage() {
                 {uploadingExcel || uploadingGlobalExcel ? 'Memproses file...' : 'Menyimpan data...'}
               </p>
               <p className="text-xs sm:text-sm text-gray-500 mt-1">Mohon tunggu sebentar</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Import Excel Accrual */}
+      {showImportExcelModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-2xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-green-600 to-green-700 px-6 py-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Import Data Accrual dari Excel</h2>
+              <button
+                onClick={() => setShowImportExcelModal(false)}
+                className="text-white/80 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Upload File Excel</h3>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <Upload className="mx-auto mb-3 text-gray-400" size={48} />
+                  <p className="text-sm text-gray-600 mb-4">
+                    Pilih file Excel yang berisi data accrual
+                  </p>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportExcel}
+                    disabled={uploadingImportExcel}
+                    className="hidden"
+                    id="excel-import-upload"
+                  />
+                  <label
+                    htmlFor="excel-import-upload"
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
+                      uploadingImportExcel
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                  >
+                    <Upload size={18} />
+                    {uploadingImportExcel ? 'Mengimport...' : 'Pilih File Excel'}
+                  </label>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-gray-700">
+                <p className="font-semibold mb-2">📋 Format File Excel:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>File Excel dapat memiliki beberapa sheet</li>
+                  <li>Sistem akan memprioritaskan sheet dengan nama kode accrual (contoh: 21600010)</li>
+                  <li>Untuk sheet kode accrual, sistem mengambil nilai dari kolom "OUTSTANDING" atau "SALDO"</li>
+                  <li>Jika tidak ada sheet khusus, sistem akan membaca sheet "REKAP"</li>
+                  <li>Pada sheet REKAP, sistem mengambil nilai dari kolom "SALDO AKHIR"</li>
+                </ul>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
+                <p className="font-semibold mb-2">⚠️ Perhatian:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Import akan membuat accrual baru atau mengupdate yang sudah ada</li>
+                  <li>Accrual yang sudah ada akan diupdate total amountnya</li>
+                  <li>Proses import mungkin memakan waktu untuk file besar</li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-white px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowImportExcelModal(false)}
+                disabled={uploadingImportExcel}
+                className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>
