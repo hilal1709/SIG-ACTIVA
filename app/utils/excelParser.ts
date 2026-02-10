@@ -22,31 +22,41 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
     const errors: string[] = [];
     
     // Process sheets named with accrual codes first
-    const accrualCodeSheets = sheetNames.filter(name => 
-      name !== 'REKAP' && name !== 'rekap' && /^\d+$/.test(name)
-    );
+    const accrualCodeSheets = sheetNames.filter((name) => {
+      const trimmed = String(name ?? '').trim();
+      return trimmed.toUpperCase() !== 'REKAP' && /^\d+$/.test(trimmed);
+    });
     
     for (const sheetName of accrualCodeSheets) {
       try {
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
         
+        // Find the header row (sometimes it isn't the first row)
+        const headerSearchRows = data.slice(0, 25);
+        const headerRow =
+          headerSearchRows.find((row) => findColumnIndex(row, ['OUTSTANDING', 'SALDO']) !== -1) ?? data[0];
+
         // Find the outstanding/saldo column and data rows
-        const outstandingColumn = findColumnIndex(data[0], ['OUTSTANDING', 'outstanding', 'SALDO', 'saldo']);
+        const outstandingColumn = findColumnIndex(headerRow, ['OUTSTANDING', 'SALDO']);
         
         if (outstandingColumn !== -1) {
           // Look for the last row with data (typically the balance)
           let lastBalance = 0;
-          for (let i = 1; i < data.length; i++) {
+          const startRowIndex = Math.max(0, data.indexOf(headerRow) + 1);
+          for (let i = startRowIndex; i < data.length; i++) {
             const row = data[i];
-            if (row && row[outstandingColumn] && !isNaN(parseFloat(row[outstandingColumn]))) {
-              lastBalance = parseFloat(row[outstandingColumn]);
+            if (!row) continue;
+
+            const value = parseNumber(row[outstandingColumn]);
+            if (value !== null) {
+              lastBalance = value;
             }
           }
           
           if (lastBalance > 0) {
             accruals.push({
-              kdAkr: sheetName,
+              kdAkr: String(sheetName ?? '').trim(),
               saldo: lastBalance
             });
           }
@@ -91,9 +101,9 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               const kdAkr = row[kdAkrColumn];
               const saldoAkhir = row[saldoAkhirColumn];
               
-              if (kdAkr && saldoAkhir && !isNaN(parseFloat(saldoAkhir))) {
-                const kdAkrStr = String(kdAkr).trim();
-                const saldoValue = parseFloat(saldoAkhir);
+              const kdAkrStr = kdAkr ? String(kdAkr).trim() : '';
+              const saldoValue = parseNumber(saldoAkhir);
+              if (kdAkrStr && saldoValue !== null) {
                 
                 // Only add if not already processed from individual sheet
                 if (!accruals.find(a => a.kdAkr === kdAkrStr) && saldoValue > 0) {
@@ -133,4 +143,33 @@ function findColumnIndex(headerRow: any[], possibleNames: string[]): number {
     if (index !== -1) return index;
   }
   return -1;
+}
+
+function parseNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // Remove currency/space and keep digits, separators, minus
+  const cleaned = raw
+    .replace(/[^\d.,-]/g, '')
+    .replace(/\s+/g, '');
+
+  if (!cleaned) return null;
+
+  // Heuristic:
+  // - If both '.' and ',' exist: assume '.' thousands and ',' decimal -> remove '.' then replace ',' with '.'
+  // - If only ',' exists: assume ',' decimal -> replace with '.'
+  // - Else: parse as-is (handles "1234" or "1234.56")
+  let normalized = cleaned;
+  if (cleaned.includes('.') && cleaned.includes(',')) {
+    normalized = cleaned.replace(/\./g, '').replace(/,/g, '.');
+  } else if (cleaned.includes(',') && !cleaned.includes('.')) {
+    normalized = cleaned.replace(/,/g, '.');
+  }
+
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
 }
