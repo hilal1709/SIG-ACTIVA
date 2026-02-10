@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload, ChevronDown } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { exportToCSV } from '../utils/exportUtils';
@@ -213,6 +214,19 @@ export default function MonitoringAccrualPage() {
   const [uploadingExcel, setUploadingExcel] = useState(false);
   const [showImportGlobalModal, setShowImportGlobalModal] = useState(false);
   const [uploadingGlobalExcel, setUploadingGlobalExcel] = useState(false);
+  // Portal dropdown Jurnal SAP (agar tidak tertutup header tabel)
+  const [openJurnalRect, setOpenJurnalRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
+  const [openJurnalItem, setOpenJurnalItem] = useState<Accrual | null>(null);
+
+  const closeJurnalDropdown = useCallback(() => {
+    setOpenJurnalRect(null);
+    setOpenJurnalItem(null);
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.forEach(id => { if (typeof id === 'string' && id.startsWith('jurnal-')) next.delete(id); });
+      return next;
+    });
+  }, []);
 
   // Get available klasifikasi based on selected kode akun
   const availableKlasifikasi = useMemo(() => {
@@ -250,8 +264,10 @@ export default function MonitoringAccrualPage() {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      // Check if click is outside dropdown
-      if (!target.closest('.jurnal-dropdown-container')) {
+      // Check if click is outside dropdown (trigger button) or portal menu
+      if (!target.closest('.jurnal-dropdown-container') && !target.closest('.jurnal-dropdown-menu')) {
+        setOpenJurnalRect(null);
+        setOpenJurnalItem(null);
         setExpandedRows(prev => {
           const newSet = new Set(prev);
           // Remove all jurnal dropdown states
@@ -1726,6 +1742,53 @@ export default function MonitoringAccrualPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      {/* Portal: dropdown Jurnal SAP di body agar tidak tertutup header tabel */}
+      {typeof document !== 'undefined' && openJurnalItem && openJurnalRect && createPortal(
+        <div
+          className="jurnal-dropdown-menu fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[9999]"
+          style={{
+            bottom: window.innerHeight - openJurnalRect.top + 8,
+            left: openJurnalRect.right - 192,
+          }}
+        >
+          <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
+            Company: {openJurnalItem.companyCode || 'N/A'}
+          </div>
+          <button
+            type="button"
+            onClick={() => { handleDownloadJurnalSAPPerItem(openJurnalItem!); closeJurnalDropdown(); }}
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
+          >
+            Download Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => { handleDownloadJurnalSAPTxt(openJurnalItem!); closeJurnalDropdown(); }}
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+          >
+            Download TXT
+          </button>
+          <div className="border-t border-gray-100 my-1" />
+          <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
+            Jurnal Realisasi
+          </div>
+          <button
+            type="button"
+            onClick={() => { handleDownloadJurnalSAPRealisasiPerItem(openJurnalItem!); closeJurnalDropdown(); }}
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
+          >
+            Download Excel (Realisasi)
+          </button>
+          <button
+            type="button"
+            onClick={() => { handleDownloadJurnalSAPRealisasiTxt(openJurnalItem!); closeJurnalDropdown(); }}
+            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
+          >
+            Download TXT (Realisasi)
+          </button>
+        </div>,
+        document.body
+      )}
       {/* Mobile Sidebar Overlay */}
       {isMobileSidebarOpen && (
         <div 
@@ -1858,7 +1921,10 @@ export default function MonitoringAccrualPage() {
                 overflow: auto;
               }
             `}</style>
-            <div className="table-container custom-scrollbar">
+            <div
+              className="table-container custom-scrollbar"
+              onScroll={() => { if (openJurnalRect) closeJurnalDropdown(); }}
+            >
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-[5] shadow-sm">
                   <tr>
@@ -2097,97 +2163,29 @@ export default function MonitoringAccrualPage() {
                           </td>
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
-                              {/* Jurnal SAP Dropdown */}
-                              <div className="relative jurnal-dropdown-container z-[100]">
+                              {/* Jurnal SAP Dropdown - trigger only; menu di-render via portal */}
+                              <div className="relative jurnal-dropdown-container">
                                 <button
-                                  onClick={() => {
-                                    const itemId = item.id;
-                                    setExpandedRows(prev => {
-                                      const newSet = new Set(prev);
-                                      if (newSet.has(`jurnal-${itemId}`)) {
-                                        newSet.delete(`jurnal-${itemId}`);
-                                      } else {
-                                        // Close all other jurnal dropdowns
-                                        Array.from(newSet).forEach(id => {
-                                          if (typeof id === 'string' && id.startsWith('jurnal-')) {
-                                            newSet.delete(id);
-                                          }
-                                        });
-                                        newSet.add(`jurnal-${itemId}`);
-                                      }
-                                      return newSet;
-                                    });
+                                  onClick={(e) => {
+                                    if (expandedRows.has(`jurnal-${item.id}`)) {
+                                      closeJurnalDropdown();
+                                    } else {
+                                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                      setOpenJurnalRect({ top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left });
+                                      setOpenJurnalItem(item);
+                                      setExpandedRows(prev => {
+                                        const next = new Set(prev);
+                                        next.forEach(id => { if (typeof id === 'string' && id.startsWith('jurnal-')) next.delete(id); });
+                                        next.add(`jurnal-${item.id}`);
+                                        return next;
+                                      });
+                                    }
                                   }}
                                   className="text-green-600 hover:text-green-800 transition-colors p-1 hover:bg-green-50 rounded"
                                   title="Download Jurnal SAP"
                                 >
                                   <Download size={16} />
                                 </button>
-                                {expandedRows.has(`jurnal-${item.id}`) && (
-                                  <div className="absolute right-0 bottom-full mb-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-[100]">
-                                    <div className="py-1">
-                                      <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
-                                        Company: {item.companyCode || 'N/A'}
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          handleDownloadJurnalSAPPerItem(item);
-                                          setExpandedRows(prev => {
-                                            const newSet = new Set(prev);
-                                            newSet.delete(`jurnal-${item.id}`);
-                                            return newSet;
-                                          });
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
-                                      >
-                                        Download Excel
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleDownloadJurnalSAPTxt(item);
-                                          setExpandedRows(prev => {
-                                            const newSet = new Set(prev);
-                                            newSet.delete(`jurnal-${item.id}`);
-                                            return newSet;
-                                          });
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
-                                      >
-                                        Download TXT
-                                      </button>
-                                      <div className="border-t border-gray-100 my-1" />
-                                      <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
-                                        Jurnal Realisasi
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          handleDownloadJurnalSAPRealisasiPerItem(item);
-                                          setExpandedRows(prev => {
-                                            const newSet = new Set(prev);
-                                            newSet.delete(`jurnal-${item.id}`);
-                                            return newSet;
-                                          });
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
-                                      >
-                                        Download Excel (Realisasi)
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          handleDownloadJurnalSAPRealisasiTxt(item);
-                                          setExpandedRows(prev => {
-                                            const newSet = new Set(prev);
-                                            newSet.delete(`jurnal-${item.id}`);
-                                            return newSet;
-                                          });
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
-                                      >
-                                        Download TXT (Realisasi)
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
                               </div>
                               {canEdit && (
                                 <>
