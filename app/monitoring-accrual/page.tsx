@@ -637,19 +637,6 @@ export default function MonitoringAccrualPage() {
           }
         }
         
-        // Highlight rows with yellow background for specific vendors (optional styling)
-        const highlightVendors = ['SEMEN GRESIK', 'KONSULTA SEMEN GRESIK', 'SINERGI INFORMATIKA SEMEN INDONESIA'];
-        if (highlightVendors.some(hv => vendor.toUpperCase().includes(hv))) {
-          for (let col = 1; col <= 3; col++) {
-            const cell = row.getCell(col);
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FFFFFF00' }
-            };
-          }
-        }
-        
         currentRow++;
       });
     });
@@ -731,16 +718,12 @@ export default function MonitoringAccrualPage() {
       'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
     ];
     
-    // Kolom dengan warna #FFFF00: kursf (7), zuonr (9), prctr (13), nplnr (16), aufnr (17), valut (18)
-    const yellowColumns = [7, 9, 13, 16, 17, 18];
+    // Header satu warna (ikuti line lain, tanpa kuning)
+    const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
     
     worksheet.getRow(1).values = headers1;
-    worksheet.getRow(1).eachCell((cell: any, colNumber: any) => {
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: yellowColumns.includes(colNumber) ? 'FFFFFF00' : 'FFFFE699' }
-      };
+    worksheet.getRow(1).eachCell((cell: any) => {
+      cell.fill = headerFill;
       cell.font = { name: 'Calibri', size: 11, bold: true };
       cell.alignment = { horizontal: 'center', vertical: 'bottom' };
     });
@@ -754,12 +737,8 @@ export default function MonitoringAccrualPage() {
     ];
     
     worksheet.getRow(2).values = headers2;
-    worksheet.getRow(2).eachCell((cell: any, colNumber: any) => {
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: yellowColumns.includes(colNumber) ? 'FFFFFF00' : 'FFFFE699' }
-      };
+    worksheet.getRow(2).eachCell((cell: any) => {
+      cell.fill = headerFill;
       cell.font = { name: 'Calibri', size: 11, bold: true };
       cell.alignment = { horizontal: 'center', vertical: 'bottom' };
     });
