@@ -1566,151 +1566,162 @@ export default function MonitoringAccrualPage() {
 
     setUploadingGlobalExcel(true);
     try {
-      // Load XLSX on demand
-      const { XLSX: XLSXLib } = await loadExcelLibraries();
-      
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        try {
-          const data = event.target?.result;
-          const workbook = XLSXLib.read(data, { type: 'binary' });
-          const sheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[sheetName];
-          const jsonData: any[][] = XLSXLib.utils.sheet_to_json(worksheet, { header: 1 });
+      const isXml = file.name.toLowerCase().endsWith('.xml');
+      let jsonData: any[][] = [];
 
-          let successCount = 0;
-          let errorCount = 0;
-          const errors: string[] = [];
-          const processedPos: Set<string> = new Set();
+      if (isXml) {
+        // Parse SAP Excel XML (SpreadsheetML) menjadi array baris
+        const text = await file.text();
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(text, 'text/xml');
+        const rowEls = Array.from(xmlDoc.getElementsByTagNameNS('*', 'Row'));
 
-          // Skip header row and process data rows
-          for (let i = 1; i < jsonData.length; i++) {
-            const row = jsonData[i];
-            
-            // Dari attachment: kolom C = PO/PR, kolom J = Amount (index 2 dan 9)
-            const noPo = row[2]?.toString().trim();
-            const realisasiAmount = row[9];
-            
-            if (!noPo || !realisasiAmount || isNaN(Number(realisasiAmount)) || Number(realisasiAmount) === 0) {
-              continue; // Skip rows without PO or valid amount
-            }
+        for (const rowEl of rowEls) {
+          const cellEls = Array.from(rowEl.getElementsByTagNameNS('*', 'Cell'));
+          if (cellEls.length === 0) continue;
 
-            // Find accrual by noPo
-            const matchingAccrual = accrualData.find(acc => acc.noPo?.trim() === noPo);
-            
-            if (!matchingAccrual) {
-              if (!processedPos.has(noPo)) {
-                errors.push(`Baris ${i + 1}: PO ${noPo} tidak ditemukan`);
-                processedPos.add(noPo);
-              }
-              errorCount++;
-              continue;
-            }
+          const row: any[] = [];
+          let currentIndex = 0;
 
-            // Get current periode (periode yang sedang berjalan)
-            const today = new Date();
-            const currentPeriode = matchingAccrual.periodes?.find(p => {
-              const [bulanName, tahunStr] = p.bulan.split(' ');
-              const bulanMap: Record<string, number> = {
-                'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-                'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-              };
-              const periodeBulan = bulanMap[bulanName];
-              const periodeTahun = parseInt(tahunStr);
-              const periodeDate = new Date(periodeTahun, periodeBulan, 1);
-              
-              // Periode saat ini atau yang sudah lewat
-              return today >= periodeDate && today.getMonth() === periodeBulan && today.getFullYear() === periodeTahun;
-            });
-
-            if (!currentPeriode) {
-              // Jika tidak ada periode saat ini, gunakan periode pertama yang belum fully realisasi
-              const targetPeriode = matchingAccrual.periodes?.find(p => {
-                const saldo = p.amountAccrual - (p.totalRealisasi || 0);
-                return saldo > 0;
-              });
-
-              if (!targetPeriode) {
-                errors.push(`Baris ${i + 1}: PO ${noPo} tidak ada periode aktif`);
-                errorCount++;
-                continue;
-              }
-
-              try {
-                const response = await fetch('/api/accrual/realisasi', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    accrualPeriodeId: targetPeriode.id,
-                    tanggalRealisasi: new Date().toISOString().split('T')[0],
-                    amount: Number(realisasiAmount),
-                    keterangan: `Import Global - PO: ${noPo}`,
-                  }),
-                });
-
-                if (response.ok) {
-                  successCount++;
-                } else {
-                  errors.push(`Baris ${i + 1}: Gagal menyimpan realisasi PO ${noPo}`);
-                  errorCount++;
-                }
-              } catch (error) {
-                errors.push(`Baris ${i + 1}: Error pada PO ${noPo}`);
-                errorCount++;
-              }
-            } else {
-              try {
-                const response = await fetch('/api/accrual/realisasi', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    accrualPeriodeId: currentPeriode.id,
-                    tanggalRealisasi: new Date().toISOString().split('T')[0],
-                    amount: Number(realisasiAmount),
-                    keterangan: `Import Global - PO: ${noPo}`,
-                  }),
-                });
-
-                if (response.ok) {
-                  successCount++;
-                } else {
-                  errors.push(`Baris ${i + 1}: Gagal menyimpan realisasi PO ${noPo}`);
-                  errorCount++;
-                }
-              } catch (error) {
-                errors.push(`Baris ${i + 1}: Error pada PO ${noPo}`);
-                errorCount++;
+          for (const cellEl of cellEls) {
+            const indexAttr = cellEl.getAttribute('ss:Index') || cellEl.getAttribute('Index');
+            if (indexAttr) {
+              const targetIndex = parseInt(indexAttr, 10) - 1;
+              while (currentIndex < targetIndex) {
+                row.push('');
+                currentIndex++;
               }
             }
+
+            const dataEl = cellEl.getElementsByTagNameNS('*', 'Data')[0];
+            const value = dataEl?.textContent ?? '';
+            row.push(value);
+            currentIndex++;
           }
 
-          // Refresh main accrual data
-          await fetchAccrualData();
-
-          // Show results
-          let message = `Import selesai!\nBerhasil: ${successCount} data\nGagal: ${errorCount} data`;
-          if (errors.length > 0) {
-            message += '\n\nDetail Error:\n' + errors.slice(0, 10).join('\n');
-            if (errors.length > 10) {
-              message += `\n... dan ${errors.length - 10} error lainnya`;
-            }
-          }
-          alert(message);
-          
-          setShowImportGlobalModal(false);
-        } catch (error) {
-          console.error('Error processing Excel:', error);
-          alert('Gagal memproses file Excel. Pastikan format file benar.');
-        } finally {
-          setUploadingGlobalExcel(false);
-          e.target.value = '';
+          jsonData.push(row);
         }
-      };
-      reader.readAsBinaryString(file);
+      } else {
+        // Load XLSX on demand dan baca seperti sebelumnya
+        const { XLSX: XLSXLib } = await loadExcelLibraries();
+        const reader = new FileReader();
+        const data: string | ArrayBuffer = await new Promise((resolve, reject) => {
+          reader.onload = (event) => {
+            if (event.target?.result == null) {
+              reject(new Error('Gagal membaca file'));
+            } else {
+              resolve(event.target.result);
+            }
+          };
+          reader.onerror = () => reject(new Error('Gagal membaca file'));
+          reader.readAsBinaryString(file);
+        });
+
+        const workbook = XLSXLib.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        jsonData = XLSXLib.utils.sheet_to_json(worksheet, { header: 1 });
+      }
+
+      if (!jsonData || jsonData.length <= 1) {
+        alert('File tidak berisi data realisasi yang valid.');
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+      const processedPos: Set<string> = new Set();
+
+      // Skip header row dan proses data baris demi baris
+      for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+
+        // Kolom C = PO/PR, kolom J = Amount (index 2 dan 9)
+        const noPo = row[2]?.toString().trim();
+        const realisasiAmount = row[9];
+
+        if (!noPo || !realisasiAmount || isNaN(Number(realisasiAmount)) || Number(realisasiAmount) === 0) {
+          continue;
+        }
+
+        const matchingAccrual = accrualData.find(acc => acc.noPo?.trim() === noPo);
+
+        if (!matchingAccrual) {
+          if (!processedPos.has(noPo)) {
+            errors.push(`Baris ${i + 1}: PO ${noPo} tidak ditemukan`);
+            processedPos.add(noPo);
+          }
+          errorCount++;
+          continue;
+        }
+
+        const today = new Date();
+        const currentPeriode = matchingAccrual.periodes?.find(p => {
+          const [bulanName, tahunStr] = p.bulan.split(' ');
+          const bulanMap: Record<string, number> = {
+            Jan: 0, Feb: 1, Mar: 2, Apr: 3, Mei: 4, Jun: 5,
+            Jul: 6, Agu: 7, Sep: 8, Okt: 9, Nov: 10, Des: 11,
+          };
+          const periodeBulan = bulanMap[bulanName];
+          const periodeTahun = parseInt(tahunStr);
+          const periodeDate = new Date(periodeTahun, periodeBulan, 1);
+          return today >= periodeDate && today.getMonth() === periodeBulan && today.getFullYear() === periodeTahun;
+        });
+
+        const targetPeriode = currentPeriode || matchingAccrual.periodes?.find(p => {
+          const saldo = p.amountAccrual - (p.totalRealisasi || 0);
+          return saldo > 0;
+        });
+
+        if (!targetPeriode) {
+          errors.push(`Baris ${i + 1}: PO ${noPo} tidak ada periode aktif`);
+          errorCount++;
+          continue;
+        }
+
+        try {
+          const response = await fetch('/api/accrual/realisasi', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              accrualPeriodeId: targetPeriode.id,
+              tanggalRealisasi: new Date().toISOString().split('T')[0],
+              amount: Number(realisasiAmount),
+              keterangan: `Import Global - PO: ${noPo}`,
+            }),
+          });
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            errors.push(`Baris ${i + 1}: Gagal menyimpan realisasi PO ${noPo}`);
+            errorCount++;
+          }
+        } catch (error) {
+          errors.push(`Baris ${i + 1}: Error pada PO ${noPo}`);
+          errorCount++;
+        }
+      }
+
+      await fetchAccrualData();
+
+      let message = `Import selesai!\nBerhasil: ${successCount} data\nGagal: ${errorCount} data`;
+      if (errors.length > 0) {
+        message += '\n\nDetail Error:\n' + errors.slice(0, 10).join('\n');
+        if (errors.length > 10) {
+          message += `\n... dan ${errors.length - 10} error lainnya`;
+        }
+      }
+      alert(message);
+
+      setShowImportGlobalModal(false);
     } catch (error) {
-      console.error('Error reading Excel file:', error);
-      alert('Gagal membaca file Excel.');
+      console.error('Error processing global realisasi file:', error);
+      alert('Gagal memproses file realisasi global. Pastikan format file benar.');
+    } finally {
       setUploadingGlobalExcel(false);
+      e.target.value = '';
     }
   };
 
@@ -3005,7 +3016,7 @@ export default function MonitoringAccrualPage() {
                   </p>
                   <input
                     type="file"
-                    accept=".xlsx,.xls"
+                    accept=".xlsx,.xls,.xml"
                     onChange={handleGlobalExcelUpload}
                     disabled={uploadingGlobalExcel}
                     className="hidden"

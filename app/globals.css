@@ -5,6 +5,7 @@
   --foreground: #171717;
 }
 
+/* Tailwind v4 theme (validator may warn "unknown at rule" - safe to ignore) */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
