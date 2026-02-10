@@ -6,8 +6,8 @@ export const metadata: Metadata = {
   title: "Dashboard - SIG ACTIVA",
   description: "Sistem Informasi Akuntansi PT Semen Indonesia Grup",
   icons: {
-    icon: "/logo aplikasi.png",
-    apple: "/logo aplikasi.png",
+    icon: "/icon.png",
+    apple: "/icon.png",
   },
 };
 
