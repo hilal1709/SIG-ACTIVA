@@ -72,16 +72,21 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
             const nilaiPoValue = nilaiPoColumn !== -1 ? parseNumber(row[nilaiPoColumn]) : null;
             
             // Only add if outstanding has value and not zero
+            // Accrual disimpan negatif agar realisasi positif dan saldo = total accrual + total realisasi
             if (outstandingValue !== null && outstandingValue !== 0) {
+              const saldoNegatif = outstandingValue > 0 ? -outstandingValue : outstandingValue;
+              const totalAmountNegatif = nilaiPoValue !== null && nilaiPoValue !== 0
+                ? (nilaiPoValue > 0 ? -nilaiPoValue : nilaiPoValue)
+                : undefined;
               accruals.push({
                 kdAkr: String(sheetName ?? '').trim(),
-                saldo: outstandingValue,
+                saldo: saldoNegatif,
                 ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
                 ...(vendorValue ? { vendor: vendorValue } : {}),
                 ...(noPoValue ? { noPo: noPoValue } : {}),
                 ...(alokasiValue ? { alokasi: alokasiValue } : {}),
                 ...(keteranganValue ? { deskripsi: keteranganValue } : {}),
-                ...(nilaiPoValue !== null && nilaiPoValue !== 0 ? { totalAmount: nilaiPoValue } : {})
+                ...(totalAmountNegatif !== undefined ? { totalAmount: totalAmountNegatif } : {})
               });
             }
           }
@@ -182,11 +187,12 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               if (kdAkrStr && saldoValue !== null) {
                 
                 // Only add if not already processed from individual sheet
-                // Allow negative/positive saldo; ignore exact zero
+                // Accrual disimpan negatif agar realisasi positif dan saldo = total accrual + total realisasi
                 if (!accruals.find(a => a.kdAkr === kdAkrStr) && saldoValue !== 0) {
+                  const saldoNegatif = saldoValue > 0 ? -saldoValue : saldoValue;
                   accruals.push({
                     kdAkr: kdAkrStr,
-                    saldo: saldoValue,
+                    saldo: saldoNegatif,
                     ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
                     ...(vendorValue ? { vendor: vendorValue } : {}),
                     ...(kdAkunBiayaValue ? { kdAkunBiaya: kdAkunBiayaValue } : {})
