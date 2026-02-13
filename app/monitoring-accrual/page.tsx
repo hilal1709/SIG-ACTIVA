@@ -157,6 +157,7 @@ export default function MonitoringAccrualPage() {
   const [expandedRows, setExpandedRows] = useState<Set<number | string>>(new Set());
   const [expandedKodeAkun, setExpandedKodeAkun] = useState<Set<string>>(new Set());
   const [expandedVendor, setExpandedVendor] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [formData, setFormData] = useState<AccrualFormData>({
     companyCode: '',
     noPo: '',
@@ -1237,12 +1238,37 @@ export default function MonitoringAccrualPage() {
       if (!response.ok) throw new Error('Failed to delete accrual');
 
       fetchAccrualData();
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       alert('Data berhasil dihapus!');
     } catch (error) {
       console.error('Error deleting accrual:', error);
       alert('Gagal menghapus data');
     }
   }, []);
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Yakin hapus ${selectedIds.size} data accrual terpilih?`)) return;
+
+    try {
+      let ok = 0;
+      let err = 0;
+      for (const id of selectedIds) {
+        const response = await fetch(`/api/accrual?id=${id}`, { method: 'DELETE' });
+        if (response.ok) ok++; else err++;
+      }
+      setSelectedIds(new Set());
+      fetchAccrualData();
+      alert(err === 0 ? `${ok} data berhasil dihapus.` : `Berhasil: ${ok}, gagal: ${err}.`);
+    } catch (error) {
+      console.error('Error bulk delete:', error);
+      alert('Gagal menghapus data terpilih');
+    }
+  }, [selectedIds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1934,6 +1960,16 @@ export default function MonitoringAccrualPage() {
                       <span className="hidden sm:inline">Export Global</span>
                       <span className="sm:hidden">Global</span>
                     </button>
+                    {canEdit && selectedIds.size > 0 && (
+                      <button
+                        onClick={handleDeleteSelected}
+                        className="flex items-center gap-1 sm:gap-2 bg-red-700 hover:bg-red-800 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
+                      >
+                        <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
+                        <span className="hidden sm:inline">Hapus terpilih ({selectedIds.size})</span>
+                        <span className="sm:hidden">Hapus ({selectedIds.size})</span>
+                      </button>
+                    )}
                     {canEdit && (
                       <button 
                         onClick={() => setShowModal(true)}
@@ -1997,6 +2033,23 @@ export default function MonitoringAccrualPage() {
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-[5] shadow-sm">
                   <tr>
+                    {canEdit && (
+                      <th className="px-2 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-10 bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={filteredData.length > 0 && filteredData.every((item) => selectedIds.has(item.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds(new Set(filteredData.map((item) => item.id)));
+                            } else {
+                              setSelectedIds(new Set());
+                            }
+                          }}
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                          title="Pilih semua"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap w-12 bg-gray-50">
                       ▼
                     </th>
@@ -2074,6 +2127,7 @@ export default function MonitoringAccrualPage() {
                       <React.Fragment key={kodeAkun}>
                         {/* Kode Akun Group Header */}
                         <tr className="bg-blue-50 font-semibold">
+                          {canEdit && <td className="px-2 py-3 bg-blue-50" />}
                           <td className="px-4 py-3 text-center bg-blue-50">
                             <button
                               onClick={() => {
@@ -2133,6 +2187,7 @@ export default function MonitoringAccrualPage() {
                             <React.Fragment key={vendorKey}>
                               {/* Vendor Group Header */}
                               <tr className="bg-green-50 font-semibold">
+                                {canEdit && <td className="px-2 py-3 bg-green-50" />}
                                 <td className="px-4 py-3 text-center bg-green-50">
                                   <button
                                     onClick={() => {
@@ -2177,6 +2232,24 @@ export default function MonitoringAccrualPage() {
                           return (
                             <React.Fragment key={item.id}>
                               <tr className="bg-white hover:bg-gray-50 transition-colors">
+                                {canEdit && (
+                                  <td className="px-2 py-4 text-center bg-white">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedIds.has(item.id)}
+                                      onChange={() => {
+                                        setSelectedIds((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(item.id)) next.delete(item.id);
+                                          else next.add(item.id);
+                                          return next;
+                                        });
+                                      }}
+                                      className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                  </td>
+                                )}
                                 <td className="px-4 py-4 text-center bg-white">
                                   <button
                                     onClick={() => {
@@ -2281,7 +2354,7 @@ export default function MonitoringAccrualPage() {
                         {/* Expanded Row - Periode Details */}
                         {isExpanded && item.periodes && item.periodes.length > 0 && (
                           <tr className="bg-gray-50">
-                            <td colSpan={18} className="px-4 py-4 bg-gray-50">
+                            <td colSpan={canEdit ? 19 : 18} className="px-4 py-4 bg-gray-50">
                               <div className="ml-8">
                                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Detail Periode</h4>
                                 <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
