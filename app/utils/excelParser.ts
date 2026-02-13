@@ -174,42 +174,35 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
       }
     }
 
-    // ---- 2) Hanya proses sheet yang namanya kode akun accrual DAN ada di REKAP ----
-    const accrualCodeSheets = sheetNames.filter((name) => {
+    // Daftar sheet yang namanya kode akun (punya sheet sendiri)
+    const kodeAkunSheetNames = sheetNames.filter((name) => {
       const trimmed = String(name ?? '').trim();
-      if (trimmed.toUpperCase() === 'REKAP') return false;
-      if (!/^\d+$/.test(trimmed)) return false;
-      // Jika ada REKAP, hanya proses sheet yang kode akunnya muncul di REKAP
-      if (rekapKodeAkunSet.size > 0 && !rekapKodeAkunSet.has(trimmed)) {
-        return false;
-      }
-      return true;
+      return trimmed.toUpperCase() !== 'REKAP' && /^\d+$/.test(trimmed);
     });
+    const hasOwnSheetSet = new Set(kodeAkunSheetNames);
 
-    for (const sheetName of accrualCodeSheets) {
+    // ---- 2) Proses semua sheet yang namanya kode akun accrual (banyak baris per sheet) ----
+    const outstandingPossibleNames = [
+      'OUTSTANDING',
+      'OUSTANDING', // typo umum di Excel
+      'SALDO AKHIR',
+      'SALDOAKHIR',
+      'SALDO',
+    ];
+
+    for (const sheetName of kodeAkunSheetNames) {
       try {
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet, {
           header: 1,
         }) as any[][];
 
-        const headerSearchRows = data.slice(0, 25);
+        // Cari baris header: cukup ada kolom saldo (nama sheet = kode akun, tidak wajib kolom KODE AKUN)
+        const headerSearchRows = data.slice(0, 40);
         const headerRow =
           headerSearchRows.find((row) => {
-            const kodeAkunColumn = findColumnIndex(row, [
-              'KODE AKUN',
-              'KODE',
-              'KD AKR',
-              'KDAKR',
-            ]);
-            const outstandingColumn = findColumnIndex(row, [
-              'OUTSTANDING',
-              'SALDO AKHIR',
-              'SALDO',
-            ]);
-            return (
-              kodeAkunColumn !== -1 && outstandingColumn !== -1
-            );
+            const outstandingColumn = findColumnIndex(row, outstandingPossibleNames);
+            return outstandingColumn !== -1;
           }) ?? data[0];
 
         const klasifikasiColumn = findColumnIndex(headerRow, [
@@ -236,11 +229,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
           'TOTAL AMOUNT',
           'AMOUNT',
         ]);
-        const outstandingColumn = findColumnIndex(headerRow, [
-          'OUTSTANDING',
-          'SALDO AKHIR',
-          'SALDO',
-        ]);
+        const outstandingColumn = findColumnIndex(headerRow, outstandingPossibleNames);
 
         if (outstandingColumn !== -1) {
           const startRowIndex = Math.max(0, data.indexOf(headerRow) + 1);
@@ -298,7 +287,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
           }
         } else {
           errors.push(
-            `Sheet ${String(sheetName ?? '').trim()}: kolom saldo tidak ditemukan (cari: OUTSTANDING / SALDO AKHIR / SALDO)`
+            `Sheet ${String(sheetName ?? '').trim()}: kolom saldo tidak ditemukan (cari: OUTSTANDING / OUSTANDING / SALDO AKHIR / SALDO)`
           );
         }
       } catch (error) {
@@ -308,8 +297,9 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
       }
     }
 
-    // ---- 3) Gabungkan semua baris REKAP ke hasil (semua baris tampil di display) ----
+    // ---- 3) REKAP hanya untuk kode akun yang TIDAK punya sheet sendiri ----
     for (const r of rekapRows) {
+      if (hasOwnSheetSet.has(r.kdAkr)) continue; // sudah ada datanya dari sheet, lewati
       accruals.push(r);
     }
 
@@ -334,12 +324,11 @@ function findColumnIndex(
   if (!headerRow) return -1;
 
   for (const name of possibleNames) {
-    const index = headerRow.findIndex(
-      (cell) =>
-        cell &&
-        typeof cell === 'string' &&
-        cell.toUpperCase().includes(name.toUpperCase())
-    );
+    const nameUpper = name.toUpperCase();
+    const index = headerRow.findIndex((cell) => {
+      const s = cell != null ? String(cell).trim() : '';
+      return s.toUpperCase().includes(nameUpper);
+    });
     if (index !== -1) return index;
   }
   return -1;
