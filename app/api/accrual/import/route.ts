@@ -40,70 +40,75 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process each accrual and create/update records
+    // Satu baris Excel = satu record accrual (vendor sama, no PO beda = baris terpisah)
     const results = [];
     const processedErrors = [];
 
     for (const excelAccrual of accruals) {
       try {
-        // Check if accrual already exists
+        const hasNoPoAndVendor =
+          excelAccrual.noPo && excelAccrual.vendor;
+
+        // Match existing: by kdAkr+noPo+vendor (sheet) atau kdAkr+klasifikasi (rekap)
         const existingAccrual = await prisma.accrual.findFirst({
-          where: {
-            kdAkr: excelAccrual.kdAkr
-          }
+          where: hasNoPoAndVendor
+            ? {
+                kdAkr: excelAccrual.kdAkr,
+                noPo: excelAccrual.noPo,
+                vendor: excelAccrual.vendor,
+              }
+            : {
+                kdAkr: excelAccrual.kdAkr,
+                klasifikasi: excelAccrual.klasifikasi ?? null,
+              },
         });
 
         if (existingAccrual) {
-          // Update existing accrual's total amount
           const updatedAccrual = await prisma.accrual.update({
             where: { id: existingAccrual.id },
             data: {
-              totalAmount: excelAccrual.totalAmount || excelAccrual.saldo,
-              // Update other fields if provided
-              ...(excelAccrual.vendor && { vendor: excelAccrual.vendor }),
-              ...(excelAccrual.deskripsi && { deskripsi: excelAccrual.deskripsi }),
-              ...(excelAccrual.kdAkunBiaya && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
-              ...(excelAccrual.klasifikasi && { klasifikasi: excelAccrual.klasifikasi }),
-              ...(excelAccrual.noPo && { noPo: excelAccrual.noPo }),
-              ...(excelAccrual.alokasi && { alokasi: excelAccrual.alokasi }),
+              totalAmount: excelAccrual.totalAmount ?? excelAccrual.saldo,
+              ...(excelAccrual.vendor != null && { vendor: excelAccrual.vendor }),
+              ...(excelAccrual.deskripsi != null && { deskripsi: excelAccrual.deskripsi }),
+              ...(excelAccrual.kdAkunBiaya != null && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
+              ...(excelAccrual.klasifikasi != null && { klasifikasi: excelAccrual.klasifikasi }),
+              ...(excelAccrual.noPo != null && { noPo: excelAccrual.noPo }),
+              ...(excelAccrual.alokasi != null && { alokasi: excelAccrual.alokasi }),
             },
-            include: {
-              periodes: true
-            }
+            include: { periodes: true },
           });
 
-          // Update periodes to match new total
           if (updatedAccrual.periodes.length > 0) {
-            const amountPerPeriode = (excelAccrual.totalAmount || excelAccrual.saldo) / updatedAccrual.periodes.length;
-            
+            const total = excelAccrual.totalAmount ?? excelAccrual.saldo;
+            const amountPerPeriode = total / updatedAccrual.periodes.length;
             await prisma.accrualPeriode.updateMany({
-              where: {
-                accrualId: existingAccrual.id
-              },
-              data: {
-                amountAccrual: amountPerPeriode
-              }
+              where: { accrualId: existingAccrual.id },
+              data: { amountAccrual: amountPerPeriode },
             });
           }
 
           results.push({
             kdAkr: excelAccrual.kdAkr,
+            noPo: excelAccrual.noPo,
+            vendor: excelAccrual.vendor,
+            klasifikasi: excelAccrual.klasifikasi,
             action: 'updated',
             saldo: excelAccrual.saldo,
-            id: existingAccrual.id
+            id: existingAccrual.id,
           });
         } else {
-          // Create new accrual with default values
           const newAccrual = await prisma.accrual.create({
             data: {
               kdAkr: excelAccrual.kdAkr,
-              kdAkunBiaya: excelAccrual.kdAkunBiaya || 'DEFAULT',
-              vendor: excelAccrual.vendor || 'IMPORTED FROM EXCEL',
-              deskripsi: excelAccrual.deskripsi || `Imported from Excel - ${excelAccrual.kdAkr}`,
-              klasifikasi: excelAccrual.klasifikasi,
-              totalAmount: excelAccrual.totalAmount || excelAccrual.saldo,
-              noPo: excelAccrual.noPo,
-              alokasi: excelAccrual.alokasi,
+              kdAkunBiaya: excelAccrual.kdAkunBiaya ?? 'DEFAULT',
+              vendor: excelAccrual.vendor ?? 'IMPORTED FROM EXCEL',
+              deskripsi:
+                excelAccrual.deskripsi ??
+                `Imported from Excel - ${excelAccrual.kdAkr}${excelAccrual.klasifikasi ? ` (${excelAccrual.klasifikasi})` : ''}`,
+              klasifikasi: excelAccrual.klasifikasi ?? null,
+              totalAmount: excelAccrual.totalAmount ?? excelAccrual.saldo,
+              noPo: excelAccrual.noPo ?? null,
+              alokasi: excelAccrual.alokasi ?? null,
               startDate: new Date(),
               jumlahPeriode: 1,
               pembagianType: 'otomatis',
@@ -113,25 +118,28 @@ export async function POST(request: NextRequest) {
                   bulan: `${new Date().toLocaleDateString('id-ID', { month: 'short' })} ${new Date().getFullYear()}`,
                   tahun: new Date().getFullYear(),
                   amountAccrual: excelAccrual.saldo,
-                }
-              }
+                },
+              },
             },
-            include: {
-              periodes: true
-            }
+            include: { periodes: true },
           });
 
           results.push({
             kdAkr: excelAccrual.kdAkr,
+            noPo: excelAccrual.noPo,
+            vendor: excelAccrual.vendor,
+            klasifikasi: excelAccrual.klasifikasi,
             action: 'created',
             saldo: excelAccrual.saldo,
-            id: newAccrual.id
+            id: newAccrual.id,
           });
         }
       } catch (error) {
         processedErrors.push({
           kdAkr: excelAccrual.kdAkr,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          noPo: excelAccrual.noPo,
+          vendor: excelAccrual.vendor,
+          error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     }

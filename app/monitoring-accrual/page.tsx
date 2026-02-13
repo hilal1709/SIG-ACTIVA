@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Search, Download, Plus, MoreVertical, X, Edit2, Trash2, Upload, ChevronDown } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { exportToCSV } from '../utils/exportUtils';
+import { KODE_AKUN_KLASIFIKASI } from '../utils/accrualKlasifikasi';
 
 // Lazy load components yang tidak critical untuk initial render
 const Sidebar = dynamic(() => import('../components/Sidebar'), { 
@@ -28,31 +29,6 @@ const loadExcelLibraries = async () => {
     ExcelJS = (await import('exceljs')).default;
   }
   return { XLSX, ExcelJS };
-};
-
-// Mapping Kode Akun dan Klasifikasi
-const KODE_AKUN_KLASIFIKASI: Record<string, string[]> = {
-  '21600001': ['Gaji', 'Cuti Tahunan'],
-  '21600003': ['JASPRO'],
-  '21600004': ['THR'],
-  '21600005': ['JASPRO', 'GAJI'],
-  '21600006': ['PCD PPH 21'],
-  '21600008': ['BK REMBANG', 'BK TUBAN', 'LAIN-LAIN', 'TL REMBANG', 'TL TUBAN'],
-  '21600009': ['PBB BABAT LAMONGAN', 'PBB BANGKALAN', 'PBB BANJARMASIN', 'PBB BANYUWANGI', 'PBB CIGADING', 'PBB DAGEN', 'PBB GRESIK', 'PBB JAKARTA', 'PBB LAMONGAN', 'PBB MEMPAWAH', 'PBB NAROGONG', 'PBB PASURUAN', 'PBB PELINDO', 'PBB REMBANG', 'PBB SAYUNG', 'PBB SIDOARJO', 'PBB SORONG', 'PBB SQ TOWER', 'PBB SURABAYA', 'PPB TUBAN'],
-  '21600010': ['AAB TBN', 'Cigading', 'Infra', 'KEAMANAN GRESIK', 'KEAMANAN PP', 'KEAMANAN TUBAN', 'Kebersihan Gresik', 'Kebersihan Tuban', 'Lain-lain', 'Operasional Kantor', 'OPERASIONAL PABRIK', 'Parkir', 'PEMELIHARAAN ALL AREA PBR TUBAN', 'Pemeliharaan Autonomous', 'PEMELIHARAAN FM', 'PEMELIHARAAN GUSI & SQ', 'Pemeliharaan Listrik', 'Pemeliharaan Pbr Gresik', 'PEMELIHARAAN PBR TUBAN', 'REVERSE', 'TRANSPORTASI'],
-  '21600011': ['GUNUNG SARI', 'PABRIK GRESIK', 'PABRIK TUBAN', 'PERDIN GRESIK', 'PERDIN TUBAN', 'PP CIGADING', 'REKLAS PLN'],
-  '21600012': ['OA'],
-  '21600018': ['LAIN-LAIN', 'JASA AUDIT', 'Marketing', 'LGRC', 'SDM', 'ICT'],
-  '21600019': ['BILLBOARD, IKLAN, DAN PAJAK', 'Lainnya', 'Point', 'Product Knowledge', 'SALES PROMO'],
-  '21600020': ['AAB TBN', 'AFVAL', 'ASET', 'ASURANSI', 'BAHAN', 'DEPT CLD 2021', 'DEPT QA', 'Dept Rnd', 'DEPT TREASURY', 'GCG', 'ICT', 'ICT LINK NET', 'Innovation Award', 'JAMUAN TAMU', 'Jasa audit', 'Kalender', 'Kantong', 'KENDARAAN PP', 'KOMSAR', 'KON HUKUM', 'KON PAJAK', 'KON TALENT', 'KSO', 'LAIN-LAIN', 'LGRC', 'Litbang', 'MAKLON CB', 'MAKLON CWD', 'Maklon TJP', 'MSA', 'Obligasi', 'PAJAK', 'PELABUHAN', 'Pengl. Gudang/Sprepart', 'PJK. UM OP Mgr Sales', 'Right Issue', 'ROYALTY', 'RT', 'SDM', 'Seragam', 'Set-Off Prepaid', 'SEWA KENDARAAN', 'SEWA PACKING PLAN', 'SPPD', 'Troughput', 'UKL PP', 'UM', 'UNIT SHE'],
-  '21600021': ['CSR'],
-  '21600022': ['GRESIK', 'TUBAN'],
-  '21600024': ['BK REMBANG', 'BK TUBAN', 'BK TUBAN SM', 'Driver', 'Handak', 'Lain-lain', 'SOLAR REMBANG', 'SOLAR TUBAN', 'SUPPORT SG', 'SUPPORT TB', 'TL REMBANG', 'TL TUBAN'],
-  '21600025': ['BALIKPAPAN', 'BANJARMASIN', 'BANYUWANGI', 'CELUKAN BAWANG', 'CIGADING', 'CIWANDAN', 'DC BUFFER', 'MAKLON', 'NAROGONG', 'PONTIANAK', 'SEWA PALET', 'SORONG', 'TERSUS TUBAN', 'TJ PRIOK', 'TUBAN'],
-  '21600026': ['IAR', 'Asuransi Kesehatan'],
-  '21600034': ['PD'],
-  '21600007': ['PENGOBATAN'],
-  '21600033': ['LAIN-LAIN'],
 };
 
 interface AccrualPeriode {
@@ -3191,20 +3167,19 @@ export default function MonitoringAccrualPage() {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-gray-700">
                 <p className="font-semibold mb-2">📋 Format File Excel:</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>File Excel dapat memiliki beberapa sheet</li>
-                  <li>Sistem akan memprioritaskan sheet dengan nama kode accrual (contoh: 21600010)</li>
-                  <li>Untuk sheet kode accrual, sistem mengambil nilai dari kolom "OUTSTANDING" atau "SALDO"</li>
-                  <li>Jika tidak ada sheet khusus, sistem akan membaca sheet "REKAP"</li>
-                  <li>Pada sheet REKAP, sistem mengambil nilai dari kolom "SALDO AKHIR"</li>
+                  <li>File berisi beberapa sheet. Sistem mengecek sheet <strong>REKAP</strong> dulu untuk daftar kode akun accrual.</li>
+                  <li>Hanya sheet yang namanya <strong>kode akun</strong> (mis. 21600010, 21600012) yang ada di REKAP akan diproses.</li>
+                  <li>Di sheet kode akun: kolom PEKERJAAN/KLASIFIKASI, VENDOR, PO/PR, ORDER, KETERANGAN, NILAI PO, OUTSTANDING. <strong>Semua baris</strong> ditampilkan (vendor sama, no PO beda = baris terpisah).</li>
+                  <li>Di sheet REKAP: kolom AKUN, KETERANGAN, SALDO AKHIR. <strong>Semua baris</strong> ditampilkan. Keterangan &quot;BIAYA YMH ...&quot; disesuaikan otomatis ke <strong>klasifikasi</strong> per kode akun (sama dengan form tambah data).</li>
                 </ul>
               </div>
 
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
                 <p className="font-semibold mb-2">⚠️ Perhatian:</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>Import akan membuat accrual baru atau mengupdate yang sudah ada</li>
-                  <li>Accrual yang sudah ada akan diupdate total amountnya</li>
-                  <li>Proses import mungkin memakan waktu untuk file besar</li>
+                  <li>Satu baris di Excel = satu baris di tabel accrual (setelah import semua baris muncul di display tabel).</li>
+                  <li>Accrual yang sudah ada (match kode akun + no PO + vendor, atau kode akun + klasifikasi) akan diupdate; lainnya dibuat baru.</li>
+                  <li>Proses import mungkin memakan waktu untuk file besar.</li>
                 </ul>
               </div>
             </div>
