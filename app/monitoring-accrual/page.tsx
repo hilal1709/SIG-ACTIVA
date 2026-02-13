@@ -1748,13 +1748,27 @@ export default function MonitoringAccrualPage() {
         body: formData,
       });
 
+      let errorData: any = null;
+      let errorText = '';
+
       if (!response.ok) {
-        const errorData = await response.json();
+        // Coba parse sebagai JSON, jika gagal ambil sebagai text
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            errorData = await response.json();
+          } catch (jsonError) {
+            errorText = await response.text();
+          }
+        } else {
+          errorText = await response.text();
+        }
+
         const warningText =
           errorData?.warnings && Array.isArray(errorData.warnings) && errorData.warnings.length > 0
             ? `\n\nDetail:\n${errorData.warnings.slice(0, 10).join('\n')}${errorData.warnings.length > 10 ? `\n... dan ${errorData.warnings.length - 10} info lainnya` : ''}`
             : '';
-        throw new Error((errorData.error || 'Failed to import Excel file') + warningText);
+        throw new Error((errorData?.error || errorText || 'Failed to import Excel file') + warningText);
       }
 
       const result = await response.json();
@@ -1765,7 +1779,7 @@ export default function MonitoringAccrualPage() {
       let message = `Import Excel selesai!\n\nBerhasil memproses ${result.results.length} accruals`;
       
       if (result.errors && result.errors.length > 0) {
-        message += `\n\nError (${result.errors.length}):\n${result.errors.slice(0, 5).map((e: any) => `${e.kdAkr}: ${e.error}`).join('\n')}`;
+        message += `\n\nError (${result.errors.length}):\n${result.errors.slice(0, 5).map((e: any) => `${e.kdAkr || 'N/A'}: ${e.error}`).join('\n')}`;
         if (result.errors.length > 5) {
           message += `\n... dan ${result.errors.length - 5} error lainnya`;
         }
@@ -1779,7 +1793,12 @@ export default function MonitoringAccrualPage() {
       setShowImportExcelModal(false);
     } catch (error) {
       console.error('Error importing Excel file:', error);
-      alert(`Gagal mengimport file Excel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      // Jika error message terlalu panjang atau mengandung HTML, potong
+      const displayError = errorMessage.length > 200 
+        ? errorMessage.substring(0, 200) + '...' 
+        : errorMessage.replace(/<[^>]*>/g, ''); // Remove HTML tags
+      alert(`Gagal mengimport file Excel: ${displayError}`);
     } finally {
       setUploadingImportExcel(false);
       e.target.value = '';
@@ -3177,15 +3196,23 @@ export default function MonitoringAccrualPage() {
       )}
 
       {/* Loading Overlay untuk proses export/import */}
-      {(uploadingExcel || uploadingGlobalExcel || submitting) && (
+      {(uploadingExcel || uploadingGlobalExcel || uploadingImportExcel || submitting) && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 sm:p-8 shadow-2xl flex flex-col items-center space-y-4 max-w-sm mx-4">
             <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-red-600 border-t-transparent"></div>
             <div className="text-center">
               <p className="text-base sm:text-lg font-semibold text-gray-800">
-                {uploadingExcel || uploadingGlobalExcel ? 'Memproses file...' : 'Menyimpan data...'}
+                {uploadingImportExcel 
+                  ? 'Mengimport file Excel...' 
+                  : uploadingExcel || uploadingGlobalExcel 
+                    ? 'Memproses file...' 
+                    : 'Menyimpan data...'}
               </p>
-              <p className="text-xs sm:text-sm text-gray-500 mt-1">Mohon tunggu sebentar</p>
+              <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                {uploadingImportExcel 
+                  ? 'Mohon tunggu, proses mungkin memakan waktu untuk file besar...' 
+                  : 'Mohon tunggu sebentar'}
+              </p>
             </div>
           </div>
         </div>
@@ -3200,7 +3227,8 @@ export default function MonitoringAccrualPage() {
               <h2 className="text-xl font-bold text-white">Import Data Accrual dari Excel</h2>
               <button
                 onClick={() => setShowImportExcelModal(false)}
-                className="text-white/80 hover:text-white transition-colors"
+                disabled={uploadingImportExcel}
+                className={`text-white/80 hover:text-white transition-colors ${uploadingImportExcel ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <X size={24} />
               </button>
@@ -3240,10 +3268,10 @@ export default function MonitoringAccrualPage() {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-gray-700">
                 <p className="font-semibold mb-2">📋 Format File Excel:</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>File berisi beberapa sheet. Sistem mengecek sheet <strong>REKAP</strong> dulu untuk daftar kode akun accrual.</li>
-                  <li>Hanya sheet yang namanya <strong>kode akun</strong> (mis. 21600010, 21600012) yang ada di REKAP akan diproses.</li>
-                  <li>Di sheet kode akun: kolom PEKERJAAN/KLASIFIKASI, VENDOR, PO/PR, ORDER, KETERANGAN, NILAI PO, OUTSTANDING. <strong>Semua baris</strong> ditampilkan (vendor sama, no PO beda = baris terpisah).</li>
-                  <li>Di sheet REKAP: kolom AKUN, KETERANGAN, SALDO AKHIR. <strong>Semua baris</strong> ditampilkan. Keterangan &quot;BIAYA YMH ...&quot; disesuaikan otomatis ke <strong>klasifikasi</strong> per kode akun (sama dengan form tambah data).</li>
+                  <li>File berisi beberapa sheet. Sistem memproses <strong>semua sheet yang namanya kode akun accrual</strong> (mis. 21600010, 21600012, 21600018).</li>
+                  <li>Di sheet kode akun: kolom PEKERJAAN/KLASIFIKASI, VENDOR, PO/PR, ORDER, KETERANGAN, NILAI PO, <strong>OUTSTANDING/OUSTANDING/SALDO</strong>. <strong>Semua baris</strong> diproses (vendor sama, no PO beda = baris terpisah).</li>
+                  <li>Sheet <strong>REKAP</strong>: hanya digunakan untuk kode akun yang <strong>tidak punya sheet sendiri</strong>. Kolom AKUN, KETERANGAN, SALDO AKHIR. Keterangan &quot;BIAYA YMH ...&quot; disesuaikan otomatis ke <strong>klasifikasi</strong> per kode akun.</li>
+                  <li>Proses import mungkin memakan waktu untuk file besar dengan banyak baris.</li>
                 </ul>
               </div>
 
@@ -3252,7 +3280,7 @@ export default function MonitoringAccrualPage() {
                 <ul className="list-disc list-inside space-y-1">
                   <li>Satu baris di Excel = satu baris di tabel accrual (setelah import semua baris muncul di display tabel).</li>
                   <li>Accrual yang sudah ada (match kode akun + no PO + vendor, atau kode akun + klasifikasi) akan diupdate; lainnya dibuat baru.</li>
-                  <li>Proses import mungkin memakan waktu untuk file besar.</li>
+                  <li>Pastikan kolom saldo (OUTSTANDING/OUSTANDING/SALDO) ada di sheet kode akun agar data dapat diproses.</li>
                 </ul>
               </div>
             </div>
