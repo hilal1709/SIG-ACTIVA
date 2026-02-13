@@ -331,12 +331,17 @@ export default function MonitoringAccrualPage() {
 
   // Format currency helper (memoized)
   const formatCurrency = useCallback((amount: number) => {
-    return new Intl.NumberFormat('id-ID', {
+    const isNegative = amount < 0;
+    const absAmount = Math.abs(amount);
+    
+    const formatted = new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(absAmount);
+    
+    return isNegative ? `-${formatted}` : formatted;
   }, []);
 
   // Calculate totals (optimized with useMemo)
