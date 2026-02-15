@@ -204,15 +204,37 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// DELETE - Delete accrual entry
+// DELETE - Delete accrual entry (single id) atau bulk (ids=1,2,3)
 export async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
+    const idsParam = searchParams.get('ids');
+
+    if (idsParam) {
+      // Bulk delete: satu request, cascade hapus periode & realisasi
+      const ids = idsParam
+        .split(',')
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => Number.isFinite(n));
+      if (ids.length === 0) {
+        return NextResponse.json(
+          { error: 'Invalid or empty ids' },
+          { status: 400 }
+        );
+      }
+      const result = await prisma.accrual.deleteMany({
+        where: { id: { in: ids } },
+      });
+      return NextResponse.json({
+        message: `${result.count} accrual berhasil dihapus`,
+        count: result.count,
+      });
+    }
 
     if (!id) {
       return NextResponse.json(
-        { error: 'Missing accrual ID' },
+        { error: 'Missing accrual ID or ids' },
         { status: 400 }
       );
     }

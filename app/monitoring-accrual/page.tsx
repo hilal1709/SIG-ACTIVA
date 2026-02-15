@@ -176,6 +176,7 @@ export default function MonitoringAccrualPage() {
     periodeAmounts: [],
   });
   const [submitting, setSubmitting] = useState(false);
+  const [deletingSelected, setDeletingSelected] = useState(false);
   const [showRealisasiModal, setShowRealisasiModal] = useState(false);
   const [selectedPeriode, setSelectedPeriode] = useState<AccrualPeriode | null>(null);
   const [realisasiViewOnly, setRealisasiViewOnly] = useState(false);
@@ -1259,19 +1260,23 @@ export default function MonitoringAccrualPage() {
     if (selectedIds.size === 0) return;
     if (!confirm(`Yakin hapus ${selectedIds.size} data accrual terpilih?`)) return;
 
+    setDeletingSelected(true);
     try {
-      let ok = 0;
-      let err = 0;
-      for (const id of selectedIds) {
-        const response = await fetch(`/api/accrual?id=${id}`, { method: 'DELETE' });
-        if (response.ok) ok++; else err++;
+      const ids = Array.from(selectedIds).join(',');
+      const response = await fetch(`/api/accrual?ids=${ids}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal menghapus');
       }
+      const data = await response.json();
       setSelectedIds(new Set());
       fetchAccrualData();
-      alert(err === 0 ? `${ok} data berhasil dihapus.` : `Berhasil: ${ok}, gagal: ${err}.`);
+      alert(data.count != null ? `${data.count} data berhasil dihapus.` : 'Data berhasil dihapus.');
     } catch (error) {
       console.error('Error bulk delete:', error);
       alert('Gagal menghapus data terpilih');
+    } finally {
+      setDeletingSelected(false);
     }
   }, [selectedIds]);
 
@@ -1987,11 +1992,18 @@ export default function MonitoringAccrualPage() {
                     {canEdit && selectedIds.size > 0 && (
                       <button
                         onClick={handleDeleteSelected}
-                        className="flex items-center gap-1 sm:gap-2 bg-red-700 hover:bg-red-800 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center"
+                        disabled={deletingSelected}
+                        className="flex items-center gap-1 sm:gap-2 bg-red-700 hover:bg-red-800 !text-white px-2 sm:px-4 py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-initial justify-center disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <Trash2 size={16} className="sm:w-[18px] sm:h-[18px]" />
-                        <span className="hidden sm:inline">Hapus terpilih ({selectedIds.size})</span>
-                        <span className="sm:hidden">Hapus ({selectedIds.size})</span>
+                        {deletingSelected ? (
+                          <span>Menghapus...</span>
+                        ) : (
+                          <>
+                            <span className="hidden sm:inline">Hapus terpilih ({selectedIds.size})</span>
+                            <span className="sm:hidden">Hapus ({selectedIds.size})</span>
+                          </>
+                        )}
                       </button>
                     )}
                     {canEdit && (
