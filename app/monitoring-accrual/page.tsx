@@ -3283,7 +3283,7 @@ export default function MonitoringAccrualPage() {
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
                 <p className="font-semibold mb-2">⚠️ Perhatian:</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>Satu baris di Excel = satu baris di tabel accrual (setelah import semua baris muncul di display tabel).</li>
+                  <li>Kode akun <strong>tanpa detail</strong> (mis. 21600002–21600007): satu baris di REKAP = satu baris di tabel. Kode akun <strong>dengan detail</strong> (mis. 21600001, 21600008): satu baris di REKAP dipecah jadi beberapa baris sesuai detail (contoh 21600001 → Gaji dan Cuti Tahunan).</li>
                   <li>Accrual yang sudah ada (match kode akun + no PO + vendor, atau kode akun + klasifikasi) akan diupdate; lainnya dibuat baru.</li>
                   <li>Pastikan kolom saldo (OUTSTANDING/OUSTANDING/SALDO) ada di sheet kode akun agar data dapat diproses.</li>
                 </ul>

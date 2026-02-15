@@ -27,6 +27,17 @@ export const KODE_AKUN_KLASIFIKASI: Record<string, string[]> = {
 };
 
 /**
+ * Daftar klasifikasi detail untuk kode akun yang punya lebih dari satu detail
+ * (untuk expand baris REKAP: 1 baris → N baris per detail).
+ * Return undefined jika kode akun tidak punya detail atau hanya 1 opsi.
+ */
+export function getDetailKlasifikasiList(kdAkr: string): string[] | undefined {
+  const list = KODE_AKUN_KLASIFIKASI[kdAkr];
+  if (!list || list.length <= 1) return undefined;
+  return list;
+}
+
+/**
  * Menyesuaikan keterangan dari sheet REKAP (mis. "BIAYA YMH ...") ke klasifikasi
  * yang sudah ada. Strip prefix "BIAYA YMH" / "BYA YMH" dan cocokkan ke daftar klasifikasi
  * untuk kode akun tersebut.
