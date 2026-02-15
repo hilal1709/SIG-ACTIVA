@@ -126,12 +126,11 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               }
 
               // Setiap baris REKAP dimasukkan; keterangan disesuaikan ke klasifikasi (strip BIAYA YMH, cocok ke klasifikasi)
+              // Nilai saldo mengikuti file: positif/negatif tidak diubah
               if (kdAkrStr && saldoValue !== null) {
                 const klasifikasiNormalized = rawKeterangan
                   ? keteranganToKlasifikasi(kdAkrStr, rawKeterangan)
                   : undefined;
-                const saldoNegatif =
-                  saldoValue > 0 ? -saldoValue : saldoValue;
                 const vendorValue =
                   vendorColumn !== -1 && row[vendorColumn] != null
                     ? String(row[vendorColumn]).trim()
@@ -143,7 +142,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
 
                 rekapRows.push({
                   kdAkr: kdAkrStr,
-                  saldo: saldoNegatif,
+                  saldo: saldoValue,
                   ...(klasifikasiNormalized
                     ? { klasifikasi: klasifikasiNormalized }
                     : rawKeterangan
@@ -262,24 +261,17 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               nilaiPoColumn !== -1 ? parseNumber(row[nilaiPoColumn]) : null;
 
             if (outstandingValue !== null && outstandingValue !== 0) {
-              const saldoNegatif =
-                outstandingValue > 0 ? -outstandingValue : outstandingValue;
-              const totalAmountNegatif =
-                nilaiPoValue != null && nilaiPoValue !== 0
-                  ? nilaiPoValue > 0
-                    ? -nilaiPoValue
-                    : nilaiPoValue
-                  : undefined;
+              // Nilai saldo dan totalAmount mengikuti file: positif/negatif tidak diubah
               accruals.push({
                 kdAkr: String(sheetName ?? '').trim(),
-                saldo: saldoNegatif,
+                saldo: outstandingValue,
                 ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
                 ...(vendorValue ? { vendor: vendorValue } : {}),
                 ...(noPoValue ? { noPo: noPoValue } : {}),
                 ...(alokasiValue ? { alokasi: alokasiValue } : {}),
                 ...(keteranganValue ? { deskripsi: keteranganValue } : {}),
-                ...(totalAmountNegatif !== undefined
-                  ? { totalAmount: totalAmountNegatif }
+                ...(nilaiPoValue != null && nilaiPoValue !== 0
+                  ? { totalAmount: nilaiPoValue }
                   : {}),
                 source: 'sheet',
               });
