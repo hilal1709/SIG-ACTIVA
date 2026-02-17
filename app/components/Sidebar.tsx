@@ -9,6 +9,7 @@ import { isAdmin, getCurrentUserRole } from '../utils/rolePermissions';
 const menuItems = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/', requireAdmin: false },
   { icon: FileText, label: 'Laporan Material', href: '/laporan-material', requireAdmin: false },
+  { icon: FileText, label: 'Fluktuasi OI/EXP', href: '/fluktuasi-oi', requireAdmin: false },
   { icon: TrendingUp, label: 'Monitoring Prepaid', href: '/monitoring-prepaid', requireAdmin: false },
   { icon: Clock, label: 'Monitoring Accrual', href: '/monitoring-accrual', requireAdmin: false },
   { icon: Users, label: 'User Management', href: '/user-management', requireAdmin: true },
