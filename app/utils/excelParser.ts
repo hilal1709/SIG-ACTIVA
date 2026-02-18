@@ -186,7 +186,6 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
       const trimmed = String(name ?? '').trim();
       return trimmed.toUpperCase() !== 'REKAP' && /^\d+$/.test(trimmed);
     });
-    const hasOwnSheetSet = new Set(kodeAkunSheetNames);
 
     // ---- 2) Proses semua sheet yang namanya kode akun accrual (banyak baris per sheet) ----
     const outstandingPossibleNames = [
@@ -297,11 +296,11 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
       }
     }
 
-    // ---- 3) REKAP hanya untuk kode akun yang TIDAK punya sheet sendiri ----
-    // Setiap baris REKAP dipakai apa adanya dari file (amount tidak dibagi rata);
-    // jika file punya baris terpisah per klasifikasi (Gaji, Cuti Tahunan), masing-masing bawa nilai dari file.
+    // ---- 3) REKAP: hanya skip kalau kode akun BENAR-BENAR dapat data dari sheet-nya
+    // Kalau kode akun punya sheet tapi sheet kosong/salah format, tetap ambil dari REKAP supaya tidak ada kode akun yang hilang
+    const kdAkrWithSheetData = new Set(accruals.map((a) => a.kdAkr));
     for (const r of rekapRows) {
-      if (hasOwnSheetSet.has(r.kdAkr)) continue; // sudah ada datanya dari sheet, lewati
+      if (kdAkrWithSheetData.has(r.kdAkr)) continue; // sudah dapat data dari sheet, lewati REKAP
       accruals.push(r);
     }
 
