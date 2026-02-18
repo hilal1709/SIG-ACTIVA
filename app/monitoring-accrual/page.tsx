@@ -1285,13 +1285,12 @@ export default function MonitoringAccrualPage() {
       const isEditing = editingId !== null;
       const url = isEditing ? `/api/accrual?id=${editingId}` : '/api/accrual';
       const method = isEditing ? 'PUT' : 'POST';
-      // Manual: total = jumlah nilai per periode; kalau periode semua kosong pakai Amount yang diisi user
-      const sumPeriode = formData.pembagianType === 'manual' && formData.periodeAmounts?.length
-        ? formData.periodeAmounts.reduce((sum, a) => sum + (parseFloat(a) || 0), 0)
-        : 0;
-      const totalAmountToSend = formData.pembagianType === 'manual'
-        ? (sumPeriode > 0 ? sumPeriode : parseFloat(formData.totalAmount) || 0)
-        : parseFloat(formData.totalAmount);
+      // Manual: tambah = user isi Amount saja, periode 0; edit = kirim nilai periode yang sudah ada
+      const totalAmountToSend = parseFloat(formData.totalAmount) || 0;
+      const periodeCount = parseInt(formData.jumlahPeriode) || 1;
+      const periodeAmountsToSend = formData.pembagianType === 'manual'
+        ? (isEditing && formData.periodeAmounts?.length ? formData.periodeAmounts : Array(periodeCount).fill('0'))
+        : null;
       
       const response = await fetch(url, {
         method,
@@ -1313,7 +1312,7 @@ export default function MonitoringAccrualPage() {
           startDate: formData.startDate,
           jumlahPeriode: parseInt(formData.jumlahPeriode),
           pembagianType: formData.pembagianType,
-          periodeAmounts: formData.pembagianType === 'manual' ? formData.periodeAmounts : null,
+          periodeAmounts: periodeAmountsToSend,
         }),
       });
 
@@ -2698,7 +2697,7 @@ export default function MonitoringAccrualPage() {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Amount <span className="text-red-600">*</span>
                     {formData.pembagianType === 'manual' && (
-                      <span className="text-gray-500 font-normal ml-1">(bisa isi total di sini atau isi per periode di bawah; kalau isi per periode, total ikut berubah)</span>
+                      <span className="text-gray-500 font-normal ml-1">(isi total accrual; per periode bisa di-update nanti)</span>
                     )}
                   </label>
                   <input
@@ -2797,39 +2796,6 @@ export default function MonitoringAccrualPage() {
                     </label>
                   </div>
                 </div>
-
-                {/* Input amount per periode (hanya tampil jika tipe Manual) */}
-                {formData.pembagianType === 'manual' && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Amount per Periode <span className="text-red-600">*</span>
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-60 overflow-y-auto pr-1">
-                      {Array.from({ length: Math.max(0, parseInt(formData.jumlahPeriode) || 0) }).map((_, i) => {
-                        const start = formData.startDate ? new Date(formData.startDate) : new Date();
-                        const periodeDate = new Date(start);
-                        periodeDate.setMonth(start.getMonth() + i);
-                        const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-                        const label = `Periode ${i + 1} (${bulanNames[periodeDate.getMonth()]} ${periodeDate.getFullYear()})`;
-                        const value = formData.periodeAmounts?.[i] ?? '';
-                        return (
-                          <div key={i}>
-                            <label className="block text-xs text-gray-500 mb-1">{label}</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={value}
-                              onChange={(e) => handlePeriodeAmountChange(i, e.target.value)}
-                              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
-                              placeholder="0"
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Deskripsi - Full Width */}
                 <div className="md:col-span-2">
