@@ -2025,7 +2025,7 @@ export default function MonitoringAccrualPage() {
           {/* Metric Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
             <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
-              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Total Accrual</p>
+              <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Saldo</p>
               <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
                 {formatCurrency(totalAccrual)}
               </h3>

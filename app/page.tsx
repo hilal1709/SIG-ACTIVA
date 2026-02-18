@@ -183,7 +183,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6 mb-4 sm:mb-6 md:mb-8">
             <div className="animate-fadeIn delay-100">
               <MetricCard
-                title="Total Accrual"
+                title="Saldo"
                 value={formatCurrency(stats.totalAccrual)}
                 icon={<TrendingUp className="w-5 h-5 sm:w-6 sm:h-6" />}
                 color="blue"
@@ -322,7 +322,7 @@ export default function DashboardPage() {
                   data={accrualDonutData}
                   title="Status Accrual"
                   centerText={summary.accrual.total.toString()}
-                  centerSubtext="Total Accrual"
+                  centerSubtext="Saldo"
                 />
               </div>
 
