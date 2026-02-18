@@ -1786,7 +1786,13 @@ export default function MonitoringAccrualPage() {
       // Refresh data
       await fetchAccrualData();
 
-      let message = `Import Excel selesai!\n\nBerhasil memproses ${result.results.length} accruals`;
+      const created = result.createdCount ?? 0;
+      const updated = result.updatedCount ?? 0;
+      let message = `Import Excel selesai!\n\nBaris diproses: ${result.results.length}`;
+      if (created > 0 || updated > 0) {
+        message += `\n• Dibuat baru: ${created}\n• Di-update: ${updated}`;
+      }
+      message += `\n\n(Jika ada baris yang match kode akun + klasifikasi / no PO + vendor, data di-update bukan dibuat baru — total baris di tabel = jumlah accrual unik.)`;
       
       if (result.errors && result.errors.length > 0) {
         message += `\n\nError (${result.errors.length}):\n${result.errors.slice(0, 5).map((e: any) => `${e.kdAkr || 'N/A'}: ${e.error}`).join('\n')}`;

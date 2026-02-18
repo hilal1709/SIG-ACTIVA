@@ -48,6 +48,8 @@ export async function POST(request: NextRequest) {
     const BATCH_SIZE = 50; // Proses 50 baris sekaligus
     const results: any[] = [];
     const processedErrors: any[] = [];
+    let createdCount = 0;
+    let updatedCount = 0;
 
     // Proses dalam batch untuk menghindari timeout
     for (let i = 0; i < accruals.length; i += BATCH_SIZE) {
@@ -97,6 +99,7 @@ export async function POST(request: NextRequest) {
               });
             }
 
+            updatedCount++;
             return {
               kdAkr: excelAccrual.kdAkr,
               noPo: excelAccrual.noPo,
@@ -134,6 +137,7 @@ export async function POST(request: NextRequest) {
               include: { periodes: true },
             });
 
+            createdCount++;
             return {
               kdAkr: excelAccrual.kdAkr,
               noPo: excelAccrual.noPo,
@@ -177,8 +181,11 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: `Successfully processed ${results.length} accruals`,
+      message: `Successfully processed ${results.length} baris`,
       results,
+      createdCount,
+      updatedCount,
+      totalProcessed: results.length,
       errors: processedErrors,
       warnings: errors
     });

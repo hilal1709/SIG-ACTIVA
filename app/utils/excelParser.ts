@@ -113,7 +113,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
 
               const kdAkr = row[akunColumn];
               const saldoAkhir = row[saldoAkhirColumn];
-              let kdAkrStr = kdAkr ? String(kdAkr).trim() : '';
+              let kdAkrStr = kdAkr != null && String(kdAkr).trim() !== '' ? String(kdAkr).trim() : '';
               const saldoValue = parseNumber(saldoAkhir);
               const rawKeterangan =
                 keteranganColumn !== -1 &&
@@ -127,12 +127,14 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 kdAkrStr = lastKdAkr;
               }
               if (kdAkrStr) {
+                kdAkrStr = normalizeKodeAkr(kdAkrStr) || kdAkrStr;
                 rekapKodeAkunSet.add(kdAkrStr);
                 lastKdAkr = kdAkrStr;
               }
 
-              // Untuk kode akun yang punya detail: skip baris summary "BIAYA YMH ...", hanya ambil baris detail (Cuti Tahunan, Gaji, dll)
-              if (kdAkrStr && saldoValue !== null && isRekapSummaryRow(kdAkrStr, rawKeterangan)) continue;
+              // Untuk kode akun yang punya detail: skip baris summary "BIAYA YMH ..." HANYA jika sudah ada baris detail untuk kode ini (supaya kode yang cuma punya 1 baris summary tetap masuk)
+              const alreadyHasRowForThisKode = rekapRows.some((r) => r.kdAkr === kdAkrStr);
+              if (kdAkrStr && saldoValue !== null && isRekapSummaryRow(kdAkrStr, rawKeterangan) && alreadyHasRowForThisKode) continue;
 
               // Setiap baris REKAP dimasukkan; nilai saldo mengikuti file
               if (kdAkrStr && saldoValue !== null) {
@@ -269,8 +271,9 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
 
             if (outstandingValue !== null && outstandingValue !== 0) {
               // Nilai saldo dan totalAmount mengikuti file: positif/negatif tidak diubah
+              const kdAkrNormalized = normalizeKodeAkr(String(sheetName ?? '').trim()) || String(sheetName ?? '').trim();
               accruals.push({
-                kdAkr: String(sheetName ?? '').trim(),
+                kdAkr: kdAkrNormalized,
                 saldo: outstandingValue,
                 ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
                 ...(vendorValue ? { vendor: vendorValue } : {}),
@@ -333,6 +336,25 @@ function findColumnIndex(
     if (index !== -1) return index;
   }
   return -1;
+}
+
+/** Normalisasi kode akun dari Excel (angka bisa kehilangan leading zero): 2160005 → 21600005, 216000019 → 21600019 */
+function normalizeKodeAkr(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const s = String(value).trim().replace(/\s/g, '');
+  if (!s) return '';
+  const num = Number(s);
+  if (Number.isFinite(num)) {
+    if (num >= 21600000 && num <= 21699999) return String(num);
+    if (num >= 2160000 && num <= 2169999) return String(num).padStart(8, '0');
+    if (num >= 216000000 && num <= 216999999) return '216' + String(num % 1000000).padStart(5, '0');
+  }
+  if (/^\d{7,9}$/.test(s)) {
+    if (s.length === 8) return s;
+    if (s.length === 7) return s.padStart(8, '0');
+    if (s.length === 9 && s.startsWith('2160')) return s.slice(0, 3) + s.slice(4);
+  }
+  return s;
 }
 
 function parseNumber(value: unknown): number | null {
