@@ -134,10 +134,18 @@ export async function POST(request: NextRequest) {
       totalAmount, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
     } = body;
 
-    // Validate required fields
-    if (!kdAkr || !kdAkunBiaya || !vendor || !deskripsi || !totalAmount || !startDate || !jumlahPeriode) {
+    // Validate required fields (totalAmount boleh 0 untuk tipe manual)
+    const hasRequired =
+      kdAkr != null && kdAkr !== '' &&
+      kdAkunBiaya != null && kdAkunBiaya !== '' &&
+      vendor != null && vendor !== '' &&
+      deskripsi != null && deskripsi !== '' &&
+      totalAmount != null && totalAmount !== '' &&
+      startDate != null && startDate !== '' &&
+      jumlahPeriode != null && jumlahPeriode !== '';
+    if (!hasRequired) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields', details: 'kdAkr, kdAkunBiaya, vendor, deskripsi, totalAmount, startDate, dan jumlahPeriode harus diisi' },
         { status: 400 }
       );
     }
@@ -274,8 +282,16 @@ export async function PATCH(request: NextRequest) {
       totalAmount, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
     } = body;
 
-    // Validate required fields
-    if (!kdAkr || !kdAkunBiaya || !vendor || !deskripsi || !totalAmount || !startDate || !jumlahPeriode) {
+    // Validate required fields (totalAmount boleh 0 untuk tipe manual)
+    const hasRequired =
+      kdAkr != null && kdAkr !== '' &&
+      kdAkunBiaya != null && kdAkunBiaya !== '' &&
+      vendor != null && vendor !== '' &&
+      deskripsi != null && deskripsi !== '' &&
+      totalAmount != null && totalAmount !== '' &&
+      startDate != null && startDate !== '' &&
+      jumlahPeriode != null && jumlahPeriode !== '';
+    if (!hasRequired) {
       return NextResponse.json(
         { error: 'Missing required fields', details: 'kdAkr, kdAkunBiaya, vendor, deskripsi, totalAmount, startDate, dan jumlahPeriode harus diisi' },
         { status: 400 }
