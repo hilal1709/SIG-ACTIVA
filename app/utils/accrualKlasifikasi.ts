@@ -38,6 +38,18 @@ export function getDetailKlasifikasiList(kdAkr: string): string[] | undefined {
 }
 
 /**
+ * True jika baris REKAP ini adalah baris summary/header "BIAYA YMH ..." yang tidak perlu di-import.
+ * Untuk kode akun yang punya detail (21600001, 21600008, dll), hanya baris detail (Cuti Tahunan, Gaji, dll) yang masuk.
+ */
+export function isRekapSummaryRow(kdAkr: string, keterangan: string): boolean {
+  if (!getDetailKlasifikasiList(kdAkr)) return false; // kode akun tanpa detail → semua baris dipakai
+  const raw = String(keterangan || '').trim();
+  if (!raw) return false;
+  const upper = raw.toUpperCase();
+  return upper.startsWith('BIAYA YMH') || upper.startsWith('BYA YMH');
+}
+
+/**
  * Menyesuaikan keterangan dari sheet REKAP (mis. "BIAYA YMH ...") ke klasifikasi
  * yang sudah ada. Strip prefix "BIAYA YMH" / "BYA YMH" dan cocokkan ke daftar klasifikasi
  * untuk kode akun tersebut.

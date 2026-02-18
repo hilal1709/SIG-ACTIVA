@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { keteranganToKlasifikasi } from './accrualKlasifikasi';
+import { keteranganToKlasifikasi, isRekapSummaryRow } from './accrualKlasifikasi';
 
 export interface ExcelAccrualData {
   kdAkr: string;
@@ -130,6 +130,9 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 rekapKodeAkunSet.add(kdAkrStr);
                 lastKdAkr = kdAkrStr;
               }
+
+              // Untuk kode akun yang punya detail: skip baris summary "BIAYA YMH ...", hanya ambil baris detail (Cuti Tahunan, Gaji, dll)
+              if (kdAkrStr && saldoValue !== null && isRekapSummaryRow(kdAkrStr, rawKeterangan)) continue;
 
               // Setiap baris REKAP dimasukkan; nilai saldo mengikuti file
               if (kdAkrStr && saldoValue !== null) {
