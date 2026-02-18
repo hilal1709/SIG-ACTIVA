@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { keteranganToKlasifikasi, isRekapSummaryRow } from './accrualKlasifikasi';
+import { keteranganToKlasifikasi, isRekapSummaryRow, getDetailKlasifikasiList } from './accrualKlasifikasi';
 
 export interface ExcelAccrualData {
   kdAkr: string;
@@ -13,6 +13,8 @@ export interface ExcelAccrualData {
   totalAmount?: number;
   /** Asal data: 'sheet' = sheet kode akun, 'rekap' = sheet REKAP */
   source?: 'sheet' | 'rekap';
+  /** Hanya untuk internal parser: baris "BIAYA YMH ..." (summary) di REKAP */
+  isSummaryRow?: boolean;
 }
 
 export interface ParsedExcelData {
@@ -132,12 +134,9 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 lastKdAkr = kdAkrStr;
               }
 
-              // Untuk kode akun yang punya detail: skip baris summary "BIAYA YMH ..." HANYA jika sudah ada baris detail untuk kode ini (supaya kode yang cuma punya 1 baris summary tetap masuk)
-              const alreadyHasRowForThisKode = rekapRows.some((r) => r.kdAkr === kdAkrStr);
-              if (kdAkrStr && saldoValue !== null && isRekapSummaryRow(kdAkrStr, rawKeterangan) && alreadyHasRowForThisKode) continue;
-
-              // Setiap baris REKAP dimasukkan; nilai saldo mengikuti file
+              // Setiap baris REKAP dimasukkan; baris summary "BIAYA YMH ..." ditandai (nanti di-filter jika ada baris detail)
               if (kdAkrStr && saldoValue !== null) {
+                const isSummary = isRekapSummaryRow(kdAkrStr, rawKeterangan);
                 const klasifikasiNormalized = rawKeterangan
                   ? keteranganToKlasifikasi(kdAkrStr, rawKeterangan)
                   : undefined;
@@ -163,6 +162,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                     ? { kdAkunBiaya: kdAkunBiayaValue }
                     : {}),
                   source: 'rekap',
+                  isSummaryRow: isSummary,
                 });
               }
             }
@@ -182,6 +182,17 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
         );
       }
     }
+
+    // Untuk kode akun yang punya detail: jika ada baris detail (bukan summary), buang semua baris summary agar YMH tidak tampil (21600001 hanya Gaji + Cuti Tahunan)
+    const rekapRowsFiltered = rekapRows.filter((r) => {
+      if (!r.isSummaryRow) return true;
+      const details = getDetailKlasifikasiList(r.kdAkr);
+      if (!details) return true; // kode tanpa detail: tetap tampilkan summary
+      const hasDetailRow = rekapRows.some((x) => x.kdAkr === r.kdAkr && !x.isSummaryRow);
+      return !hasDetailRow; // buang summary hanya kalau ada baris detail
+    });
+    // Hapus flag internal sebelum dipakai
+    const rekapRowsFinal = rekapRowsFiltered.map(({ isSummaryRow, ...rest }) => rest);
 
     // Daftar sheet yang namanya kode akun (punya sheet sendiri)
     const kodeAkunSheetNames = sheetNames.filter((name) => {
@@ -302,7 +313,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
     // ---- 3) REKAP: hanya skip kalau kode akun BENAR-BENAR dapat data dari sheet-nya
     // Kalau kode akun punya sheet tapi sheet kosong/salah format, tetap ambil dari REKAP supaya tidak ada kode akun yang hilang
     const kdAkrWithSheetData = new Set(accruals.map((a) => a.kdAkr));
-    for (const r of rekapRows) {
+    for (const r of rekapRowsFinal) {
       if (kdAkrWithSheetData.has(r.kdAkr)) continue; // sudah dapat data dari sheet, lewati REKAP
       accruals.push(r);
     }
