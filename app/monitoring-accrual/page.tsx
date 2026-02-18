@@ -1197,7 +1197,8 @@ export default function MonitoringAccrualPage() {
     setFormData(prev => {
       const newAmounts = [...prev.periodeAmounts];
       newAmounts[index] = value;
-      return { ...prev, periodeAmounts: newAmounts };
+      const newSum = newAmounts.reduce((s, a) => s + (parseFloat(a) || 0), 0);
+      return { ...prev, periodeAmounts: newAmounts, totalAmount: newSum.toFixed(2) };
     });
   };
 
@@ -1284,9 +1285,12 @@ export default function MonitoringAccrualPage() {
       const isEditing = editingId !== null;
       const url = isEditing ? `/api/accrual?id=${editingId}` : '/api/accrual';
       const method = isEditing ? 'PUT' : 'POST';
-      // Manual: total amount = jumlah semua nilai periode (termasuk periode baru)
-      const totalAmountToSend = formData.pembagianType === 'manual' && formData.periodeAmounts?.length
+      // Manual: total = jumlah nilai per periode; kalau periode semua kosong pakai Amount yang diisi user
+      const sumPeriode = formData.pembagianType === 'manual' && formData.periodeAmounts?.length
         ? formData.periodeAmounts.reduce((sum, a) => sum + (parseFloat(a) || 0), 0)
+        : 0;
+      const totalAmountToSend = formData.pembagianType === 'manual'
+        ? (sumPeriode > 0 ? sumPeriode : parseFloat(formData.totalAmount) || 0)
         : parseFloat(formData.totalAmount);
       
       const response = await fetch(url, {
@@ -2694,21 +2698,18 @@ export default function MonitoringAccrualPage() {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Amount <span className="text-red-600">*</span>
                     {formData.pembagianType === 'manual' && (
-                      <span className="text-gray-500 font-normal ml-1">(otomatis = total dari isian accrual per periode di bawah)</span>
+                      <span className="text-gray-500 font-normal ml-1">(bisa isi total di sini atau isi per periode di bawah; kalau isi per periode, total ikut berubah)</span>
                     )}
                   </label>
                   <input
                     type="number"
                     name="totalAmount"
-                    value={formData.pembagianType === 'manual' && formData.periodeAmounts?.length
-                      ? formData.periodeAmounts.reduce((s, a) => s + (parseFloat(a) || 0), 0).toFixed(2)
-                      : formData.totalAmount}
-                    onChange={formData.pembagianType === 'manual' ? undefined : handleInputChange}
+                    value={formData.totalAmount}
+                    onChange={handleInputChange}
                     required
                     min="0"
                     step="0.01"
-                    readOnly={formData.pembagianType === 'manual'}
-                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all disabled:bg-gray-100 disabled:text-gray-700"
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Contoh: 50000000 (total)"
                   />
                 </div>
