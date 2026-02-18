@@ -287,7 +287,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 kdAkr: kdAkrNormalized,
                 saldo: outstandingValue,
                 ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
-                vendor: vendorValue || undefined,
+                vendor: vendorValue ? vendorValue : undefined,
                 ...(noPoValue ? { noPo: noPoValue } : {}),
                 ...(alokasiValue ? { alokasi: alokasiValue } : {}),
                 ...(keteranganValue ? { deskripsi: keteranganValue } : {}),

@@ -75,10 +75,12 @@ export async function POST(request: NextRequest) {
           });
 
           if (existingAccrual) {
+            // Nilai amount/accrual/saldo mengikuti file (positif/negatif tidak diubah)
+            const totalAmount = excelAccrual.totalAmount ?? excelAccrual.saldo;
             const updatedAccrual = await prisma.accrual.update({
               where: { id: existingAccrual.id },
               data: {
-                totalAmount: excelAccrual.totalAmount ?? excelAccrual.saldo,
+                totalAmount,
                 ...(excelAccrual.vendor !== undefined && { vendor: excelAccrual.vendor ?? '-' }),
                 ...(excelAccrual.deskripsi != null && { deskripsi: excelAccrual.deskripsi }),
                 ...(excelAccrual.kdAkunBiaya != null && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
@@ -90,8 +92,7 @@ export async function POST(request: NextRequest) {
             });
 
             if (updatedAccrual.periodes.length > 0) {
-              const total = excelAccrual.totalAmount ?? excelAccrual.saldo;
-              const amountPerPeriode = total / updatedAccrual.periodes.length;
+              const amountPerPeriode = totalAmount / updatedAccrual.periodes.length;
               await prisma.accrualPeriode.updateMany({
                 where: { accrualId: existingAccrual.id },
                 data: { amountAccrual: amountPerPeriode },
@@ -109,6 +110,8 @@ export async function POST(request: NextRequest) {
               id: existingAccrual.id,
             };
           } else {
+            // Nilai amount/accrual/saldo mengikuti file (positif/negatif tidak diubah)
+            const totalAmount = excelAccrual.totalAmount ?? excelAccrual.saldo;
             const newAccrual = await prisma.accrual.create({
               data: {
                 kdAkr: excelAccrual.kdAkr,
@@ -118,7 +121,7 @@ export async function POST(request: NextRequest) {
                   excelAccrual.deskripsi ??
                   `Imported from Excel - ${excelAccrual.kdAkr}${excelAccrual.klasifikasi ? ` (${excelAccrual.klasifikasi})` : ''}`,
                 klasifikasi: excelAccrual.klasifikasi ?? null,
-                totalAmount: excelAccrual.totalAmount ?? excelAccrual.saldo,
+                totalAmount,
                 noPo: excelAccrual.noPo ?? null,
                 alokasi: excelAccrual.alokasi ?? null,
                 startDate: new Date(),

@@ -330,19 +330,15 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  // Format currency helper (memoized)
+  // Format currency: tanda negatif langsung di depan angka (Rp -11.045.599.003) agar tidak membingungkan
   const formatCurrency = useCallback((amount: number) => {
     const isNegative = amount < 0;
     const absAmount = Math.abs(amount);
-    
-    const formatted = new Intl.NumberFormat('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
+    const numberPart = new Intl.NumberFormat('id-ID', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(absAmount);
-    
-    return isNegative ? `-${formatted}` : formatted;
+    return isNegative ? `Rp -${numberPart}` : `Rp ${numberPart}`;
   }, []);
 
   // Calculate totals (optimized with useMemo)
