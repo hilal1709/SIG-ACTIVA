@@ -58,16 +58,15 @@ export async function POST(request: NextRequest) {
       // Process batch secara parallel (maksimal 50 concurrent operations)
       const batchPromises = batch.map(async (excelAccrual) => {
         try {
-          const hasNoPoAndVendor =
-            excelAccrual.noPo && excelAccrual.vendor;
-
-          // Match existing: by kdAkr+noPo+vendor (sheet) atau kdAkr+klasifikasi (rekap)
+          // Match: sheet (ada noPo) = kdAkr+noPo+vendor (vendor '-' jika kosong supaya tiap baris punya record); rekap = kdAkr+klasifikasi
+          const fromSheet = excelAccrual.noPo != null && excelAccrual.noPo !== '';
+          const vendorForMatch = excelAccrual.vendor ?? '-';
           const existingAccrual = await prisma.accrual.findFirst({
-            where: hasNoPoAndVendor
+            where: fromSheet
               ? {
                   kdAkr: excelAccrual.kdAkr,
                   noPo: excelAccrual.noPo,
-                  vendor: excelAccrual.vendor,
+                  vendor: vendorForMatch,
                 }
               : {
                   kdAkr: excelAccrual.kdAkr,
@@ -80,7 +79,7 @@ export async function POST(request: NextRequest) {
               where: { id: existingAccrual.id },
               data: {
                 totalAmount: excelAccrual.totalAmount ?? excelAccrual.saldo,
-                ...(excelAccrual.vendor != null && { vendor: excelAccrual.vendor }),
+                ...(excelAccrual.vendor !== undefined && { vendor: excelAccrual.vendor ?? '-' }),
                 ...(excelAccrual.deskripsi != null && { deskripsi: excelAccrual.deskripsi }),
                 ...(excelAccrual.kdAkunBiaya != null && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
                 ...(excelAccrual.klasifikasi != null && { klasifikasi: excelAccrual.klasifikasi }),
@@ -114,7 +113,7 @@ export async function POST(request: NextRequest) {
               data: {
                 kdAkr: excelAccrual.kdAkr,
                 kdAkunBiaya: excelAccrual.kdAkunBiaya ?? 'DEFAULT',
-                vendor: excelAccrual.vendor ?? 'IMPORTED FROM EXCEL',
+                vendor: excelAccrual.vendor ?? '-',
                 deskripsi:
                   excelAccrual.deskripsi ??
                   `Imported from Excel - ${excelAccrual.kdAkr}${excelAccrual.klasifikasi ? ` (${excelAccrual.klasifikasi})` : ''}`,
