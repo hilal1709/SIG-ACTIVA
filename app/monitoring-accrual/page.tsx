@@ -1584,61 +1584,58 @@ export default function MonitoringAccrualPage() {
     setUploadingGlobalExcel(true);
     try {
       const isXml = file.name.toLowerCase().endsWith('.xml');
-      let jsonData: any[][] = [];
-
+      
+      // Untuk XML, gunakan API route yang sudah handle parsing dan matching periode
       if (isXml) {
-        // Parse SAP Excel XML (SpreadsheetML) menjadi array baris
-        const text = await file.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, 'text/xml');
-        const rowEls = Array.from(xmlDoc.getElementsByTagNameNS('*', 'Row'));
+        const formData = new FormData();
+        formData.append('file', file);
 
-        for (const rowEl of rowEls) {
-          const cellEls = Array.from(rowEl.getElementsByTagNameNS('*', 'Cell'));
-          if (cellEls.length === 0) continue;
-
-          const row: any[] = [];
-          let currentIndex = 0;
-
-          for (const cellEl of cellEls) {
-            const indexAttr = cellEl.getAttribute('ss:Index') || cellEl.getAttribute('Index');
-            if (indexAttr) {
-              const targetIndex = parseInt(indexAttr, 10) - 1;
-              while (currentIndex < targetIndex) {
-                row.push('');
-                currentIndex++;
-              }
-            }
-
-            const dataEl = cellEl.getElementsByTagNameNS('*', 'Data')[0];
-            const value = dataEl?.textContent ?? '';
-            row.push(value);
-            currentIndex++;
-          }
-
-          jsonData.push(row);
-        }
-      } else {
-        // Load XLSX on demand dan baca seperti sebelumnya
-        const { XLSX: XLSXLib } = await loadExcelLibraries();
-        const reader = new FileReader();
-        const data: string | ArrayBuffer = await new Promise((resolve, reject) => {
-          reader.onload = (event) => {
-            if (event.target?.result == null) {
-              reject(new Error('Gagal membaca file'));
-            } else {
-              resolve(event.target.result);
-            }
-          };
-          reader.onerror = () => reject(new Error('Gagal membaca file'));
-          reader.readAsBinaryString(file);
+        const response = await fetch('/api/accrual/realisasi/import', {
+          method: 'POST',
+          body: formData,
         });
 
-        const workbook = XLSXLib.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        jsonData = XLSXLib.utils.sheet_to_json(worksheet, { header: 1 });
+        const result = await response.json();
+
+        if (!response.ok) {
+          alert(`Gagal import realisasi: ${result.error}\n${result.details || ''}`);
+          return;
+        }
+
+        await fetchAccrualData();
+
+        let message = `Import selesai!\nBerhasil: ${result.successCount} data\nGagal: ${result.errorCount} data`;
+        if (result.errors && result.errors.length > 0) {
+          message += '\n\nDetail Error:\n' + result.errors.slice(0, 10).join('\n');
+          if (result.errors.length > 10) {
+            message += `\n... dan ${result.errors.length - 10} error lainnya`;
+          }
+        }
+        alert(message);
+
+        setShowImportGlobalModal(false);
+        return;
       }
+
+      // Untuk Excel, tetap gunakan logic lama
+      const { XLSX: XLSXLib } = await loadExcelLibraries();
+      const reader = new FileReader();
+      const data: string | ArrayBuffer = await new Promise((resolve, reject) => {
+        reader.onload = (event) => {
+          if (event.target?.result == null) {
+            reject(new Error('Gagal membaca file'));
+          } else {
+            resolve(event.target.result);
+          }
+        };
+        reader.onerror = () => reject(new Error('Gagal membaca file'));
+        reader.readAsBinaryString(file);
+      });
+
+      const workbook = XLSXLib.read(data, { type: 'binary' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSXLib.utils.sheet_to_json(worksheet, { header: 1 });
 
       if (!jsonData || jsonData.length <= 1) {
         alert('File tidak berisi data realisasi yang valid.');
