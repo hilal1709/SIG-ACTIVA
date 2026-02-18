@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { keteranganToKlasifikasi, getDetailKlasifikasiList } from './accrualKlasifikasi';
+import { keteranganToKlasifikasi } from './accrualKlasifikasi';
 
 export interface ExcelAccrualData {
   kdAkr: string;
@@ -289,36 +289,10 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
       }
     }
 
-    // ---- 2.5) Expand baris REKAP untuk kode akun yang punya detail ----
-    // Kondisi 1: kode akun tanpa detail (21600002-21600007): 1 baris tetap 1 baris.
-    // Kondisi 2: kode akun dengan detail (21600001, 21600008): jika hanya 1 baris untuk kdAkr tersebut,
-    //             pecah jadi N baris (satu per detail), saldo dibagi rata.
-    const rekapRowsExpanded: ExcelAccrualData[] = [];
-    const rekapByKdAkr = new Map<string, ExcelAccrualData[]>();
-    for (const r of rekapRows) {
-      const list = rekapByKdAkr.get(r.kdAkr) ?? [];
-      list.push(r);
-      rekapByKdAkr.set(r.kdAkr, list);
-    }
-    for (const [kdAkr, rows] of rekapByKdAkr) {
-      const detailList = getDetailKlasifikasiList(kdAkr);
-      if (detailList && detailList.length > 1 && rows.length === 1) {
-        const single = rows[0];
-        const saldoPerBaris = single.saldo / detailList.length;
-        for (const klasifikasi of detailList) {
-          rekapRowsExpanded.push({
-            ...single,
-            klasifikasi,
-            saldo: saldoPerBaris,
-          });
-        }
-      } else {
-        rekapRowsExpanded.push(...rows);
-      }
-    }
-
     // ---- 3) REKAP hanya untuk kode akun yang TIDAK punya sheet sendiri ----
-    for (const r of rekapRowsExpanded) {
+    // Setiap baris REKAP dipakai apa adanya dari file (amount tidak dibagi rata);
+    // jika file punya baris terpisah per klasifikasi (Gaji, Cuti Tahunan), masing-masing bawa nilai dari file.
+    for (const r of rekapRows) {
       if (hasOwnSheetSet.has(r.kdAkr)) continue; // sudah ada datanya dari sheet, lewati
       accruals.push(r);
     }
