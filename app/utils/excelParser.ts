@@ -281,13 +281,13 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               nilaiPoColumn !== -1 ? parseNumber(row[nilaiPoColumn]) : null;
 
             if (outstandingValue !== null && outstandingValue !== 0) {
-              // Untuk sheet: amount pakai NILAI PO kalau ada, else OUTSTANDING. Vendor kosong tetap dipass (null) supaya baris tetap punya record sendiri.
+              // Untuk sheet: amount pakai NILAI PO kalau ada, else OUTSTANDING. Vendor kosong tetap dipass (undefined) supaya baris tetap punya record sendiri.
               const kdAkrNormalized = normalizeKodeAkr(String(sheetName ?? '').trim()) || String(sheetName ?? '').trim();
               accruals.push({
                 kdAkr: kdAkrNormalized,
                 saldo: outstandingValue,
                 ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
-                vendor: vendorValue || null,
+                vendor: vendorValue || undefined,
                 ...(noPoValue ? { noPo: noPoValue } : {}),
                 ...(alokasiValue ? { alokasi: alokasiValue } : {}),
                 ...(keteranganValue ? { deskripsi: keteranganValue } : {}),
