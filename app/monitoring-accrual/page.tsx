@@ -1220,7 +1220,7 @@ export default function MonitoringAccrualPage() {
       deskripsi: item.deskripsi,
       headerText: item.headerText || '',
       klasifikasi: item.klasifikasi || '',
-      totalAmount: item.totalAmount.toString(),
+      totalAmount: Math.abs(item.totalAmount).toString(),
       costCenter: item.costCenter || '',
       startDate: item.startDate.split('T')[0],
       jumlahPeriode: item.jumlahPeriode.toString(),
@@ -2424,7 +2424,7 @@ export default function MonitoringAccrualPage() {
                                                 step="0.01"
                                                 className="w-28 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                 autoFocus
-                                                placeholder="Nilai negatif"
+                                                placeholder="Amount"
                                               />
                                               <button
                                                 onClick={() => handleUpdatePeriodeAmount(periode.id, editPeriodeAmount)}
@@ -2451,7 +2451,7 @@ export default function MonitoringAccrualPage() {
                                                 <button
                                                   onClick={() => {
                                                     setEditingPeriodeId(periode.id);
-                                                    setEditPeriodeAmount(periode.amountAccrual.toString());
+                                                    setEditPeriodeAmount(Math.abs(periode.amountAccrual).toString());
                                                   }}
                                                   className="text-blue-600 hover:text-blue-800 transition-colors"
                                                   title="Edit Amount"
