@@ -106,13 +106,14 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
             keteranganColumn !== -1 &&
             saldoAkhirColumn !== -1
           ) {
+            let lastKdAkr = ''; // Untuk sub-row: baris dengan AKUN kosong pakai kode akun baris sebelumnya
             for (let i = headerIndex + 1; i < data.length; i++) {
               const row = data[i];
               if (!row || row.length === 0) continue;
 
               const kdAkr = row[akunColumn];
               const saldoAkhir = row[saldoAkhirColumn];
-              const kdAkrStr = kdAkr ? String(kdAkr).trim() : '';
+              let kdAkrStr = kdAkr ? String(kdAkr).trim() : '';
               const saldoValue = parseNumber(saldoAkhir);
               const rawKeterangan =
                 keteranganColumn !== -1 &&
@@ -121,12 +122,16 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                   ? String(row[keteranganColumn]).trim()
                   : '';
 
+              // Sub-row: AKUN kosong tapi ada KETERANGAN + SALDO → pakai kode akun baris sebelumnya (detail Gaji/Cuti Tahunan dll)
+              if (!kdAkrStr && rawKeterangan && saldoValue !== null && lastKdAkr) {
+                kdAkrStr = lastKdAkr;
+              }
               if (kdAkrStr) {
                 rekapKodeAkunSet.add(kdAkrStr);
+                lastKdAkr = kdAkrStr;
               }
 
-              // Setiap baris REKAP dimasukkan; keterangan disesuaikan ke klasifikasi (strip BIAYA YMH, cocok ke klasifikasi)
-              // Nilai saldo mengikuti file: positif/negatif tidak diubah
+              // Setiap baris REKAP dimasukkan; nilai saldo mengikuti file
               if (kdAkrStr && saldoValue !== null) {
                 const klasifikasiNormalized = rawKeterangan
                   ? keteranganToKlasifikasi(kdAkrStr, rawKeterangan)
