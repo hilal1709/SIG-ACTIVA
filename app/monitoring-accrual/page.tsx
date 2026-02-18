@@ -1165,7 +1165,7 @@ export default function MonitoringAccrualPage() {
     if (name === 'kdAkr') {
       setFormData(prev => ({ ...prev, [name]: value, klasifikasi: '' }));
     } else if (name === 'jumlahPeriode') {
-      // Saat ubah jumlah periode: pertahankan nilai yang sudah ada, hanya tambah/kurangi slot
+      // Tambah/kurangi slot periode; manual = isi sendiri per periode, tidak dibagi dari Amount
       const newCount = parseInt(value) || 0;
       setFormData(prev => {
         const prevAmounts = prev.periodeAmounts || [];
@@ -1204,9 +1204,9 @@ export default function MonitoringAccrualPage() {
   const handleEdit = useCallback((item: Accrual) => {
     setEditingId(item.id);
     
-    // Get periodeAmounts if manual type
+    // Get periodeAmounts if manual type (amountAccrual di DB negatif, tampilkan positif)
     const periodeAmounts = item.pembagianType === 'manual' && item.periodes 
-      ? item.periodes.map(p => p.amountAccrual.toString())
+      ? item.periodes.map(p => Math.abs(p.amountAccrual).toString())
       : [];
     
     setFormData({
@@ -2693,17 +2693,17 @@ export default function MonitoringAccrualPage() {
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     Amount <span className="text-red-600">*</span>
-                    {formData.pembagianType === 'manual' && formData.periodeAmounts?.length > 0 && (
-                      <span className="text-gray-500 font-normal ml-1">(otomatis = jumlah tiap periode)</span>
+                    {formData.pembagianType === 'manual' && (
+                      <span className="text-gray-500 font-normal ml-1">(otomatis = total dari isian accrual per periode di bawah)</span>
                     )}
                   </label>
                   <input
                     type="number"
                     name="totalAmount"
                     value={formData.pembagianType === 'manual' && formData.periodeAmounts?.length
-                      ? formData.periodeAmounts.reduce((s, a) => s + (parseFloat(a) || 0), 0).toString()
+                      ? formData.periodeAmounts.reduce((s, a) => s + (parseFloat(a) || 0), 0).toFixed(2)
                       : formData.totalAmount}
-                    onChange={handleInputChange}
+                    onChange={formData.pembagianType === 'manual' ? undefined : handleInputChange}
                     required
                     min="0"
                     step="0.01"
@@ -2791,11 +2791,44 @@ export default function MonitoringAccrualPage() {
                         className="w-4 h-4 text-red-600 focus:ring-red-500"
                       />
                       <span className="ml-2 text-sm text-gray-700">
-                        <strong>Manual</strong> - Tidak dibagi otomatis (isi 0 per periode, update manual nanti)
+                        <strong>Manual</strong> - Isi amount per periode di bawah
                       </span>
                     </label>
                   </div>
                 </div>
+
+                {/* Input amount per periode (hanya tampil jika tipe Manual) */}
+                {formData.pembagianType === 'manual' && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Amount per Periode <span className="text-red-600">*</span>
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-h-60 overflow-y-auto pr-1">
+                      {Array.from({ length: Math.max(0, parseInt(formData.jumlahPeriode) || 0) }).map((_, i) => {
+                        const start = formData.startDate ? new Date(formData.startDate) : new Date();
+                        const periodeDate = new Date(start);
+                        periodeDate.setMonth(start.getMonth() + i);
+                        const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+                        const label = `Periode ${i + 1} (${bulanNames[periodeDate.getMonth()]} ${periodeDate.getFullYear()})`;
+                        const value = formData.periodeAmounts?.[i] ?? '';
+                        return (
+                          <div key={i}>
+                            <label className="block text-xs text-gray-500 mb-1">{label}</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={value}
+                              onChange={(e) => handlePeriodeAmountChange(i, e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+                              placeholder="0"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Deskripsi - Full Width */}
                 <div className="md:col-span-2">
