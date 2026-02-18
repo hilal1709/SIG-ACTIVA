@@ -45,11 +45,12 @@ export async function GET(request: NextRequest) {
 
         // Check if periode has passed
         if (today >= periodeDate) {
-          const totalRealisasi = periode.realisasis.reduce((sum, r) => sum + r.amount, 0);
-          const saldo = periode.amountAccrual - totalRealisasi;
+          const totalRealisasi = periode.realisasis.reduce((sum, r) => sum + Math.abs(r.amount), 0);
+          const accrualAbs = Math.abs(periode.amountAccrual);
+          const saldo = accrualAbs - totalRealisasi;
 
           // If saldo > 50% of amount, create notification
-          if (saldo > periode.amountAccrual * 0.5) {
+          if (saldo > accrualAbs * 0.5) {
             notifications.push({
               id: `accrual-${periode.id}`,
               type: 'accrual',

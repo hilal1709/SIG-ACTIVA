@@ -24,13 +24,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update periode amount (accrual disimpan negatif)
+    // Update periode amount (accrual disimpan positif)
     const periode = await prisma.accrualPeriode.update({
       where: {
         id: parseInt(id),
       },
       data: {
-        amountAccrual: -Math.abs(parseFloat(amountAccrual)),
+        amountAccrual: Math.abs(parseFloat(amountAccrual)),
       },
       include: {
         accrual: true, // Tidak perlu include periodes

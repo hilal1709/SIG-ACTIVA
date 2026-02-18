@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       data: {
         accrualPeriodeId: parseInt(accrualPeriodeId),
         tanggalRealisasi: new Date(tanggalRealisasi),
-        amount: parseFloat(amount),
+        amount: Math.abs(parseFloat(amount)), // realisasi disimpan positif
         keterangan: keterangan || null,
       },
     });
@@ -123,7 +123,7 @@ export async function PUT(request: NextRequest) {
       },
       data: {
         tanggalRealisasi: new Date(tanggalRealisasi),
-        amount: parseFloat(amount),
+        amount: Math.abs(parseFloat(amount)), // realisasi disimpan positif
         keterangan: keterangan || null,
       },
     });

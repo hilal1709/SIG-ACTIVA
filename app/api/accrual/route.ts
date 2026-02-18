@@ -85,18 +85,19 @@ export async function GET(request: NextRequest) {
       return {
         ...accrual,
         periodes: accrual.periodes.map((periode: any) => {
-          // Calculate totalRealisasi from actual realisasi data
-          const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0;
+          // Calculate totalRealisasi from actual realisasi data (semua positif)
+          const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + Math.abs(r.amount), 0) || 0;
           
           // Total available termasuk rollover dari periode sebelumnya
           const totalAvailable = totalRealisasi + rollover;
-          const capAccrual = Math.abs(periode.amountAccrual); // amountAccrual disimpan negatif
+          const capAccrual = Math.abs(periode.amountAccrual); // amountAccrual sekarang positif
           
           // Efektif realisasi adalah minimum antara available dan cap accrual periode
           const effectiveRealisasi = Math.min(totalAvailable, capAccrual);
           
-          // Saldo = total accrual + total realisasi (accrual negatif, realisasi positif)
-          const saldo = periode.amountAccrual + effectiveRealisasi;
+          // Saldo = accrual dikurangi realisasi (semua positif)
+          const accrualAbs = Math.abs(periode.amountAccrual);
+          const saldo = accrualAbs - effectiveRealisasi;
           
           // Update rollover untuk periode berikutnya (kelebihan realisasi)
           rollover = Math.max(0, totalAvailable - capAccrual);
@@ -163,9 +164,9 @@ export async function POST(request: NextRequest) {
       
       let amountAccrual;
       if (pembagianType === 'otomatis') {
-        amountAccrual = -Math.abs(parseFloat(totalAmount) / parseInt(jumlahPeriode));
+        amountAccrual = Math.abs(parseFloat(totalAmount) / parseInt(jumlahPeriode));
       } else {
-        amountAccrual = periodeAmounts && periodeAmounts[i] ? -Math.abs(parseFloat(periodeAmounts[i])) : 0;
+        amountAccrual = periodeAmounts && periodeAmounts[i] ? Math.abs(parseFloat(periodeAmounts[i])) : 0;
       }
       
       periodes.push({
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Create accrual with periodes (totalAmount & amountAccrual disimpan negatif; realisasi positif; saldo = accrual + realisasi)
+    // Create accrual with periodes (totalAmount & amountAccrual disimpan positif; realisasi positif; saldo = accrual - realisasi)
     const accrual = await prisma.accrual.create({
       data: {
         companyCode: companyCode || null,
@@ -188,7 +189,7 @@ export async function POST(request: NextRequest) {
         deskripsi,
         headerText: headerText || null,
         klasifikasi: klasifikasi || null,
-        totalAmount: -Math.abs(parseFloat(totalAmount)),
+        totalAmount: Math.abs(parseFloat(totalAmount)),
         costCenter: costCenter || null,
         startDate: new Date(startDate),
         jumlahPeriode: parseInt(jumlahPeriode),
@@ -328,7 +329,7 @@ export async function PATCH(request: NextRequest) {
         deskripsi,
         headerText: headerText || null,
         klasifikasi: klasifikasi || null,
-        totalAmount: -Math.abs(parseFloat(totalAmount)),
+        totalAmount: Math.abs(parseFloat(totalAmount)),
         costCenter: costCenter || null,
         startDate: new Date(startDate),
         jumlahPeriode: newJumlahPeriode,
@@ -336,7 +337,7 @@ export async function PATCH(request: NextRequest) {
       },
     });
 
-    // Update or create periodes (amountAccrual disimpan negatif)
+    // Update or create periodes (amountAccrual disimpan positif)
     for (let i = 0; i < newJumlahPeriode; i++) {
       const periodeDate = new Date(start);
       periodeDate.setMonth(start.getMonth() + i);
@@ -346,9 +347,9 @@ export async function PATCH(request: NextRequest) {
       
       let amountAccrual;
       if (pembagianType === 'otomatis') {
-        amountAccrual = -Math.abs(parseFloat(totalAmount) / newJumlahPeriode);
+        amountAccrual = Math.abs(parseFloat(totalAmount) / newJumlahPeriode);
       } else {
-        amountAccrual = periodeAmounts && periodeAmounts[i] ? -Math.abs(parseFloat(periodeAmounts[i])) : 0;
+        amountAccrual = periodeAmounts && periodeAmounts[i] ? Math.abs(parseFloat(periodeAmounts[i])) : 0;
       }
 
       // If periode already exists, update it (preserve realisasi data)

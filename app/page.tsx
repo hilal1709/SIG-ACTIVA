@@ -54,7 +54,7 @@ export default function DashboardPage() {
       const response = await fetch('/api/accrual');
       if (response.ok) {
         const accruals = await response.json();
-        const totalAccrual = accruals.reduce((sum: number, item: any) => sum + item.totalAmount, 0);
+        const totalAccrual = accruals.reduce((sum: number, item: any) => sum + Math.abs(item.totalAmount || 0), 0);
         const totalRealisasi = accruals.reduce((sum: number, item: any) =>
           sum + (item.periodes?.reduce((pSum: number, p: any) => pSum + (p.totalRealisasi || 0), 0) || 0), 0);
         const totalSaldo = totalAccrual - totalRealisasi;

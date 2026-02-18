@@ -96,7 +96,7 @@ function calculateAccrualAmount(item: Accrual): number {
   if (!item.periodes || item.periodes.length === 0) return 0;
   
   if (item.pembagianType === 'manual') {
-    return item.periodes.reduce((sum, p) => sum + p.amountAccrual, 0);
+    return item.periodes.reduce((sum, p) => sum + Math.abs(p.amountAccrual), 0);
   }
   
   const today = new Date();
@@ -116,7 +116,7 @@ function calculateAccrualAmount(item: Accrual): number {
     const periodeTahun = parseInt(tahunStr);
     const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
     
-    // Calculate effective realisasi with rollover (amountAccrual negatif, cap pakai abs)
+    // Calculate effective realisasi with rollover (amountAccrual positif)
     const realisasiPeriode = p.totalRealisasi ?? 0;
     const totalAvailable = realisasiPeriode + rollover;
     const capAccrual = Math.abs(p.amountAccrual);
@@ -132,7 +132,7 @@ function calculateAccrualAmount(item: Accrual): number {
     const shouldRecognize = isPeriodDue || hasEffectiveRealisasi;
     
     if (shouldRecognize) {
-      totalAccrual += p.amountAccrual;
+      totalAccrual += Math.abs(p.amountAccrual);
     }
     
     // Update rollover for next iteration
@@ -281,7 +281,8 @@ export default function MonitoringAccrualPage() {
       const realisasiPeriode = periode.totalRealisasi || 0;
       const totalAvailable = realisasiPeriode + rollover;
       const effectiveRealisasi = Math.min(totalAvailable, capAccrual(periode));
-      const saldo = periode.amountAccrual + effectiveRealisasi; // Saldo = accrual (negatif) + realisasi (positif)
+      const accrualAbs = Math.abs(periode.amountAccrual);
+      const saldo = accrualAbs - effectiveRealisasi; // Saldo = accrual dikurangi realisasi (semua positif)
       const rolloverOut = Math.max(0, totalAvailable - capAccrual(periode));
       
       const result = {
@@ -447,7 +448,7 @@ export default function MonitoringAccrualPage() {
           // Calculate total outstanding for this item using the standalone helper function
           const totalAccrual = calculateAccrualAmount(item);
           const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
-          const totalOutstanding = totalAccrual + totalRealisasi; // accrual negatif, realisasi positif
+          const totalOutstanding = totalAccrual - totalRealisasi; // accrual dikurangi realisasi (semua positif)
           
           const row = worksheet.getRow(currentRow);
           
@@ -572,10 +573,10 @@ export default function MonitoringAccrualPage() {
           const glAccount = item.kdAkr; // Using kode akun accrual
           const vendorName = item.vendor;
           
-          // Calculate saldo same as display table: Total Accrual + Total Realisasi (accrual negatif, realisasi positif)
+          // Calculate saldo same as display table: Total Accrual dikurangi Total Realisasi (semua positif)
           const totalAccrual = calculateAccrualAmount(item);
           const totalRealisasi = calculateItemRealisasi(item);
-          const totalSaldo = totalAccrual + totalRealisasi;
+          const totalSaldo = totalAccrual - totalRealisasi;
           
           // Group by GL Account and Vendor
           if (!summaryData[glAccount]) {
@@ -790,12 +791,12 @@ export default function MonitoringAccrualPage() {
       const totalRealisasi = p.totalRealisasi ?? 0;
       const hasRealisasi = totalRealisasi > 0;
       if (todayDate >= periodeDateOnly || hasRealisasi) {
-        return sum + p.amountAccrual;
+        return sum + Math.abs(p.amountAccrual);
       }
       return sum;
     }, 0) || 0;
     
-    const absTotalAccrual = Math.abs(totalAccrual);
+    const absTotalAccrual = totalAccrual;
     if (absTotalAccrual > 0) {
       // Parse tanggal from start date
       const startDate = new Date(item.startDate);
@@ -930,12 +931,12 @@ export default function MonitoringAccrualPage() {
       const totalRealisasi = p.totalRealisasi ?? 0;
       const hasRealisasi = totalRealisasi > 0;
       if (todayDate >= periodeDateOnly || hasRealisasi) {
-        return sum + p.amountAccrual;
+        return sum + Math.abs(p.amountAccrual);
       }
       return sum;
     }, 0) || 0;
     
-    const absTotalAccrual = Math.abs(totalAccrual);
+    const absTotalAccrual = totalAccrual;
     if (absTotalAccrual > 0) {
       const startDate = new Date(item.startDate);
       const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
@@ -1684,8 +1685,9 @@ export default function MonitoringAccrualPage() {
         });
 
         const targetPeriode = currentPeriode || matchingAccrual.periodes?.find(p => {
-          const saldo = p.amountAccrual + (p.totalRealisasi || 0); // accrual negatif, realisasi positif
-          return saldo < 0; // masih ada sisa accrual yang belum direalisasi
+          const accrualAbs = Math.abs(p.amountAccrual);
+          const saldo = accrualAbs - (p.totalRealisasi || 0); // accrual dikurangi realisasi (semua positif)
+          return saldo > 0; // masih ada sisa accrual yang belum direalisasi
         });
 
         if (!targetPeriode) {
@@ -1823,7 +1825,7 @@ export default function MonitoringAccrualPage() {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amountAccrual: -Math.abs(parseFloat(newAmount)), // accrual disimpan negatif
+          amountAccrual: Math.abs(parseFloat(newAmount)), // accrual disimpan positif
         }),
       });
 
@@ -2150,7 +2152,7 @@ export default function MonitoringAccrualPage() {
                     const allItems = Object.values(vendorGroups).flat();
                     
                     // Calculate totals using cache untuk performa lebih baik
-                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+                    const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + Math.abs(item.totalAmount || 0), 0);
                     const totalAccrualKodeAkun = allItems.reduce((sum, item) => {
                       const cached = itemTotalsCache.get(item.id);
                       return sum + (cached?.accrual || 0);
@@ -2159,7 +2161,7 @@ export default function MonitoringAccrualPage() {
                       const cached = itemTotalsCache.get(item.id);
                       return sum + (cached?.realisasi || 0);
                     }, 0);
-                    const totalSaldoKodeAkun = totalAccrualKodeAkun + totalRealisasiKodeAkun; // accrual negatif, realisasi positif
+                    const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun; // accrual dikurangi realisasi (semua positif)
 
                     return (
                       <React.Fragment key={kodeAkun}>
@@ -2210,7 +2212,7 @@ export default function MonitoringAccrualPage() {
                           const isVendorExpanded = expandedVendor.has(vendorKey);
                           
                           // Calculate totals using cache untuk performa
-                          const totalAmountVendor = items.reduce((sum, item) => sum + (item.totalAmount || 0), 0);
+                          const totalAmountVendor = items.reduce((sum, item) => sum + Math.abs(item.totalAmount || 0), 0);
                           const totalAccrualVendor = items.reduce((sum, item) => {
                             const cached = itemTotalsCache.get(item.id);
                             return sum + (cached?.accrual || 0);
@@ -2219,7 +2221,7 @@ export default function MonitoringAccrualPage() {
                             const cached = itemTotalsCache.get(item.id);
                             return sum + (cached?.realisasi || 0);
                           }, 0);
-                          const totalSaldoVendor = totalAccrualVendor + totalRealisasiVendor; // accrual negatif, realisasi positif
+                          const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor; // accrual dikurangi realisasi (semua positif)
 
                           return (
                             <React.Fragment key={vendorKey}>
@@ -2318,7 +2320,7 @@ export default function MonitoringAccrualPage() {
                             </span>
                           </td>
                           <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
-                            {formatCurrency(item.totalAmount)}
+                            {formatCurrency(Math.abs(item.totalAmount))}
                           </td>
                           <td className="px-4 py-4 text-gray-800 whitespace-nowrap bg-white">{item.costCenter || '-'}</td>
                           <td className="px-4 py-4 text-center text-gray-600 text-xs whitespace-nowrap bg-white">
@@ -2337,7 +2339,7 @@ export default function MonitoringAccrualPage() {
                             {(() => {
                               const totalAccrual = calculateItemAccrual(item);
                               const totalRealisasi = calculateItemRealisasi(item);
-                              const saldo = totalAccrual + totalRealisasi; // accrual negatif, realisasi positif
+                              const saldo = totalAccrual - totalRealisasi; // accrual dikurangi realisasi (semua positif)
                               return formatCurrency(saldo);
                             })()}
                           </td>
@@ -2443,7 +2445,7 @@ export default function MonitoringAccrualPage() {
                                             </div>
                                           ) : (
                                             <div className="flex items-center justify-end gap-2">
-                                              {formatCurrency(periode.amountAccrual)}
+                                              {formatCurrency(Math.abs(periode.amountAccrual))}
                                               {canEdit && (
                                                 <button
                                                   onClick={() => {
@@ -2910,7 +2912,7 @@ export default function MonitoringAccrualPage() {
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Accrual</p>
-                    <p className="text-lg font-bold text-gray-800">{formatCurrency(selectedPeriode.amountAccrual)}</p>
+                    <p className="text-lg font-bold text-gray-800">{formatCurrency(Math.abs(selectedPeriode.amountAccrual))}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Total Realisasi</p>
@@ -2918,7 +2920,7 @@ export default function MonitoringAccrualPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 mb-1">Saldo</p>
-                    <p className="text-lg font-bold text-red-700">{formatCurrency((selectedPeriode as any).saldo || selectedPeriode.saldo || selectedPeriode.amountAccrual)}</p>
+                    <p className="text-lg font-bold text-red-700">{formatCurrency(Math.abs((selectedPeriode as any).saldo || selectedPeriode.saldo || 0))}</p>
                   </div>
                 </div>
               </div>
@@ -3065,7 +3067,7 @@ export default function MonitoringAccrualPage() {
                         {realisasiData.map((realisasi) => (
                           <tr key={realisasi.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 text-gray-700">{formatDate(realisasi.tanggalRealisasi)}</td>
-                            <td className="px-4 py-3 text-right text-gray-800 font-medium">{formatCurrency(realisasi.amount)}</td>
+                            <td className="px-4 py-3 text-right text-gray-800 font-medium">{formatCurrency(Math.abs(realisasi.amount))}</td>
                             <td className="px-4 py-3 text-gray-600">{realisasi.keterangan || '-'}</td>
                             {!realisasiViewOnly && (
                               <td className="px-4 py-3 text-center">
@@ -3075,7 +3077,7 @@ export default function MonitoringAccrualPage() {
                                       setEditingRealisasiId(realisasi.id);
                                       setRealisasiForm({
                                         tanggalRealisasi: realisasi.tanggalRealisasi.split('T')[0],
-                                        amount: realisasi.amount.toString(),
+                                        amount: Math.abs(realisasi.amount).toString(),
                                         keterangan: realisasi.keterangan || '',
                                       });
                                     }}
