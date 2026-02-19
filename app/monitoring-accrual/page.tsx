@@ -404,6 +404,20 @@ export default function MonitoringAccrualPage() {
     return cache;
   }, [filteredData, calculateItemAccrual, calculateItemRealisasi]);
 
+  // Calculate total saldo for metric card (saldo awal + total accrual - total realisasi)
+  const totalSaldo = useMemo(() => {
+    return accrualData.reduce((sum, item) => {
+      const cached = itemTotalsCache.get(item.id);
+      if (cached) {
+        return sum + (cached.saldoAwal + cached.accrual - cached.realisasi);
+      }
+      const saldoAwal = getSaldoAwal(item);
+      const accrual = calculateItemAccrual(item);
+      const realisasi = calculateItemRealisasi(item);
+      return sum + (saldoAwal + accrual - realisasi);
+    }, 0);
+  }, [accrualData, itemTotalsCache]);
+
   const handleExport = () => {
     const headers = ['kdAkr', 'namaAkun', 'vendor', 'deskripsi', 'amount', 'accrDate', 'status'];
     exportToCSV(filteredData, 'Monitoring_Accrual.csv', headers);
@@ -2047,7 +2061,7 @@ export default function MonitoringAccrualPage() {
             <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
               <p className="text-xs sm:text-sm text-gray-600 mb-1 sm:mb-2">Saldo</p>
               <h3 className="text-xl sm:text-2xl font-bold text-gray-800">
-                {formatCurrency(totalAccrual)}
+                {formatCurrency(Math.abs(totalSaldo))}
               </h3>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4 sm:p-6">
@@ -2502,23 +2516,20 @@ export default function MonitoringAccrualPage() {
                                         </td>
                                         <td className="px-3 py-2 text-center bg-white">
                                           <div className="flex items-center justify-center gap-1">
-                                            {(periode.saldo ?? 0) < 0 ? (
-                                                <button
-                                                onClick={() => handleOpenRealisasiModal(periode, false)}
-                                                className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
-                                                title="Input realisasi baru"
-                                              >
-                                                Input Realisasi
-                                              </button>
-                                            ) : (
-                                              <button
-                                                onClick={() => handleOpenRealisasiModal(periode, true)}
-                                                className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition-colors"
-                                                title="Accrual sudah terpenuhi"
-                                              >
-                                                ✓ Lihat History
-                                              </button>
-                                            )}
+                                            <button
+                                              onClick={() => handleOpenRealisasiModal(periode, false)}
+                                              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
+                                              title="Input realisasi baru"
+                                            >
+                                              Input Realisasi
+                                            </button>
+                                            <button
+                                              onClick={() => handleOpenRealisasiModal(periode, true)}
+                                              className="text-xs bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded transition-colors"
+                                              title="Lihat history realisasi"
+                                            >
+                                              📋 History
+                                            </button>
                                           </div>
                                         </td>
                                       </tr>

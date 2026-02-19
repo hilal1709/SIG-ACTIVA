@@ -151,8 +151,8 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
 
                 rekapRows.push({
                   kdAkr: kdAkrStr,
-                  saldo: saldoValue,
-                  totalAmount: saldoValue, // Untuk REKAP, amount = saldo akhir
+                  saldo: Math.abs(saldoValue), // Untuk REKAP: semua nilai jadi positif
+                  totalAmount: Math.abs(saldoValue), // Untuk REKAP: amount = saldo akhir (positif)
                   ...(klasifikasiNormalized
                     ? { klasifikasi: klasifikasiNormalized }
                     : rawKeterangan
@@ -281,20 +281,24 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
             const nilaiPoValue =
               nilaiPoColumn !== -1 ? parseNumber(row[nilaiPoColumn]) : null;
 
-            if (outstandingValue !== null && outstandingValue !== 0) {
+            if (outstandingValue !== null) {
               // Untuk sheet: amount pakai NILAI PO kalau ada (termasuk 0), else OUTSTANDING. Vendor kosong tetap dipass (undefined) supaya baris tetap punya record sendiri.
+              // Untuk sheet kode akun accrual: negatif di Excel jadi positif, positif jadi negatif
+              const adjustedOutstandingValue = -outstandingValue;
+              const adjustedNilaiPoValue = nilaiPoValue != null ? -nilaiPoValue : null;
+              
               const kdAkrNormalized = normalizeKodeAkr(String(sheetName ?? '').trim()) || String(sheetName ?? '').trim();
               accruals.push({
                 kdAkr: kdAkrNormalized,
-                saldo: outstandingValue,
+                saldo: adjustedOutstandingValue,
                 ...(klasifikasiValue ? { klasifikasi: klasifikasiValue } : {}),
                 vendor: vendorValue ? vendorValue : undefined,
                 ...(noPoValue ? { noPo: noPoValue } : {}),
                 ...(alokasiValue ? { alokasi: alokasiValue } : {}),
                 ...(keteranganValue ? { deskripsi: keteranganValue } : {}),
-                ...(nilaiPoValue != null
-                  ? { totalAmount: nilaiPoValue }
-                  : { totalAmount: outstandingValue }),
+                ...(adjustedNilaiPoValue != null
+                  ? { totalAmount: adjustedNilaiPoValue }
+                  : { totalAmount: adjustedOutstandingValue }),
                 source: 'sheet',
               });
             }
@@ -383,6 +387,9 @@ function parseNumber(value: unknown): number | null {
     ? raw.slice(1, -1)
     : raw;
 
+  // Check for explicit negative sign
+  const hasExplicitNegative = rawWithoutParens.startsWith('-');
+
   const cleaned = rawWithoutParens
     .replace(/[^\d.,-]/g, '')
     .replace(/\s+/g, '');
@@ -398,5 +405,8 @@ function parseNumber(value: unknown): number | null {
 
   const num = Number(normalized);
   if (!Number.isFinite(num)) return null;
-  return isParenNegative ? -Math.abs(num) : num;
+  
+  const finalValue = isParenNegative || hasExplicitNegative ? -Math.abs(num) : num;
+  
+  return finalValue;
 }
