@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
         ...accrual,
         periodes: accrual.periodes.map((periode: any) => {
           // Calculate totalRealisasi from actual realisasi data (semua positif)
-          const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + Math.abs(r.amount), 0) || 0;
+          const totalRealisasi = periode.realisasis?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0;
           
           // Total available termasuk rollover dari periode sebelumnya
           const totalAvailable = totalRealisasi + rollover;
