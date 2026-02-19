@@ -63,8 +63,7 @@ export async function GET(request: NextRequest) {
                 tanggalRealisasi: true,
                 amount: true,
                 keterangan: true
-              },
-              take: 50
+              }
             }
           },
           orderBy: {

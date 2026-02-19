@@ -311,7 +311,7 @@ export default function MonitoringAccrualPage() {
   const fetchAccrualData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/accrual');
+      const response = await fetch('/api/accrual?t=' + Date.now());
       if (!response.ok) throw new Error('Failed to fetch data');
       const data = await response.json();
       setAccrualData(data);
@@ -1546,7 +1546,7 @@ export default function MonitoringAccrualPage() {
       }
 
       // Refresh main data and get updated periode in one go
-      const accrualResponse = await fetch('/api/accrual');
+      const accrualResponse = await fetch('/api/accrual?t=' + Date.now());
       if (accrualResponse.ok) {
         const accruals = await accrualResponse.json();
         setAccrualData(accruals);
