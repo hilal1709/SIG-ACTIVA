@@ -257,31 +257,6 @@ export default function MonitoringAccrualPage() {
     }
   }, [canEdit, userRole, isRoleLoaded]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      // Check if click is outside dropdown (trigger button) or portal menu
-      if (!target.closest('.jurnal-dropdown-container') && !target.closest('.jurnal-dropdown-menu')) {
-        setOpenJurnalRect(null);
-        setOpenJurnalItem(null);
-        setExpandedRows(prev => {
-          const newSet = new Set(prev);
-          // Remove all jurnal dropdown states
-          Array.from(newSet).forEach(id => {
-            if (typeof id === 'string' && id.startsWith('jurnal-')) {
-              newSet.delete(id);
-            }
-          });
-          return newSet.size !== prev.size ? newSet : prev;
-        });
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Helper function to calculate accrual (memoized for better performance)
   const calculateItemAccrual = useCallback((item: Accrual) => {
     return calculateAccrualAmount(item);
@@ -974,205 +949,7 @@ export default function MonitoringAccrualPage() {
     }
   };
 
-  const handleDownloadJurnalSAPPerItem = async (item: Accrual) => {
-    try {
-      // Load ExcelJS on demand
-      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
-      
-      // Use company code from item
-      const companyCode = item.companyCode || '2000';
-      
-      if (!item.companyCode) {
-        alert('Company code tidak ditemukan untuk item ini');
-        return;
-      }
-      
-      const workbook = new ExcelJSLib.Workbook();
-    const worksheet = workbook.addWorksheet('Jurnal SAP');
-    
-    // Headers row 1 (field names)
-    worksheet.getRow(1).height = 15;
-    const headers1 = [
-      'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
-      'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
-    ];
-    
-    // Header satu warna (ikuti line lain, tanpa kuning)
-    const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
-    
-    worksheet.getRow(1).values = headers1;
-    worksheet.getRow(1).eachCell((cell: any) => {
-      cell.fill = headerFill;
-      cell.font = { name: 'Calibri', size: 11, bold: true };
-      cell.alignment = { horizontal: 'center', vertical: 'bottom' };
-    });
-    
-    // Headers row 2 (descriptions)
-    worksheet.getRow(2).height = 15;
-    const headers2 = [
-      'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
-      'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
-      'cost center', '', 'Network', 'order numi', 'value date', ''
-    ];
-    
-    worksheet.getRow(2).values = headers2;
-    worksheet.getRow(2).eachCell((cell: any) => {
-      cell.fill = headerFill;
-      cell.font = { name: 'Calibri', size: 11, bold: true };
-      cell.alignment = { horizontal: 'center', vertical: 'bottom' };
-    });
-    
-    // Column widths
-    worksheet.columns = [
-      { width: 12 },  // xblnr
-      { width: 10 },  // bukrs
-      { width: 9 },   // blart
-      { width: 9 },   // bldat
-      { width: 12 },  // budat
-      { width: 10 },  // waers
-      { width: 8 },   // kursf
-      { width: 30 },  // bktxt
-      { width: 12 },  // zuonr
-      { width: 12 },  // hkont
-      { width: 15 },  // wrbtr
-      { width: 30 },  // sgtxt
-      { width: 12 },  // prctr
-      { width: 12 },  // kostl
-      { width: 3 },   // empty
-      { width: 10 },  // nplnr
-      { width: 12 },  // aufnr
-      { width: 12 },  // valut
-      { width: 5 }    // flag
-    ];
-    
-    // Calculate total accrual for this single item
-    const totalAccrual = item.periodes?.reduce((sum, p) => {
-      if (item.pembagianType === 'manual') {
-        return sum + p.amountAccrual;
-      }
-      
-      // Untuk otomatis, cek tanggal periode saja
-      // Parse bulan periode (format: "Jan 2026")
-      const [bulanName, tahunStr] = p.bulan.split(' ');
-      const bulanMap: Record<string, number> = {
-        'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
-        'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
-      };
-      const periodeBulan = bulanMap[bulanName];
-      const periodeTahun = parseInt(tahunStr);
-      
-      // Tanggal 1 bulan periode tersebut
-      const today = new Date();
-      const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-      
-      // Akui accrual jika sudah jatuh tempo ATAU jika sudah ada realisasi
-      const totalRealisasi = p.totalRealisasi ?? 0;
-      const hasRealisasi = totalRealisasi > 0;
-      if (todayDate >= periodeDateOnly || hasRealisasi) {
-        return sum + Math.abs(p.amountAccrual);
-      }
-      return sum;
-    }, 0) || 0;
-    
-    const absTotalAccrual = totalAccrual;
-    if (absTotalAccrual > 0) {
-      // Parse tanggal from start date
-      const startDate = new Date(item.startDate);
-      const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
-      const year = startDate.getFullYear();
-      
-      // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
-      const row1 = worksheet.getRow(3);
-      row1.height = 15;
-      
-      row1.getCell(1).value = ''; // xblnr - kosong
-      row1.getCell(2).value = companyCode; // bukrs
-      row1.getCell(3).value = 'SA'; // blart
-      row1.getCell(4).value = docDate; // bldat
-      row1.getCell(5).value = docDate; // budat
-      row1.getCell(6).value = 'IDR'; // waers
-      row1.getCell(7).value = ''; // kursf
-      row1.getCell(8).value = item.headerText || ''; // bktxt
-      row1.getCell(9).value = ''; // zuonr
-      row1.getCell(10).value = item.kdAkunBiaya; // hkont (expense account)
-      row1.getCell(11).value = Math.round(absTotalAccrual); // wrbtr (positive)
-      row1.getCell(11).numFmt = '0';
-      row1.getCell(12).value = item.headerText || ''; // sgtxt
-      row1.getCell(13).value = ''; // prctr
-      row1.getCell(14).value = item.costCenter || ''; // kostl
-      row1.getCell(15).value = ''; // empty
-      row1.getCell(16).value = ''; // nplnr
-      row1.getCell(17).value = ''; // aufnr
-      row1.getCell(18).value = ''; // valut
-      row1.getCell(19).value = 'G'; // flag
-      
-      // Apply font and alignment to all cells (NO BORDERS)
-      for (let col = 1; col <= 19; col++) {
-        const cell = row1.getCell(col);
-        cell.font = { name: 'Aptos Narrow', size: 12 };
-        if (col === 11) {
-          cell.alignment = { horizontal: 'right', vertical: 'bottom' };
-        } else {
-          cell.alignment = { horizontal: 'left', vertical: 'bottom' };
-        }
-      }
-      
-      // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
-      const row2 = worksheet.getRow(4);
-      row2.height = 15;
-      
-      row2.getCell(1).value = ''; // xblnr - kosong
-      row2.getCell(2).value = companyCode; // bukrs
-      row2.getCell(3).value = 'SA'; // blart
-      row2.getCell(4).value = docDate; // bldat
-      row2.getCell(5).value = docDate; // budat
-      row2.getCell(6).value = 'IDR'; // waers
-      row2.getCell(7).value = ''; // kursf
-      row2.getCell(8).value = item.headerText || ''; // bktxt
-      row2.getCell(9).value = ''; // zuonr
-      row2.getCell(10).value = item.kdAkr; // hkont (accrual account)
-      row2.getCell(11).value = -Math.round(absTotalAccrual); // wrbtr (negative)
-      row2.getCell(11).numFmt = '0';
-      row2.getCell(12).value = item.headerText || ''; // sgtxt
-      row2.getCell(13).value = ''; // prctr
-      row2.getCell(14).value = ''; // kostl - kosongkan untuk akun accrual
-      row2.getCell(15).value = ''; // empty
-      row2.getCell(16).value = ''; // nplnr
-      row2.getCell(17).value = ''; // aufnr
-      row2.getCell(18).value = ''; // valut
-      row2.getCell(19).value = 'G'; // flag
-      
-      // Apply font and alignment to all cells (NO BORDERS)
-      for (let col = 1; col <= 19; col++) {
-        const cell = row2.getCell(col);
-        cell.font = { name: 'Aptos Narrow', size: 12 };
-        if (col === 11) {
-          cell.alignment = { horizontal: 'right', vertical: 'bottom' };
-        } else {
-          cell.alignment = { horizontal: 'left', vertical: 'bottom' };
-        }
-      }
-      
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Jurnal_SAP_${companyCode}_${item.noPo || item.id}_${year}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
-    } catch (error) {
-      console.error('Error generating Jurnal SAP:', error);
-      alert('Gagal membuat jurnal SAP. Silakan coba lagi.');
-    }
-  };
-
+  
   const handleDownloadJurnalSAPTxt = (item: Accrual) => {
     // Use company code from item
     const companyCode = item.companyCode || '2000';
@@ -1405,37 +1182,6 @@ export default function MonitoringAccrualPage() {
       console.error('Error generating Jurnal SAP Realisasi:', error);
       alert('Gagal membuat jurnal SAP realisasi. Silakan coba lagi.');
     }
-  };
-
-  const handleDownloadJurnalSAPRealisasiTxt = (item: Accrual) => {
-    const companyCode = item.companyCode || '2000';
-    if (!item.companyCode) {
-      alert('Company code tidak ditemukan untuk item ini');
-      return;
-    }
-    const totalRealisasi = calculateItemRealisasi(item);
-    if (totalRealisasi <= 0) {
-      alert('Tidak ada realisasi untuk item ini.');
-      return;
-    }
-    const startDate = new Date(item.startDate);
-    const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
-    const year = startDate.getFullYear();
-    const amountRounded = Math.round(totalRealisasi).toString();
-    // Entry 1: KREDIT - Kode Akun Accrual
-    const row1 = ['', companyCode, 'SA', docDate, docDate, 'IDR', '', item.headerText || '', '', item.kdAkr, (-Math.round(totalRealisasi)).toString(), item.headerText || '', '', '', '', '', '', '', 'G'];
-    // Entry 2: DEBIT - Kode Akun Biaya
-    const row2 = ['', companyCode, 'SA', docDate, docDate, 'IDR', '', item.headerText || '', '', item.kdAkunBiaya, amountRounded, item.headerText || '', '', item.costCenter || '', '', '', '', 'G'];
-    const txtContent = [row1, row2].map(row => row.join('\t')).join('\n');
-    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Jurnal_SAP_Realisasi_${companyCode}_${item.noPo || item.id}_${year}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -2156,53 +1902,6 @@ export default function MonitoringAccrualPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Portal: dropdown Jurnal SAP di body agar tidak tertutup header tabel */}
-      {typeof document !== 'undefined' && openJurnalItem && openJurnalRect && createPortal(
-        <div
-          className="jurnal-dropdown-menu fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-[9999]"
-          style={{
-            bottom: window.innerHeight - openJurnalRect.top + 8,
-            left: openJurnalRect.right - 192,
-          }}
-        >
-          <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
-            Company: {openJurnalItem.companyCode || 'N/A'}
-          </div>
-          <button
-            type="button"
-            onClick={() => { handleDownloadJurnalSAPPerItem(openJurnalItem!); closeJurnalDropdown(); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 transition-colors"
-          >
-            Download Excel
-          </button>
-          <button
-            type="button"
-            onClick={() => { handleDownloadJurnalSAPTxt(openJurnalItem!); closeJurnalDropdown(); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
-          >
-            Download TXT
-          </button>
-          <div className="border-t border-gray-100 my-1" />
-          <div className="px-3 py-1 text-[10px] text-gray-500 font-semibold">
-            Jurnal Realisasi
-          </div>
-          <button
-            type="button"
-            onClick={() => { handleDownloadJurnalSAPRealisasiPerItem(openJurnalItem!); closeJurnalDropdown(); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
-          >
-            Download Excel (Realisasi)
-          </button>
-          <button
-            type="button"
-            onClick={() => { handleDownloadJurnalSAPRealisasiTxt(openJurnalItem!); closeJurnalDropdown(); }}
-            className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-amber-50 transition-colors"
-          >
-            Download TXT (Realisasi)
-          </button>
-        </div>,
-        document.body
-      )}
       {/* Mobile Sidebar Overlay */}
       {isMobileSidebarOpen && (
         <div 
@@ -2362,7 +2061,6 @@ export default function MonitoringAccrualPage() {
             `}</style>
             <div
               className="table-container custom-scrollbar"
-              onScroll={() => { if (openJurnalRect) closeJurnalDropdown(); }}
             >
               <table className="w-full text-xs sm:text-sm" style={{ minWidth: '1800px' }}>
                 <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-[5] shadow-sm">
@@ -2654,30 +2352,6 @@ export default function MonitoringAccrualPage() {
                           </td>
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
-                              {/* Jurnal SAP Dropdown - trigger only; menu di-render via portal */}
-                              <div className="relative jurnal-dropdown-container">
-                                <button
-                                  onClick={(e) => {
-                                    if (expandedRows.has(`jurnal-${item.id}`)) {
-                                      closeJurnalDropdown();
-                                    } else {
-                                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                      setOpenJurnalRect({ top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left });
-                                      setOpenJurnalItem(item);
-                                      setExpandedRows(prev => {
-                                        const next = new Set(prev);
-                                        next.forEach(id => { if (typeof id === 'string' && id.startsWith('jurnal-')) next.delete(id); });
-                                        next.add(`jurnal-${item.id}`);
-                                        return next;
-                                      });
-                                    }
-                                  }}
-                                  className="text-green-600 hover:text-green-800 transition-colors p-1 hover:bg-green-50 rounded"
-                                  title="Download Jurnal SAP"
-                                >
-                                  <Download size={16} />
-                                </button>
-                              </div>
                               {canEdit && (
                                 <>
                                   <button
