@@ -152,6 +152,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 rekapRows.push({
                   kdAkr: kdAkrStr,
                   saldo: saldoValue,
+                  totalAmount: saldoValue, // Untuk REKAP, amount = saldo akhir
                   ...(klasifikasiNormalized
                     ? { klasifikasi: klasifikasiNormalized }
                     : rawKeterangan
@@ -281,7 +282,7 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
               nilaiPoColumn !== -1 ? parseNumber(row[nilaiPoColumn]) : null;
 
             if (outstandingValue !== null && outstandingValue !== 0) {
-              // Untuk sheet: amount pakai NILAI PO kalau ada, else OUTSTANDING. Vendor kosong tetap dipass (undefined) supaya baris tetap punya record sendiri.
+              // Untuk sheet: amount pakai NILAI PO kalau ada (termasuk 0), else OUTSTANDING. Vendor kosong tetap dipass (undefined) supaya baris tetap punya record sendiri.
               const kdAkrNormalized = normalizeKodeAkr(String(sheetName ?? '').trim()) || String(sheetName ?? '').trim();
               accruals.push({
                 kdAkr: kdAkrNormalized,
@@ -291,9 +292,9 @@ export function parseExcelFile(buffer: ArrayBuffer): ParsedExcelData {
                 ...(noPoValue ? { noPo: noPoValue } : {}),
                 ...(alokasiValue ? { alokasi: alokasiValue } : {}),
                 ...(keteranganValue ? { deskripsi: keteranganValue } : {}),
-                ...(nilaiPoValue != null && nilaiPoValue !== 0
+                ...(nilaiPoValue != null
                   ? { totalAmount: nilaiPoValue }
-                  : {}),
+                  : { totalAmount: outstandingValue }),
                 source: 'sheet',
               });
             }

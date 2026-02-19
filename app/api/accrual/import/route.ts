@@ -75,19 +75,26 @@ export async function POST(request: NextRequest) {
           });
 
           if (existingAccrual) {
-            // Saldo awal dari import (saldo akhir/outstanding), fixed; totalAmount tidak di-overwrite dari file
+            // Saldo awal dari import (saldo akhir/outstanding), fixed; totalAmount di-update hanya jika dari sheet (ada NILAI PO)
             const saldoAwal = excelAccrual.saldo ?? excelAccrual.totalAmount ?? 0;
+            const updateData: any = {
+              saldoAwal,
+              ...(excelAccrual.vendor !== undefined && { vendor: excelAccrual.vendor ?? '-' }),
+              ...(excelAccrual.deskripsi != null && { deskripsi: excelAccrual.deskripsi }),
+              ...(excelAccrual.kdAkunBiaya != null && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
+              ...(excelAccrual.klasifikasi != null && { klasifikasi: excelAccrual.klasifikasi }),
+              ...(excelAccrual.noPo != null && { noPo: excelAccrual.noPo }),
+              ...(excelAccrual.alokasi != null && { alokasi: excelAccrual.alokasi }),
+            };
+            
+            // Update totalAmount hanya jika datanya dari sheet (bukan REKAP) dan ada nilai PO
+            if (excelAccrual.source === 'sheet' && excelAccrual.totalAmount !== undefined) {
+              updateData.totalAmount = excelAccrual.totalAmount;
+            }
+            
             const updatedAccrual = await prisma.accrual.update({
               where: { id: existingAccrual.id },
-              data: {
-                saldoAwal,
-                ...(excelAccrual.vendor !== undefined && { vendor: excelAccrual.vendor ?? '-' }),
-                ...(excelAccrual.deskripsi != null && { deskripsi: excelAccrual.deskripsi }),
-                ...(excelAccrual.kdAkunBiaya != null && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
-                ...(excelAccrual.klasifikasi != null && { klasifikasi: excelAccrual.klasifikasi }),
-                ...(excelAccrual.noPo != null && { noPo: excelAccrual.noPo }),
-                ...(excelAccrual.alokasi != null && { alokasi: excelAccrual.alokasi }),
-              },
+              data: updateData,
               include: { periodes: true },
             });
 
@@ -117,7 +124,7 @@ export async function POST(request: NextRequest) {
                   excelAccrual.deskripsi ??
                   `Imported from Excel - ${excelAccrual.kdAkr}${excelAccrual.klasifikasi ? ` (${excelAccrual.klasifikasi})` : ''}`,
                 klasifikasi: excelAccrual.klasifikasi ?? null,
-                totalAmount: 0,
+                totalAmount: excelAccrual.totalAmount ?? 0,
                 saldoAwal,
                 noPo: excelAccrual.noPo ?? null,
                 alokasi: excelAccrual.alokasi ?? null,
