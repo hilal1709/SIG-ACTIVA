@@ -194,6 +194,7 @@ export default function MonitoringAccrualPage() {
   const [selectedPeriode, setSelectedPeriode] = useState<AccrualPeriode | null>(null);
   const [realisasiViewOnly, setRealisasiViewOnly] = useState(false);
   const [realisasiData, setRealisasiData] = useState<RealisasiData[]>([]);
+  const [currentAccrualItem, setCurrentAccrualItem] = useState<Accrual | null>(null);
   const [realisasiForm, setRealisasiForm] = useState<RealisasiFormData>({
     tanggalRealisasi: new Date().toISOString().split('T')[0],
     amount: '',
@@ -725,6 +726,251 @@ export default function MonitoringAccrualPage() {
     } catch (error) {
       console.error('Error generating global report:', error);
       alert('Gagal membuat laporan global. Silakan coba lagi.');
+    }
+  };
+
+  // Download Jurnal SAP per Periode
+  const handleDownloadJurnalSAPPerPeriode = async (item: Accrual, periode: AccrualPeriode) => {
+    try {
+      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+      const companyCode = item.companyCode || '2000';
+      
+      if (!item.companyCode) {
+        alert('Company code tidak ditemukan untuk item ini');
+        return;
+      }
+      
+      const workbook = new ExcelJSLib.Workbook();
+      const worksheet = workbook.addWorksheet('Jurnal SAP');
+    
+      // Headers
+      worksheet.getRow(1).height = 15;
+      const headers1 = [
+        'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
+        'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+      ];
+      
+      const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
+      
+      worksheet.getRow(1).values = headers1;
+      worksheet.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill;
+        cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+      });
+      
+      // Headers row 2
+      worksheet.getRow(2).height = 15;
+      const headers2 = [
+        'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
+        'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
+        'cost center', '', 'Network', 'order numi', 'value date', ''
+      ];
+      
+      worksheet.getRow(2).values = headers2;
+      worksheet.getRow(2).eachCell((cell: any) => {
+        cell.fill = headerFill;
+        cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+      });
+      
+      // Column widths
+      worksheet.columns = [
+        { width: 12 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 12 }, 
+        { width: 10 }, { width: 8 }, { width: 30 }, { width: 12 }, { width: 12 }, 
+        { width: 15 }, { width: 30 }, { width: 12 }, { width: 12 }, { width: 3 }, 
+        { width: 10 }, { width: 12 }, { width: 12 }, { width: 5 }
+      ];
+      
+      // Parse tanggal from start date
+      const startDate = new Date(item.startDate);
+      const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+      
+      // Entry 1: DEBIT - Kode Akun Biaya
+      const row1 = worksheet.getRow(3);
+      row1.height = 15;
+      
+      row1.getCell(1).value = ''; // xblnr
+      row1.getCell(2).value = companyCode; // bukrs
+      row1.getCell(3).value = 'SA'; // blart
+      row1.getCell(4).value = docDate; // bldat
+      row1.getCell(5).value = docDate; // budat
+      row1.getCell(6).value = 'IDR'; // waers
+      row1.getCell(7).value = ''; // kursf
+      row1.getCell(8).value = item.headerText || ''; // bktxt
+      row1.getCell(9).value = ''; // zuonr
+      row1.getCell(10).value = item.kdAkunBiaya; // hkont
+      row1.getCell(11).value = Math.round(Math.abs(periode.amountAccrual)); // wrbtr
+      row1.getCell(11).numFmt = '0';
+      row1.getCell(12).value = item.headerText || ''; // sgtxt
+      row1.getCell(13).value = ''; // prctr
+      row1.getCell(14).value = item.costCenter || ''; // kostl
+      row1.getCell(15).value = ''; // empty
+      row1.getCell(16).value = ''; // nplnr
+      row1.getCell(17).value = ''; // aufnr
+      row1.getCell(18).value = ''; // valut
+      row1.getCell(19).value = ''; // flag
+      
+      // Entry 2: CREDIT - Kode Akun Accrual
+      const row2 = worksheet.getRow(4);
+      row2.height = 15;
+      
+      row2.getCell(1).value = ''; // xblnr
+      row2.getCell(2).value = companyCode; // bukrs
+      row2.getCell(3).value = 'SA'; // blart
+      row2.getCell(4).value = docDate; // bldat
+      row2.getCell(5).value = docDate; // budat
+      row2.getCell(6).value = 'IDR'; // waers
+      row2.getCell(7).value = ''; // kursf
+      row2.getCell(8).value = item.headerText || ''; // bktxt
+      row2.getCell(9).value = ''; // zuonr
+      row2.getCell(10).value = item.kdAkr; // hkont
+      row2.getCell(11).value = Math.round(Math.abs(periode.amountAccrual)); // wrbtr
+      row2.getCell(11).numFmt = '0';
+      row2.getCell(12).value = item.headerText || ''; // sgtxt
+      row2.getCell(13).value = ''; // prctr
+      row2.getCell(14).value = ''; // kostl
+      row2.getCell(15).value = ''; // empty
+      row2.getCell(16).value = ''; // nplnr
+      row2.getCell(17).value = ''; // aufnr
+      row2.getCell(18).value = ''; // valut
+      row2.getCell(19).value = ''; // flag
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Jurnal_SAP_${companyCode}_${item.noPo || item.id}_${periode.bulan.replace(' ', '_')}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating jurnal SAP per periode:', error);
+      alert('Gagal membuat jurnal SAP per periode. Silakan coba lagi.');
+    }
+  };
+
+  // Download Jurnal SAP per Realisasi
+  const handleDownloadJurnalSAPPerRealisasi = async (realisasi: RealisasiData, item: Accrual) => {
+    try {
+      const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+      const companyCode = item.companyCode || '2000';
+      
+      const workbook = new ExcelJSLib.Workbook();
+      const worksheet = workbook.addWorksheet('Jurnal SAP');
+    
+      // Headers
+      worksheet.getRow(1).height = 15;
+      const headers1 = [
+        'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
+        'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+      ];
+      
+      const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
+      
+      worksheet.getRow(1).values = headers1;
+      worksheet.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill;
+        cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+      });
+      
+      // Headers row 2
+      worksheet.getRow(2).height = 15;
+      const headers2 = [
+        'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
+        'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
+        'cost center', '', 'Network', 'order numi', 'value date', ''
+      ];
+      
+      worksheet.getRow(2).values = headers2;
+      worksheet.getRow(2).eachCell((cell: any) => {
+        cell.fill = headerFill;
+        cell.font = { name: 'Calibri', size: 11, bold: true };
+        cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+      });
+      
+      // Column widths
+      worksheet.columns = [
+        { width: 12 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 12 }, 
+        { width: 10 }, { width: 8 }, { width: 30 }, { width: 12 }, { width: 12 }, 
+        { width: 15 }, { width: 30 }, { width: 12 }, { width: 12 }, { width: 3 }, 
+        { width: 10 }, { width: 12 }, { width: 12 }, { width: 5 }
+      ];
+      
+      // Parse tanggal realisasi
+      const realisasiDate = new Date(realisasi.tanggalRealisasi);
+      const docDate = `${realisasiDate.getFullYear()}${String(realisasiDate.getMonth() + 1).padStart(2, '0')}${String(realisasiDate.getDate()).padStart(2, '0')}`;
+      
+      // Entry 1: DEBIT - Kode Akun Biaya (dari realisasi)
+      const row1 = worksheet.getRow(3);
+      row1.height = 15;
+      
+      row1.getCell(1).value = ''; // xblnr
+      row1.getCell(2).value = companyCode; // bukrs
+      row1.getCell(3).value = 'SA'; // blart
+      row1.getCell(4).value = docDate; // bldat
+      row1.getCell(5).value = docDate; // budat
+      row1.getCell(6).value = 'IDR'; // waers
+      row1.getCell(7).value = ''; // kursf
+      row1.getCell(8).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // bktxt
+      row1.getCell(9).value = ''; // zuonr
+      row1.getCell(10).value = realisasi.kdAkunBiaya || item.kdAkunBiaya; // hkont
+      row1.getCell(11).value = Math.round(Math.abs(realisasi.amount)); // wrbtr
+      row1.getCell(11).numFmt = '0';
+      row1.getCell(12).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // sgtxt
+      row1.getCell(13).value = ''; // prctr
+      row1.getCell(14).value = realisasi.costCenter || item.costCenter || ''; // kostl
+      row1.getCell(15).value = ''; // empty
+      row1.getCell(16).value = ''; // nplnr
+      row1.getCell(17).value = ''; // aufnr
+      row1.getCell(18).value = ''; // valut
+      row1.getCell(19).value = ''; // flag
+      
+      // Entry 2: CREDIT - Kode Akun Accrual
+      const row2 = worksheet.getRow(4);
+      row2.height = 15;
+      
+      row2.getCell(1).value = ''; // xblnr
+      row2.getCell(2).value = companyCode; // bukrs
+      row2.getCell(3).value = 'SA'; // blart
+      row2.getCell(4).value = docDate; // bldat
+      row2.getCell(5).value = docDate; // budat
+      row2.getCell(6).value = 'IDR'; // waers
+      row2.getCell(7).value = ''; // kursf
+      row2.getCell(8).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // bktxt
+      row2.getCell(9).value = ''; // zuonr
+      row2.getCell(10).value = item.kdAkr; // hkont
+      row2.getCell(11).value = Math.round(Math.abs(realisasi.amount)); // wrbtr
+      row2.getCell(11).numFmt = '0';
+      row2.getCell(12).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // sgtxt
+      row2.getCell(13).value = ''; // prctr
+      row2.getCell(14).value = ''; // kostl
+      row2.getCell(15).value = ''; // empty
+      row2.getCell(16).value = ''; // nplnr
+      row2.getCell(17).value = ''; // aufnr
+      row2.getCell(18).value = ''; // valut
+      row2.getCell(19).value = ''; // flag
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Jurnal_SAP_Realisasi_${companyCode}_${realisasi.id}_${new Date(realisasi.tanggalRealisasi).toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error generating jurnal SAP per realisasi:', error);
+      alert('Gagal membuat jurnal SAP per realisasi. Silakan coba lagi.');
     }
   };
 
@@ -1397,6 +1643,12 @@ export default function MonitoringAccrualPage() {
     setSelectedPeriode(periode);
     setRealisasiViewOnly(viewOnly);
     setShowRealisasiModal(true);
+    
+    // Find the parent accrual item
+    const parentAccrual = accrualData.find(acc => 
+      acc.periodes?.some(p => p.id === periode.id)
+    );
+    setCurrentAccrualItem(parentAccrual || null);
     
     // Fetch existing realisasi
     try {
@@ -2527,6 +2779,13 @@ export default function MonitoringAccrualPage() {
                                         <td className="px-3 py-2 text-center bg-white">
                                           <div className="flex items-center justify-center gap-1">
                                             <button
+                                              onClick={() => handleDownloadJurnalSAPPerPeriode(item, periode)}
+                                              className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors"
+                                              title="Download Jurnal SAP Periode"
+                                            >
+                                              <Download size={12} />
+                                            </button>
+                                            <button
                                               onClick={() => handleOpenRealisasiModal(periode, false)}
                                               className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
                                               title="Input realisasi baru"
@@ -3139,6 +3398,13 @@ export default function MonitoringAccrualPage() {
                             {!realisasiViewOnly && (
                               <td className="px-4 py-3 text-center">
                                 <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => handleDownloadJurnalSAPPerRealisasi(realisasi, currentAccrualItem!)}
+                                    className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors"
+                                    title="Download Jurnal SAP Realisasi"
+                                  >
+                                    <Download size={12} />
+                                  </button>
                                   <button
                                     onClick={() => {
                                       setEditingRealisasiId(realisasi.id);
