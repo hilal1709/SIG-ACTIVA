@@ -84,6 +84,8 @@ interface RealisasiFormData {
   tanggalRealisasi: string;
   amount: string;
   keterangan: string;
+  kdAkunBiaya: string;
+  costCenter: string;
 }
 
 interface RealisasiData {
@@ -91,6 +93,8 @@ interface RealisasiData {
   tanggalRealisasi: string;
   amount: number;
   keterangan?: string;
+  kdAkunBiaya?: string;
+  costCenter?: string;
 }
 
 // Saldo awal: nilai tetap dari import (saldo akhir/outstanding). Tidak ada logika periode — tidak berubah saat periode berganti.
@@ -194,6 +198,8 @@ export default function MonitoringAccrualPage() {
     tanggalRealisasi: new Date().toISOString().split('T')[0],
     amount: '',
     keterangan: '',
+    kdAkunBiaya: '',
+    costCenter: '',
   });
   const [submittingRealisasi, setSubmittingRealisasi] = useState(false);
   const [editingRealisasiId, setEditingRealisasiId] = useState<number | null>(null);
@@ -1517,6 +1523,8 @@ export default function MonitoringAccrualPage() {
           tanggalRealisasi: realisasiForm.tanggalRealisasi,
           amount: parseFloat(realisasiForm.amount),
           keterangan: realisasiForm.keterangan || null,
+          kdAkunBiaya: realisasiForm.kdAkunBiaya || null,
+          costCenter: realisasiForm.costCenter || null,
         }),
       });
 
@@ -1527,6 +1535,8 @@ export default function MonitoringAccrualPage() {
         tanggalRealisasi: new Date().toISOString().split('T')[0],
         amount: '',
         keterangan: '',
+        kdAkunBiaya: '',
+        costCenter: '',
       });
       setEditingRealisasiId(null);
 
@@ -2921,6 +2931,8 @@ export default function MonitoringAccrualPage() {
                     tanggalRealisasi: new Date().toISOString().split('T')[0],
                     amount: '',
                     keterangan: '',
+                    kdAkunBiaya: '',
+                    costCenter: '',
                   });
                 }}
                 className="text-white hover:text-red-100 transition-colors rounded-full hover:bg-white/10 p-1"
@@ -3022,6 +3034,32 @@ export default function MonitoringAccrualPage() {
                       placeholder="Masukkan amount realisasi"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Kode Akun Biaya
+                    </label>
+                    <input
+                      type="text"
+                      name="kdAkunBiaya"
+                      value={realisasiForm.kdAkunBiaya}
+                      onChange={handleRealisasiInputChange}
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                      placeholder="Masukkan kode akun biaya"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Cost Center
+                    </label>
+                    <input
+                      type="text"
+                      name="costCenter"
+                      value={realisasiForm.costCenter}
+                      onChange={handleRealisasiInputChange}
+                      className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                      placeholder="Masukkan cost center"
+                    />
+                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Keterangan
@@ -3046,6 +3084,8 @@ export default function MonitoringAccrualPage() {
                           tanggalRealisasi: new Date().toISOString().split('T')[0],
                           amount: '',
                           keterangan: '',
+                          kdAkunBiaya: '',
+                          costCenter: '',
                         });
                       }}
                       className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -3080,6 +3120,8 @@ export default function MonitoringAccrualPage() {
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Tanggal</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Kode Akun Biaya</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Cost Center</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Keterangan</th>
                           {!realisasiViewOnly && (
                             <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700">Action</th>
@@ -3091,6 +3133,8 @@ export default function MonitoringAccrualPage() {
                           <tr key={realisasi.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 text-gray-700">{formatDate(realisasi.tanggalRealisasi)}</td>
                             <td className="px-4 py-3 text-right text-gray-800 font-medium">{formatCurrency(Math.abs(realisasi.amount))}</td>
+                            <td className="px-4 py-3 text-gray-600">{realisasi.kdAkunBiaya || '-'}</td>
+                            <td className="px-4 py-3 text-gray-600">{realisasi.costCenter || '-'}</td>
                             <td className="px-4 py-3 text-gray-600">{realisasi.keterangan || '-'}</td>
                             {!realisasiViewOnly && (
                               <td className="px-4 py-3 text-center">
@@ -3102,6 +3146,8 @@ export default function MonitoringAccrualPage() {
                                         tanggalRealisasi: realisasi.tanggalRealisasi.split('T')[0],
                                         amount: Math.abs(realisasi.amount).toString(),
                                         keterangan: realisasi.keterangan || '',
+                                        kdAkunBiaya: realisasi.kdAkunBiaya || '',
+                                        costCenter: realisasi.costCenter || '',
                                       });
                                     }}
                                     className="text-blue-600 hover:text-blue-800 transition-colors p-1 hover:bg-blue-50 rounded"
@@ -3141,6 +3187,8 @@ export default function MonitoringAccrualPage() {
                     tanggalRealisasi: new Date().toISOString().split('T')[0],
                     amount: '',
                     keterangan: '',
+                    kdAkunBiaya: '',
+                    costCenter: '',
                   });
                 }}
                 className="px-5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors"

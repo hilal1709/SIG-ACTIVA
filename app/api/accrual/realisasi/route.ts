@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { accrualPeriodeId, tanggalRealisasi, amount, keterangan } = body;
+    const { accrualPeriodeId, tanggalRealisasi, amount, keterangan, kdAkunBiaya, costCenter } = body;
 
     if (!accrualPeriodeId || !tanggalRealisasi || !amount) {
       return NextResponse.json(
@@ -20,6 +20,8 @@ export async function POST(request: NextRequest) {
         tanggalRealisasi: new Date(tanggalRealisasi),
         amount: Math.abs(parseFloat(amount)), // realisasi disimpan positif
         keterangan: keterangan || null,
+        kdAkunBiaya: kdAkunBiaya || null,
+        costCenter: costCenter || null,
       },
     });
 
@@ -108,7 +110,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { tanggalRealisasi, amount, keterangan } = body;
+    const { tanggalRealisasi, amount, keterangan, kdAkunBiaya, costCenter } = body;
 
     if (!tanggalRealisasi || !amount) {
       return NextResponse.json(
@@ -125,6 +127,8 @@ export async function PUT(request: NextRequest) {
         tanggalRealisasi: new Date(tanggalRealisasi),
         amount: Math.abs(parseFloat(amount)), // realisasi disimpan positif
         keterangan: keterangan || null,
+        kdAkunBiaya: kdAkunBiaya || null,
+        costCenter: costCenter || null,
       },
     });
 
