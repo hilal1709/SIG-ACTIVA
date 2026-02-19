@@ -2696,7 +2696,7 @@ export default function MonitoringAccrualPage() {
                               {isKodeAkunExpanded ? '▼' : '▶'}
                             </button>
                           </td>
-                          <td colSpan={8} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
+                          <td colSpan={canEdit ? 17 : 16} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
                             Kode Akun: {kodeAkun}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
@@ -2874,7 +2874,7 @@ export default function MonitoringAccrualPage() {
                                     {isVendorExpanded ? '▼' : '▶'}
                                   </button>
                                 </td>
-                                <td colSpan={8} className="px-4 py-3 text-left text-green-900 bg-green-50">
+                                <td colSpan={canEdit ? 17 : 16} className="px-4 py-3 text-left text-green-900 bg-green-50">
                                   Vendor: {vendor}
                                 </td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
@@ -3118,13 +3118,6 @@ export default function MonitoringAccrualPage() {
                                               title="Input realisasi baru"
                                             >
                                               Input Realisasi
-                                            </button>
-                                            <button
-                                              onClick={() => handleOpenRealisasiModal(periode, true)}
-                                              className="text-xs bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded transition-colors"
-                                              title="Lihat history realisasi"
-                                            >
-                                              History
                                             </button>
                                           </div>
                                         </td>
