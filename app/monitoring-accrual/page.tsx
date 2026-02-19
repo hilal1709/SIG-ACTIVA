@@ -214,6 +214,8 @@ export default function MonitoringAccrualPage() {
   // Portal dropdown Jurnal SAP (agar tidak tertutup header tabel)
   const [openJurnalRect, setOpenJurnalRect] = useState<{ top: number; right: number; bottom: number; left: number } | null>(null);
   const [openJurnalItem, setOpenJurnalItem] = useState<Accrual | null>(null);
+  // State untuk dropdown jurnal per kode akun
+  const [openKodeAkunDropdown, setOpenKodeAkunDropdown] = useState<string | null>(null);
 
   const closeJurnalDropdown = useCallback(() => {
     setOpenJurnalRect(null);
@@ -238,6 +240,29 @@ export default function MonitoringAccrualPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      
+      // Close all jurnal dropdowns
+      document.querySelectorAll('[id^="jurnal-dropdown-"]').forEach(dropdown => {
+        if (!dropdown.contains(target) && !target.closest('button')) {
+          dropdown.classList.add('hidden');
+        }
+      });
+      
+      document.querySelectorAll('[id^="jurnal-realisasi-dropdown-"]').forEach(dropdown => {
+        if (!dropdown.contains(target) && !target.closest('button')) {
+          dropdown.classList.add('hidden');
+        }
+      });
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Load user role from localStorage
   useEffect(() => {
@@ -714,6 +739,483 @@ export default function MonitoringAccrualPage() {
     }
   };
 
+  // Download Jurnal SAP per Kode Akun
+  const handleDownloadJurnalSAPPerKodeAkun = async (kodeAkun: string, items: Accrual[], format: 'excel' | 'txt', companyCode: string, jenis: 'accrual' | 'realisasi') => {
+    try {
+      if (jenis === 'accrual') {
+        // Download Jurnal Accrual untuk semua item dalam kode akun
+        if (format === 'excel') {
+          const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+          const workbook = new ExcelJSLib.Workbook();
+          const worksheet = workbook.addWorksheet('Jurnal SAP Accrual');
+          
+          // Headers
+          worksheet.getRow(1).height = 15;
+          const headers1 = [
+            'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
+            'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+          ];
+          
+          const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
+          
+          worksheet.getRow(1).values = headers1;
+          worksheet.getRow(1).eachCell((cell: any) => {
+            cell.fill = headerFill;
+            cell.font = { name: 'Calibri', size: 11, bold: true };
+            cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+          });
+          
+          // Headers row 2
+          worksheet.getRow(2).height = 15;
+          const headers2 = [
+            'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
+            'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
+            'cost center', '', 'Network', 'order numi', 'value date', ''
+          ];
+          
+          worksheet.getRow(2).values = headers2;
+          worksheet.getRow(2).eachCell((cell: any) => {
+            cell.fill = headerFill;
+            cell.font = { name: 'Calibri', size: 11, bold: true };
+            cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+          });
+          
+          // Column widths
+          worksheet.columns = [
+            { width: 12 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 12 }, 
+            { width: 10 }, { width: 8 }, { width: 30 }, { width: 12 }, { width: 12 }, 
+            { width: 15 }, { width: 30 }, { width: 12 }, { width: 12 }, { width: 3 }, 
+            { width: 10 }, { width: 12 }, { width: 12 }, { width: 5 }
+          ];
+          
+          let currentRow = 3;
+          
+          items.forEach((item) => {
+            const totalAccrual = calculateAccrualAmount(item);
+            if (totalAccrual > 0) {
+              const startDate = new Date(item.startDate);
+              const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+              
+              // Entry 1: DEBIT - Kode Akun Biaya
+              const row1 = worksheet.getRow(currentRow++);
+              row1.getCell(1).value = ''; // xblnr
+              row1.getCell(2).value = companyCode; // bukrs
+              row1.getCell(3).value = 'SA'; // blart
+              row1.getCell(4).value = docDate; // bldat
+              row1.getCell(5).value = docDate; // budat
+              row1.getCell(6).value = 'IDR'; // waers
+              row1.getCell(7).value = ''; // kursf
+              row1.getCell(8).value = item.headerText || ''; // bktxt
+              row1.getCell(9).value = ''; // zuonr
+              row1.getCell(10).value = item.kdAkunBiaya; // hkont
+              row1.getCell(11).value = Math.round(totalAccrual); // wrbtr
+              row1.getCell(11).numFmt = '0';
+              row1.getCell(12).value = item.headerText || ''; // sgtxt
+              row1.getCell(13).value = ''; // prctr
+              row1.getCell(14).value = item.costCenter || ''; // kostl
+              row1.getCell(15).value = ''; // empty
+              row1.getCell(16).value = ''; // nplnr
+              row1.getCell(17).value = ''; // aufnr
+              row1.getCell(18).value = ''; // valut
+              row1.getCell(19).value = 'G'; // flag
+              
+              // Entry 2: CREDIT - Kode Akun Accrual
+              const row2 = worksheet.getRow(currentRow++);
+              row2.getCell(1).value = ''; // xblnr
+              row2.getCell(2).value = companyCode; // bukrs
+              row2.getCell(3).value = 'SA'; // blart
+              row2.getCell(4).value = docDate; // bldat
+              row2.getCell(5).value = docDate; // budat
+              row2.getCell(6).value = 'IDR'; // waers
+              row2.getCell(7).value = ''; // kursf
+              row2.getCell(8).value = item.headerText || ''; // bktxt
+              row2.getCell(9).value = ''; // zuonr
+              row2.getCell(10).value = item.kdAkr; // hkont
+              row2.getCell(11).value = -Math.round(totalAccrual); // wrbtr
+              row2.getCell(11).numFmt = '0';
+              row2.getCell(12).value = item.headerText || ''; // sgtxt
+              row2.getCell(13).value = ''; // prctr
+              row2.getCell(14).value = ''; // kostl
+              row2.getCell(15).value = ''; // empty
+              row2.getCell(16).value = ''; // nplnr
+              row2.getCell(17).value = ''; // aufnr
+              row2.getCell(18).value = ''; // valut
+              row2.getCell(19).value = 'G'; // flag
+            }
+          });
+          
+          const buffer = await workbook.xlsx.writeBuffer();
+          const blob = new Blob([buffer], { 
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+          });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Jurnal_SAP_Accrual_${companyCode}_${kodeAkun}_${new Date().toISOString().split('T')[0]}.xlsx`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } else {
+          // Format TXT
+          const rows: string[][] = [];
+          
+          items.forEach((item) => {
+            const totalAccrual = calculateAccrualAmount(item);
+            if (totalAccrual > 0) {
+              const startDate = new Date(item.startDate);
+              const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+              
+              // Entry 1: DEBIT - Kode Akun Biaya
+              rows.push([
+                '', companyCode, 'SA', docDate, docDate, 'IDR', '',
+                item.headerText || '', '', item.kdAkunBiaya, Math.round(totalAccrual).toString(),
+                item.headerText || '', '', item.costCenter || '', '', '', '', '', 'G'
+              ]);
+              
+              // Entry 2: KREDIT - Kode Akun Accrual
+              rows.push([
+                '', companyCode, 'SA', docDate, docDate, 'IDR', '',
+                item.headerText || '', '', item.kdAkr, (-Math.round(totalAccrual)).toString(),
+                item.headerText || '', '', '', '', '', '', '', 'G'
+              ]);
+            }
+          });
+          
+          const txtContent = rows.map(row => row.join('\t')).join('\n');
+          const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Jurnal_SAP_Accrual_${companyCode}_${kodeAkun}_${new Date().toISOString().split('T')[0]}.txt`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+      } else {
+        // Download Jurnal Realisasi untuk semua item dalam kode akun
+        const allRealisasi: { item: Accrual; realisasi: RealisasiData }[] = [];
+        
+        items.forEach((item) => {
+          if (item.periodes) {
+            item.periodes.forEach((periode) => {
+              if (periode.realisasis && periode.realisasis.length > 0) {
+                periode.realisasis.forEach((realisasi) => {
+                  allRealisasi.push({ item, realisasi });
+                });
+              }
+            });
+          }
+        });
+        
+        if (allRealisasi.length === 0) {
+          alert('Tidak ada realisasi untuk kode akun ini.');
+          return;
+        }
+        
+        if (format === 'excel') {
+          const { ExcelJS: ExcelJSLib } = await loadExcelLibraries();
+          const workbook = new ExcelJSLib.Workbook();
+          const worksheet = workbook.addWorksheet('Jurnal SAP Realisasi');
+          
+          // Headers
+          worksheet.getRow(1).height = 15;
+          const headers1 = [
+            'xblnr', 'bukrs', 'blart', 'bldat', 'budat', 'waers', 'kursf', 'bktxt', 
+            'zuonr', 'hkont', 'wrbtr', 'sgtxt', 'prctr', 'kostl', '', 'nplnr', 'aufnr', 'valut', 'flag'
+          ];
+          
+          const headerFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFFFE699' } };
+          
+          worksheet.getRow(1).values = headers1;
+          worksheet.getRow(1).eachCell((cell: any) => {
+            cell.fill = headerFill;
+            cell.font = { name: 'Calibri', size: 11, bold: true };
+            cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+          });
+          
+          // Headers row 2
+          worksheet.getRow(2).height = 15;
+          const headers2 = [
+            'Reference', 'company', 'doc type', 'doc date', 'posting date', 'currency', 'kurs', 
+            'header text', 'Vendor/cu:', 'account', 'amount', 'line text', 'profit center', 
+            'cost center', '', 'Network', 'order numi', 'value date', ''
+          ];
+          
+          worksheet.getRow(2).values = headers2;
+          worksheet.getRow(2).eachCell((cell: any) => {
+            cell.fill = headerFill;
+            cell.font = { name: 'Calibri', size: 11, bold: true };
+            cell.alignment = { horizontal: 'center', vertical: 'bottom' };
+          });
+          
+          // Column widths
+          worksheet.columns = [
+            { width: 12 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 12 }, 
+            { width: 10 }, { width: 8 }, { width: 30 }, { width: 12 }, { width: 12 }, 
+            { width: 15 }, { width: 30 }, { width: 12 }, { width: 12 }, { width: 3 }, 
+            { width: 10 }, { width: 12 }, { width: 12 }, { width: 5 }
+          ];
+          
+          let currentRow = 3;
+          
+          allRealisasi.forEach(({ item, realisasi }) => {
+            const realisasiDate = new Date(realisasi.tanggalRealisasi);
+            const docDate = `${realisasiDate.getFullYear()}${String(realisasiDate.getMonth() + 1).padStart(2, '0')}${String(realisasiDate.getDate()).padStart(2, '0')}`;
+            
+            // Entry 1: KREDIT - Kode Akun Accrual (di atas)
+            const row1 = worksheet.getRow(currentRow++);
+            row1.getCell(1).value = ''; // xblnr
+            row1.getCell(2).value = companyCode; // bukrs
+            row1.getCell(3).value = 'SA'; // blart
+            row1.getCell(4).value = docDate; // bldat
+            row1.getCell(5).value = docDate; // budat
+            row1.getCell(6).value = 'IDR'; // waers
+            row1.getCell(7).value = ''; // kursf
+            row1.getCell(8).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // bktxt
+            row1.getCell(9).value = ''; // zuonr
+            row1.getCell(10).value = item.kdAkr; // hkont
+            row1.getCell(11).value = Math.round(Math.abs(realisasi.amount)); // wrbtr - POSITIF untuk kode akun accrual
+            row1.getCell(11).numFmt = '0';
+            row1.getCell(12).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // sgtxt
+            row1.getCell(13).value = ''; // prctr
+            row1.getCell(14).value = ''; // kostl
+            row1.getCell(15).value = ''; // empty
+            row1.getCell(16).value = ''; // nplnr
+            row1.getCell(17).value = ''; // aufnr
+            row1.getCell(18).value = ''; // valut
+            row1.getCell(19).value = 'G'; // flag
+            
+            // Entry 2: DEBIT - Kode Akun Biaya (di bawah)
+            const row2 = worksheet.getRow(currentRow++);
+            row2.getCell(1).value = ''; // xblnr
+            row2.getCell(2).value = companyCode; // bukrs
+            row2.getCell(3).value = 'SA'; // blart
+            row2.getCell(4).value = docDate; // bldat
+            row2.getCell(5).value = docDate; // budat
+            row2.getCell(6).value = 'IDR'; // waers
+            row2.getCell(7).value = ''; // kursf
+            row2.getCell(8).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // bktxt
+            row2.getCell(9).value = ''; // zuonr
+            row2.getCell(10).value = realisasi.kdAkunBiaya || item.kdAkunBiaya; // hkont
+            row2.getCell(11).value = -Math.round(Math.abs(realisasi.amount)); // wrbtr - NEGATIF untuk kode akun biaya
+            row2.getCell(11).numFmt = '0';
+            row2.getCell(12).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // sgtxt
+            row2.getCell(13).value = ''; // prctr
+            row2.getCell(14).value = realisasi.costCenter || item.costCenter || ''; // kostl
+            row2.getCell(15).value = ''; // empty
+            row2.getCell(16).value = ''; // nplnr
+            row2.getCell(17).value = ''; // aufnr
+            row2.getCell(18).value = ''; // valut
+            row2.getCell(19).value = 'G'; // flag
+          });
+          
+          const buffer = await workbook.xlsx.writeBuffer();
+          const blob = new Blob([buffer], { 
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+          });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Jurnal_SAP_Realisasi_${companyCode}_${kodeAkun}_${new Date().toISOString().split('T')[0]}.xlsx`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        } else {
+          // Format TXT
+          const rows: string[][] = [];
+          
+          allRealisasi.forEach(({ item, realisasi }) => {
+            const realisasiDate = new Date(realisasi.tanggalRealisasi);
+            const docDate = `${realisasiDate.getFullYear()}${String(realisasiDate.getMonth() + 1).padStart(2, '0')}${String(realisasiDate.getDate()).padStart(2, '0')}`;
+            
+            // Entry 1: KREDIT - Kode Akun Accrual
+            rows.push([
+              '', companyCode, 'SA', docDate, docDate, 'IDR', '',
+              realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`, '', item.kdAkr,
+              Math.round(Math.abs(realisasi.amount)).toString(),
+              realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`, '', '', '', '', '', '', 'G'
+            ]);
+            
+            // Entry 2: DEBIT - Kode Akun Biaya
+            rows.push([
+              '', companyCode, 'SA', docDate, docDate, 'IDR', '',
+              realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`, '',
+              realisasi.kdAkunBiaya || item.kdAkunBiaya, (-Math.round(Math.abs(realisasi.amount))).toString(),
+              realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`, '',
+              realisasi.costCenter || item.costCenter || '', '', '', '', '', 'G'
+            ]);
+          });
+          
+          const txtContent = rows.map(row => row.join('\t')).join('\n');
+          const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `Jurnal_SAP_Realisasi_${companyCode}_${kodeAkun}_${new Date().toISOString().split('T')[0]}.txt`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+      }
+    } catch (error) {
+      console.error('Error generating jurnal SAP per kode akun:', error);
+      alert('Gagal membuat jurnal SAP per kode akun. Silakan coba lagi.');
+    }
+  };
+
+  // Download Jurnal SAP TXT per Periode
+  const handleDownloadJurnalSAPPerPeriodeTxt = (item: Accrual, periode: AccrualPeriode) => {
+    const companyCode = item.companyCode || '2000';
+    
+    if (!item.companyCode) {
+      alert('Company code tidak ditemukan untuk item ini');
+      return;
+    }
+    
+    // Parse tanggal from start date
+    const startDate = new Date(item.startDate);
+    const docDate = `${startDate.getFullYear()}${String(startDate.getMonth() + 1).padStart(2, '0')}${String(startDate.getDate()).padStart(2, '0')}`;
+    
+    // Build TXT content (tab-separated)
+    const rows: string[][] = [];
+    
+    // Entry 1: DEBIT - Kode Akun Biaya (positive amount)
+    rows.push([
+      '',
+      companyCode,
+      'SA',
+      docDate,
+      docDate,
+      'IDR',
+      '',
+      item.headerText || '',
+      '',
+      item.kdAkunBiaya,
+      Math.round(Math.abs(periode.amountAccrual)).toString(),
+      item.headerText || '',
+      '',
+      item.costCenter || '',
+      '',
+      '',
+      '',
+      '',
+      'G'
+    ]);
+    
+    // Entry 2: KREDIT - Kode Akun Accrual (negative amount)
+    rows.push([
+      '',
+      companyCode,
+      'SA',
+      docDate,
+      docDate,
+      'IDR',
+      '',
+      item.headerText || '',
+      '',
+      item.kdAkr,
+      (-Math.round(Math.abs(periode.amountAccrual))).toString(),
+      item.headerText || '',
+      '',
+      '', // Cost center kosong untuk akun accrual
+      '',
+      '',
+      '',
+      '',
+      'G'
+    ]);
+    
+    // Convert to TXT string (tab-separated)
+    const txtContent = rows.map(row => row.join('\t')).join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_${companyCode}_${item.noPo || item.id}_${periode.bulan.replace(' ', '_')}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Download Jurnal SAP TXT per Realisasi
+  const handleDownloadJurnalSAPPerRealisasiTxt = (realisasi: RealisasiData, item: Accrual) => {
+    const companyCode = item.companyCode || '2000';
+    
+    // Parse tanggal realisasi
+    const realisasiDate = new Date(realisasi.tanggalRealisasi);
+    const docDate = `${realisasiDate.getFullYear()}${String(realisasiDate.getMonth() + 1).padStart(2, '0')}${String(realisasiDate.getDate()).padStart(2, '0')}`;
+    
+    // Build TXT content (tab-separated)
+    const rows: string[][] = [];
+    
+    // Entry 1: DEBIT - Kode Akun Biaya (negative amount untuk realisasi)
+    rows.push([
+      '',
+      companyCode,
+      'SA',
+      docDate,
+      docDate,
+      'IDR',
+      '',
+      realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`,
+      '',
+      realisasi.kdAkunBiaya || item.kdAkunBiaya,
+      (-Math.round(Math.abs(realisasi.amount))).toString(),
+      realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`,
+      '',
+      realisasi.costCenter || item.costCenter || '',
+      '',
+      '',
+      '',
+      '',
+      'G'
+    ]);
+    
+    // Entry 2: KREDIT - Kode Akun Accrual (positive amount sebagai balancing)
+    rows.push([
+      '',
+      companyCode,
+      'SA',
+      docDate,
+      docDate,
+      'IDR',
+      '',
+      realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`,
+      '',
+      item.kdAkr,
+      Math.round(Math.abs(realisasi.amount)).toString(),
+      realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`,
+      '',
+      '', // Cost center kosong untuk akun accrual
+      '',
+      '',
+      '',
+      '',
+      'G'
+    ]);
+    
+    // Convert to TXT string (tab-separated)
+    const txtContent = rows.map(row => row.join('\t')).join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Jurnal_SAP_Realisasi_${companyCode}_${realisasi.id}_${new Date(realisasi.tanggalRealisasi).toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Download Jurnal SAP per Periode
   const handleDownloadJurnalSAPPerPeriode = async (item: Accrual, periode: AccrualPeriode) => {
     try {
@@ -794,7 +1296,7 @@ export default function MonitoringAccrualPage() {
       row1.getCell(16).value = ''; // nplnr
       row1.getCell(17).value = ''; // aufnr
       row1.getCell(18).value = ''; // valut
-      row1.getCell(19).value = ''; // flag
+      row1.getCell(19).value = 'G'; // flag
       
       // Entry 2: CREDIT - Kode Akun Accrual
       const row2 = worksheet.getRow(4);
@@ -810,7 +1312,7 @@ export default function MonitoringAccrualPage() {
       row2.getCell(8).value = item.headerText || ''; // bktxt
       row2.getCell(9).value = ''; // zuonr
       row2.getCell(10).value = item.kdAkr; // hkont
-      row2.getCell(11).value = Math.round(Math.abs(periode.amountAccrual)); // wrbtr
+      row2.getCell(11).value = -Math.round(Math.abs(periode.amountAccrual)); // wrbtr - NEGATIF untuk kode akun accrual
       row2.getCell(11).numFmt = '0';
       row2.getCell(12).value = item.headerText || ''; // sgtxt
       row2.getCell(13).value = ''; // prctr
@@ -819,7 +1321,7 @@ export default function MonitoringAccrualPage() {
       row2.getCell(16).value = ''; // nplnr
       row2.getCell(17).value = ''; // aufnr
       row2.getCell(18).value = ''; // valut
-      row2.getCell(19).value = ''; // flag
+      row2.getCell(19).value = 'G'; // flag
       
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { 
@@ -905,7 +1407,7 @@ export default function MonitoringAccrualPage() {
       row1.getCell(8).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // bktxt
       row1.getCell(9).value = ''; // zuonr
       row1.getCell(10).value = realisasi.kdAkunBiaya || item.kdAkunBiaya; // hkont
-      row1.getCell(11).value = Math.round(Math.abs(realisasi.amount)); // wrbtr
+      row1.getCell(11).value = -Math.round(Math.abs(realisasi.amount)); // wrbtr - NEGATIF untuk kode akun biaya
       row1.getCell(11).numFmt = '0';
       row1.getCell(12).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // sgtxt
       row1.getCell(13).value = ''; // prctr
@@ -914,7 +1416,7 @@ export default function MonitoringAccrualPage() {
       row1.getCell(16).value = ''; // nplnr
       row1.getCell(17).value = ''; // aufnr
       row1.getCell(18).value = ''; // valut
-      row1.getCell(19).value = ''; // flag
+      row1.getCell(19).value = 'G'; // flag
       
       // Entry 2: CREDIT - Kode Akun Accrual
       const row2 = worksheet.getRow(4);
@@ -930,7 +1432,7 @@ export default function MonitoringAccrualPage() {
       row2.getCell(8).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // bktxt
       row2.getCell(9).value = ''; // zuonr
       row2.getCell(10).value = item.kdAkr; // hkont
-      row2.getCell(11).value = Math.round(Math.abs(realisasi.amount)); // wrbtr
+      row2.getCell(11).value = Math.round(Math.abs(realisasi.amount)); // wrbtr - POSITIF untuk kode akun accrual
       row2.getCell(11).numFmt = '0';
       row2.getCell(12).value = realisasi.keterangan || `Realisasi ${realisasi.tanggalRealisasi}`; // sgtxt
       row2.getCell(13).value = ''; // prctr
@@ -939,7 +1441,7 @@ export default function MonitoringAccrualPage() {
       row2.getCell(16).value = ''; // nplnr
       row2.getCell(17).value = ''; // aufnr
       row2.getCell(18).value = ''; // valut
-      row2.getCell(19).value = ''; // flag
+      row2.getCell(19).value = 'G'; // flag
       
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { 
@@ -1162,7 +1664,7 @@ export default function MonitoringAccrualPage() {
       row2.getCell(8).value = item.headerText || '';
       row2.getCell(9).value = '';
       row2.getCell(10).value = item.kdAkunBiaya; // hkont = kode akun biaya
-      row2.getCell(11).value = amountRounded;
+      row2.getCell(11).value = -amountRounded; // wrbtr - NEGATIF untuk kode akun biaya
       row2.getCell(11).numFmt = '0';
       row2.getCell(12).value = item.headerText || '';
       row2.getCell(13).value = '';
@@ -2214,10 +2716,123 @@ export default function MonitoringAccrualPage() {
                             {formatCurrency(totalSaldoKodeAkun)}
                           </td>
                           <td className="px-4 py-3 bg-blue-50"></td>
-                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50">
+                            <div className="flex items-center justify-center gap-1">
+                              <div className="relative">
+                                <button
+                                  onClick={() => {
+                                    setOpenKodeAkunDropdown(openKodeAkunDropdown === kodeAkun ? null : kodeAkun);
+                                  }}
+                                  className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors flex items-center gap-1"
+                                  title="Download Jurnal SAP Kode Akun"
+                                >
+                                  <Download size={12} />
+                                  <ChevronDown size={10} />
+                                </button>
+                                {openKodeAkunDropdown === kodeAkun && (
+                                  <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                                    <div className="p-2 space-y-1">
+                                      <div className="text-xs font-semibold text-gray-700 mb-2">Pilih Jenis:</div>
+                                      
+                                      <div className="space-y-1">
+                                        <div className="text-xs font-medium text-gray-600">Accrual:</div>
+                                        <div className="flex gap-1">
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'excel', '2000', 'accrual');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            Excel 2000
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'excel', '7000', 'accrual');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            Excel 7000
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'txt', '2000', 'accrual');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            TXT 2000
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'txt', '7000', 'accrual');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            TXT 7000
+                                          </button>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="space-y-1 pt-2 border-t border-gray-200">
+                                        <div className="text-xs font-medium text-gray-600">Realisasi:</div>
+                                        <div className="flex gap-1">
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'excel', '2000', 'realisasi');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            Excel 2000
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'excel', '7000', 'realisasi');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-green-500 hover:bg-green-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            Excel 7000
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'txt', '2000', 'realisasi');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            TXT 2000
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              const allItems = Object.values(vendorGroups).flat();
+                                              handleDownloadJurnalSAPPerKodeAkun(kodeAkun, allItems, 'txt', '7000', 'realisasi');
+                                              setOpenKodeAkunDropdown(null);
+                                            }}
+                                            className="text-xs bg-gray-500 hover:bg-gray-600 text-white px-2 py-1 rounded transition-colors"
+                                          >
+                                            TXT 7000
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
                         </tr>
 
-                        {/* Vendor Groups */}
                         {isKodeAkunExpanded && Object.entries(vendorGroups).map(([vendor, items]) => {
                           const vendorKey = `${kodeAkun}-${vendor}`;
                           const isVendorExpanded = expandedVendor.has(vendorKey);
@@ -2240,7 +2855,6 @@ export default function MonitoringAccrualPage() {
 
                           return (
                             <React.Fragment key={vendorKey}>
-                              {/* Vendor Group Header */}
                               <tr className="bg-green-50 font-semibold">
                                 {canEdit && <td className="px-2 py-3 bg-green-50" />}
                                 <td className="px-4 py-3 text-center bg-green-50">
@@ -2267,7 +2881,6 @@ export default function MonitoringAccrualPage() {
                                 </td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
-                                <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalSaldoAwalVendor)}
                                 </td>
@@ -2284,7 +2897,6 @@ export default function MonitoringAccrualPage() {
                                 <td className="px-4 py-3 bg-green-50"></td>
                               </tr>
 
-                              {/* Klasifikasi Items */}
                               {isVendorExpanded && items.map((item) => {
                           const isExpanded = expandedRows.has(item.id);
                           return (
@@ -2461,13 +3073,44 @@ export default function MonitoringAccrualPage() {
                                         </td>
                                         <td className="px-3 py-2 text-center bg-white">
                                           <div className="flex items-center justify-center gap-1">
-                                            <button
-                                              onClick={() => handleDownloadJurnalSAPPerPeriode(item, periode)}
-                                              className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors"
-                                              title="Download Jurnal SAP Periode"
-                                            >
-                                              <Download size={12} />
-                                            </button>
+                                            <div className="relative">
+                                              <button
+                                                onClick={() => {
+                                                  const dropdown = document.getElementById(`jurnal-dropdown-${item.id}-${periode.id}`);
+                                                  if (dropdown) {
+                                                    dropdown.classList.toggle('hidden');
+                                                  }
+                                                }}
+                                                className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors flex items-center gap-1"
+                                                title="Download Jurnal SAP Periode"
+                                              >
+                                                <Download size={12} />
+                                                <ChevronDown size={10} />
+                                              </button>
+                                              <div
+                                                id={`jurnal-dropdown-${item.id}-${periode.id}`}
+                                                className="hidden absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-10"
+                                              >
+                                                <button
+                                                  onClick={() => {
+                                                    handleDownloadJurnalSAPPerPeriode(item, periode);
+                                                    document.getElementById(`jurnal-dropdown-${item.id}-${periode.id}`)?.classList.add('hidden');
+                                                  }}
+                                                  className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+                                                >
+                                                  Download Excel
+                                                </button>
+                                                <button
+                                                  onClick={() => {
+                                                    handleDownloadJurnalSAPPerPeriodeTxt(item, periode);
+                                                    document.getElementById(`jurnal-dropdown-${item.id}-${periode.id}`)?.classList.add('hidden');
+                                                  }}
+                                                  className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+                                                >
+                                                  Download TXT
+                                                </button>
+                                              </div>
+                                            </div>
                                             <button
                                               onClick={() => handleOpenRealisasiModal(periode, false)}
                                               className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded transition-colors"
@@ -3081,13 +3724,44 @@ export default function MonitoringAccrualPage() {
                             {!realisasiViewOnly && (
                               <td className="px-4 py-3 text-center">
                                 <div className="flex items-center justify-center gap-2">
-                                  <button
-                                    onClick={() => handleDownloadJurnalSAPPerRealisasi(realisasi, currentAccrualItem!)}
-                                    className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors"
-                                    title="Download Jurnal SAP Realisasi"
-                                  >
-                                    <Download size={12} />
-                                  </button>
+                                  <div className="relative">
+                                    <button
+                                      onClick={() => {
+                                        const dropdown = document.getElementById(`jurnal-realisasi-dropdown-${realisasi.id}`);
+                                        if (dropdown) {
+                                          dropdown.classList.toggle('hidden');
+                                        }
+                                      }}
+                                      className="text-xs bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded transition-colors flex items-center gap-1"
+                                      title="Download Jurnal SAP Realisasi"
+                                    >
+                                      <Download size={12} />
+                                      <ChevronDown size={10} />
+                                    </button>
+                                    <div
+                                      id={`jurnal-realisasi-dropdown-${realisasi.id}`}
+                                      className="hidden absolute right-0 mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-10"
+                                    >
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPPerRealisasi(realisasi, currentAccrualItem!);
+                                          document.getElementById(`jurnal-realisasi-dropdown-${realisasi.id}`)?.classList.add('hidden');
+                                        }}
+                                        className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+                                      >
+                                        Download Excel
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          handleDownloadJurnalSAPPerRealisasiTxt(realisasi, currentAccrualItem!);
+                                          document.getElementById(`jurnal-realisasi-dropdown-${realisasi.id}`)?.classList.add('hidden');
+                                        }}
+                                        className="block w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-green-50 transition-colors"
+                                      >
+                                        Download TXT
+                                      </button>
+                                    </div>
+                                  </div>
                                   <button
                                     onClick={() => {
                                       setEditingRealisasiId(realisasi.id);
