@@ -39,6 +39,7 @@ interface AccrualPeriode {
   amountAccrual: number;
   totalRealisasi?: number;
   saldo?: number;
+  realisasis?: RealisasiData[];
 }
 
 interface Accrual {
