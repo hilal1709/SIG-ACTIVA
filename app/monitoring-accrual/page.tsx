@@ -303,6 +303,16 @@ export default function MonitoringAccrualPage() {
     return total;
   }, []);
 
+  // Helper function to calculate actual realisasi (sum of all realisasi amounts without rollover)
+  const calculateActualRealisasi = useCallback((item: Accrual) => {
+    if (!item.periodes || item.periodes.length === 0) return 0;
+    
+    return item.periodes.reduce((total, periode) => {
+      // Sum all realisasi amounts from the database (already positive)
+      return total + (periode.totalRealisasi || 0);
+    }, 0);
+  }, []);
+
   // Fetch accrual data
   useEffect(() => {
     fetchAccrualData();
@@ -375,7 +385,7 @@ export default function MonitoringAccrualPage() {
     const cache = new Map<number, { accrual: number; realisasi: number; saldoAwal: number }>();
     filteredData.forEach(item => {
       const accrual = calculateItemAccrual(item);
-      const realisasi = calculateItemRealisasi(item);
+      const realisasi = calculateActualRealisasi(item);
       const saldoAwal = getSaldoAwal(item);
       cache.set(item.id, {
         accrual,
@@ -384,7 +394,7 @@ export default function MonitoringAccrualPage() {
       });
     });
     return cache;
-  }, [filteredData, calculateItemAccrual, calculateItemRealisasi]);
+  }, [filteredData, calculateItemAccrual, calculateActualRealisasi]);
 
   // Calculate total saldo for metric card (saldo awal + total accrual - total realisasi)
   const totalSaldo = useMemo(() => {
@@ -2345,10 +2355,10 @@ export default function MonitoringAccrualPage() {
                             {formatCurrency(calculateItemAccrual(item))}
                           </td>
                           <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
-                            {formatCurrency(calculateItemRealisasi(item))}
+                            {formatCurrency(calculateActualRealisasi(item))}
                           </td>
                           <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
-                            {formatCurrency(calculateItemSaldo(item, calculateItemAccrual(item), calculateItemRealisasi(item)))}
+                            {formatCurrency(calculateItemSaldo(item, calculateItemAccrual(item), calculateActualRealisasi(item)))}
                           </td>
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
