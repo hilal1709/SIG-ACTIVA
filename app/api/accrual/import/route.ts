@@ -75,12 +75,12 @@ export async function POST(request: NextRequest) {
           });
 
           if (existingAccrual) {
-            // Nilai amount/accrual/saldo mengikuti file (positif/negatif tidak diubah)
-            const totalAmount = excelAccrual.totalAmount ?? excelAccrual.saldo;
+            // Saldo awal dari import (saldo akhir/outstanding), fixed; totalAmount tidak di-overwrite dari file
+            const saldoAwal = excelAccrual.saldo ?? excelAccrual.totalAmount ?? 0;
             const updatedAccrual = await prisma.accrual.update({
               where: { id: existingAccrual.id },
               data: {
-                totalAmount,
+                saldoAwal,
                 ...(excelAccrual.vendor !== undefined && { vendor: excelAccrual.vendor ?? '-' }),
                 ...(excelAccrual.deskripsi != null && { deskripsi: excelAccrual.deskripsi }),
                 ...(excelAccrual.kdAkunBiaya != null && { kdAkunBiaya: excelAccrual.kdAkunBiaya }),
@@ -91,14 +91,7 @@ export async function POST(request: NextRequest) {
               include: { periodes: true },
             });
 
-            if (updatedAccrual.periodes.length > 0) {
-              const amountPerPeriode = totalAmount / updatedAccrual.periodes.length;
-              await prisma.accrualPeriode.updateMany({
-                where: { accrualId: existingAccrual.id },
-                data: { amountAccrual: amountPerPeriode },
-              });
-            }
-
+            // Periode tidak diubah pada update agar realisasi tetap; hanya saldoAwal yang di-update
             updatedCount++;
             return {
               kdAkr: excelAccrual.kdAkr,
@@ -110,8 +103,11 @@ export async function POST(request: NextRequest) {
               id: existingAccrual.id,
             };
           } else {
-            // Nilai amount/accrual/saldo mengikuti file (positif/negatif tidak diubah)
-            const totalAmount = excelAccrual.totalAmount ?? excelAccrual.saldo;
+            // Import baru: saldo awal = saldo akhir/outstanding dari file (fixed); periode dimulai Januari, total accrual awal 0
+            const saldoAwal = excelAccrual.saldo ?? excelAccrual.totalAmount ?? 0;
+            const tahun = new Date().getFullYear();
+            const startDate = new Date(tahun, 0, 1); // 1 Januari
+            const bulanNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
             const newAccrual = await prisma.accrual.create({
               data: {
                 kdAkr: excelAccrual.kdAkr,
@@ -121,19 +117,20 @@ export async function POST(request: NextRequest) {
                   excelAccrual.deskripsi ??
                   `Imported from Excel - ${excelAccrual.kdAkr}${excelAccrual.klasifikasi ? ` (${excelAccrual.klasifikasi})` : ''}`,
                 klasifikasi: excelAccrual.klasifikasi ?? null,
-                totalAmount,
+                totalAmount: 0,
+                saldoAwal,
                 noPo: excelAccrual.noPo ?? null,
                 alokasi: excelAccrual.alokasi ?? null,
-                startDate: new Date(),
-                jumlahPeriode: 1,
+                startDate,
+                jumlahPeriode: 12,
                 pembagianType: 'otomatis',
                 periodes: {
-                  create: {
-                    periodeKe: 1,
-                    bulan: `${new Date().toLocaleDateString('id-ID', { month: 'short' })} ${new Date().getFullYear()}`,
-                    tahun: new Date().getFullYear(),
-                    amountAccrual: excelAccrual.saldo,
-                  },
+                  create: bulanNames.map((bulan, i) => ({
+                    periodeKe: i + 1,
+                    bulan: `${bulan} ${tahun}`,
+                    tahun,
+                    amountAccrual: 0,
+                  })),
                 },
               },
               include: { periodes: true },

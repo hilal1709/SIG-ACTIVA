@@ -43,8 +43,10 @@ export async function GET(req: NextRequest) {
           vendor: true,
           klasifikasi: true,
           totalAmount: true,
+          saldoAwal: true,
           periodes: {
             select: {
+              amountAccrual: true,
               realisasis: {
                 select: {
                   amount: true,
@@ -146,12 +148,14 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Calculate accrual totals and status
-    const accrualWithCalculations = accrualData.map((accrual) => {
-      const totalRealized = accrual.periodes.reduce((sum: number, periode) => {
-        return sum + periode.realisasis.reduce((rSum: number, realisasi) => rSum + realisasi.amount, 0);
+    // Calculate accrual totals and status: saldo = saldo awal + total accrual - realisasi
+    const accrualWithCalculations = accrualData.map((accrual: any) => {
+      const totalAccrualItem = accrual.periodes?.reduce((sum: number, p: any) => sum + Math.abs(p.amountAccrual || 0), 0) || 0;
+      const totalRealized = accrual.periodes.reduce((sum: number, periode: any) => {
+        return sum + periode.realisasis.reduce((rSum: number, realisasi: any) => rSum + Math.abs(realisasi.amount), 0);
       }, 0);
-      const remaining = accrual.totalAmount - totalRealized;
+      const saldoAwal = accrual.saldoAwal != null ? Number(accrual.saldoAwal) : Math.abs(accrual.totalAmount || 0);
+      const remaining = saldoAwal + totalAccrualItem - totalRealized;
       return {
         ...accrual,
         totalRealized,
@@ -160,22 +164,24 @@ export async function GET(req: NextRequest) {
     });
 
     const accrualStatus = {
-      active: accrualWithCalculations.filter((a) => a.remaining > 0).length,
-      cleared: accrualWithCalculations.filter((a) => a.remaining === 0).length,
-      pending: accrualWithCalculations.filter((a) => a.remaining > a.totalAmount * 0.5).length,
+      active: accrualWithCalculations.filter((a: any) => a.remaining > 0).length,
+      cleared: accrualWithCalculations.filter((a: any) => a.remaining === 0).length,
+      pending: accrualWithCalculations.filter((a: any) => a.remaining > (a.saldoAwal ?? a.totalAmount ?? 0) * 0.5).length,
     };
 
-    const totalAccrual = accrualData.reduce((sum: number, item) => sum + (item.totalAmount || 0), 0);
-    const totalRealized = accrualWithCalculations.reduce((sum: number, item) => sum + item.totalRealized, 0);
-    const totalAccrualRemaining = totalAccrual - totalRealized;
+    const totalAccrual = accrualData.reduce((sum: number, item: any) => {
+      return sum + (item.periodes?.reduce((s: number, p: any) => s + Math.abs(p.amountAccrual || 0), 0) || 0);
+    }, 0);
+    const totalRealized = accrualWithCalculations.reduce((sum: number, item: any) => sum + item.totalRealized, 0);
+    const totalAccrualRemaining = accrualWithCalculations.reduce((sum: number, item: any) => sum + item.remaining, 0);
 
-    // Accrual by Vendor
-    const accrualByVendor = accrualData.reduce((acc: Record<string, number>, item) => {
+    // Accrual by Vendor (saldo per item)
+    const accrualByVendor = accrualWithCalculations.reduce((acc: Record<string, number>, item: any) => {
       const vendor = item.vendor || 'Unknown';
       if (!acc[vendor]) {
         acc[vendor] = 0;
       }
-      acc[vendor] += item.totalAmount || 0;
+      acc[vendor] += item.remaining ?? 0;
       return acc;
     }, {});
 
@@ -187,13 +193,13 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Accrual by Klasifikasi
-    const accrualByKlasifikasi = accrualData.reduce((acc: Record<string, number>, item) => {
+    // Accrual by Klasifikasi (saldo per item)
+    const accrualByKlasifikasi = accrualWithCalculations.reduce((acc: Record<string, number>, item: any) => {
       const klasifikasi = item.klasifikasi || 'Tidak ada klasifikasi';
       if (!acc[klasifikasi]) {
         acc[klasifikasi] = 0;
       }
-      acc[klasifikasi] += item.totalAmount || 0;
+      acc[klasifikasi] += item.remaining ?? 0;
       return acc;
     }, {});
 

@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
         headerText: true,
         klasifikasi: true,
         totalAmount: true,
+        saldoAwal: true,
         costCenter: true,
         startDate: true,
         jumlahPeriode: true,
@@ -132,7 +133,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { 
       companyCode, noPo, kdAkr, alokasi, kdAkunBiaya, vendor, deskripsi, headerText, klasifikasi,
-      totalAmount, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
+      totalAmount, saldoAwal, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
     } = body;
 
     // Validate required fields (totalAmount boleh 0 untuk tipe manual)
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Create accrual with periodes (totalAmount & amountAccrual disimpan positif; realisasi positif; saldo = accrual - realisasi)
+    // Create accrual with periodes (totalAmount & amountAccrual disimpan positif; realisasi positif; saldo = saldoAwal + totalAccrual - realisasi)
     const accrual = await prisma.accrual.create({
       data: {
         companyCode: companyCode || null,
@@ -190,6 +191,7 @@ export async function POST(request: NextRequest) {
         headerText: headerText || null,
         klasifikasi: klasifikasi || null,
         totalAmount: Math.abs(parseFloat(totalAmount)),
+        saldoAwal: saldoAwal != null && saldoAwal !== '' ? parseFloat(saldoAwal) : null,
         costCenter: costCenter || null,
         startDate: new Date(startDate),
         jumlahPeriode: parseInt(jumlahPeriode),
@@ -280,7 +282,7 @@ export async function PATCH(request: NextRequest) {
 
     const { 
       companyCode, noPo, kdAkr, alokasi, kdAkunBiaya, vendor, deskripsi, headerText, klasifikasi,
-      totalAmount, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
+      totalAmount, saldoAwal, costCenter, startDate, jumlahPeriode, pembagianType, periodeAmounts 
     } = body;
 
     // Validate required fields (totalAmount boleh 0 untuk tipe manual)
@@ -330,6 +332,7 @@ export async function PATCH(request: NextRequest) {
         headerText: headerText || null,
         klasifikasi: klasifikasi || null,
         totalAmount: Math.abs(parseFloat(totalAmount)),
+        ...(saldoAwal != null && saldoAwal !== '' && { saldoAwal: parseFloat(saldoAwal) }),
         costCenter: costCenter || null,
         startDate: new Date(startDate),
         jumlahPeriode: newJumlahPeriode,

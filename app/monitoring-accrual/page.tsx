@@ -53,6 +53,7 @@ interface Accrual {
   headerText?: string;
   klasifikasi?: string;
   totalAmount: number;
+  saldoAwal?: number | null;
   costCenter?: string;
   startDate: string;
   jumlahPeriode: number;
@@ -71,11 +72,12 @@ interface AccrualFormData {
   headerText: string;
   klasifikasi: string;
   totalAmount: string;
+  saldoAwal: string;
   costCenter: string;
   startDate: string;
   jumlahPeriode: string;
   pembagianType: string;
-  periodeAmounts: string[]; // For manual input
+  periodeAmounts: string[];
 }
 
 interface RealisasiFormData {
@@ -91,54 +93,60 @@ interface RealisasiData {
   keterangan?: string;
 }
 
-// Standalone helper function to calculate accrual (can be used outside React component)
+// Saldo awal: nilai tetap dari import (saldo akhir/outstanding). Tidak ada logika periode — tidak berubah saat periode berganti.
+function getSaldoAwal(item: Accrual): number {
+  if (item.saldoAwal != null && item.saldoAwal !== undefined) return Number(item.saldoAwal);
+  return Math.abs(item.totalAmount ?? 0);
+}
+
+// Saldo = saldo awal + total accrual - realisasi
+function calculateItemSaldo(item: Accrual, totalAccrual: number, totalRealisasi: number): number {
+  const saldoAwal = getSaldoAwal(item);
+  return saldoAwal + totalAccrual - totalRealisasi;
+}
+
+// Total Accrual: logika lama — hanya periode yang sudah jatuh tempo ATAU yang punya realisasi efektif (dengan rollover) yang diakui
 function calculateAccrualAmount(item: Accrual): number {
   if (!item.periodes || item.periodes.length === 0) return 0;
-  
+
   if (item.pembagianType === 'manual') {
     return item.periodes.reduce((sum, p) => sum + Math.abs(p.amountAccrual), 0);
   }
-  
+
   const today = new Date();
   const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const bulanMap: Record<string, number> = {
     'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'Mei': 4, 'Jun': 5,
     'Jul': 6, 'Agu': 7, 'Sep': 8, 'Okt': 9, 'Nov': 10, 'Des': 11
   };
-  
+
   let totalAccrual = 0;
-  let rollover = 0; // Track rollover to calculate effective realisasi
-  
+  let rollover = 0;
+
   for (let i = 0; i < item.periodes.length; i++) {
     const p = item.periodes[i];
     const [bulanName, tahunStr] = p.bulan.split(' ');
     const periodeBulan = bulanMap[bulanName];
     const periodeTahun = parseInt(tahunStr);
     const periodeDateOnly = new Date(periodeTahun, periodeBulan, 1);
-    
-    // Calculate effective realisasi with rollover (amountAccrual positif)
+
     const realisasiPeriode = p.totalRealisasi ?? 0;
     const totalAvailable = realisasiPeriode + rollover;
     const capAccrual = Math.abs(p.amountAccrual);
     const effectiveRealisasi = Math.min(totalAvailable, capAccrual);
     const newRollover = Math.max(0, totalAvailable - capAccrual);
-    
+
     const isPeriodDue = todayDate >= periodeDateOnly;
-    
-    // Recognize accrual ONLY if:
-    // 1. Period is due (date has passed), OR
-    // 2. There is effective realisasi in this period (from direct input or rollover)
     const hasEffectiveRealisasi = effectiveRealisasi > 0;
     const shouldRecognize = isPeriodDue || hasEffectiveRealisasi;
-    
+
     if (shouldRecognize) {
       totalAccrual += Math.abs(p.amountAccrual);
     }
-    
-    // Update rollover for next iteration
+
     rollover = newRollover;
   }
-  
+
   return totalAccrual;
 }
 
@@ -169,6 +177,7 @@ export default function MonitoringAccrualPage() {
     headerText: '',
     klasifikasi: '',
     totalAmount: '',
+    saldoAwal: '',
     costCenter: '',
     startDate: '',
     jumlahPeriode: '12',
@@ -381,11 +390,15 @@ export default function MonitoringAccrualPage() {
 
   // Pre-calculate totals untuk setiap item (cache untuk performa)
   const itemTotalsCache = useMemo(() => {
-    const cache = new Map<number, { accrual: number; realisasi: number }>();
+    const cache = new Map<number, { accrual: number; realisasi: number; saldoAwal: number }>();
     filteredData.forEach(item => {
+      const accrual = calculateItemAccrual(item);
+      const realisasi = calculateItemRealisasi(item);
+      const saldoAwal = getSaldoAwal(item);
       cache.set(item.id, {
-        accrual: calculateItemAccrual(item),
-        realisasi: calculateItemRealisasi(item)
+        accrual,
+        realisasi,
+        saldoAwal,
       });
     });
     return cache;
@@ -445,10 +458,10 @@ export default function MonitoringAccrualPage() {
     Object.entries(groupedByKodeAkun).forEach(([kodeAkun, vendorGroups]) => {
       Object.entries(vendorGroups).forEach(([vendor, items]) => {
         items.forEach((item) => {
-          // Calculate total outstanding for this item using the standalone helper function
+          // Saldo = saldo awal + total accrual - realisasi (outstanding)
           const totalAccrual = calculateAccrualAmount(item);
-          const totalRealisasi = item.periodes?.reduce((sum, p) => sum + (p.totalRealisasi || 0), 0) || 0;
-          const totalOutstanding = totalAccrual - totalRealisasi; // accrual dikurangi realisasi (semua positif)
+          const totalRealisasi = calculateItemRealisasi(item);
+          const totalOutstanding = calculateItemSaldo(item, totalAccrual, totalRealisasi);
           
           const row = worksheet.getRow(currentRow);
           
@@ -573,10 +586,10 @@ export default function MonitoringAccrualPage() {
           const glAccount = item.kdAkr; // Using kode akun accrual
           const vendorName = item.vendor;
           
-          // Calculate saldo same as display table: Total Accrual dikurangi Total Realisasi (semua positif)
+          // Saldo = saldo awal + total accrual - realisasi
           const totalAccrual = calculateAccrualAmount(item);
           const totalRealisasi = calculateItemRealisasi(item);
-          const totalSaldo = totalAccrual - totalRealisasi;
+          const totalSaldo = calculateItemSaldo(item, totalAccrual, totalRealisasi);
           
           // Group by GL Account and Vendor
           if (!summaryData[glAccount]) {
@@ -1222,6 +1235,7 @@ export default function MonitoringAccrualPage() {
       headerText: item.headerText || '',
       klasifikasi: item.klasifikasi || '',
       totalAmount: Math.abs(item.totalAmount).toString(),
+      saldoAwal: item.saldoAwal != null ? String(item.saldoAwal) : '',
       costCenter: item.costCenter || '',
       startDate: item.startDate.split('T')[0],
       jumlahPeriode: item.jumlahPeriode.toString(),
@@ -1288,11 +1302,13 @@ export default function MonitoringAccrualPage() {
       const method = isEditing ? 'PUT' : 'POST';
       // Manual: tambah = user isi Amount saja, periode 0; edit = kirim nilai periode yang sudah ada
       const totalAmountToSend = parseFloat(formData.totalAmount) || 0;
-      const periodeCount = parseInt(formData.jumlahPeriode) || 1;
+      const saldoAwalToSend = formData.saldoAwal.trim() !== '' ? parseFloat(formData.saldoAwal) : null;
+      const periodeCount = Math.max(1, parseInt(formData.jumlahPeriode) || 12);
       const periodeAmountsToSend = formData.pembagianType === 'manual'
         ? (isEditing && formData.periodeAmounts?.length ? formData.periodeAmounts : Array(periodeCount).fill('0'))
         : null;
-      
+      const startDateToSend = formData.startDate || new Date().toISOString().split('T')[0];
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -1301,17 +1317,18 @@ export default function MonitoringAccrualPage() {
         body: JSON.stringify({
           companyCode: formData.companyCode || null,
           noPo: formData.noPo || null,
-          kdAkr: formData.kdAkr,
+          kdAkr: formData.kdAkr || '-',
           alokasi: formData.assignment || null,
-          kdAkunBiaya: formData.kdAkunBiaya,
-          vendor: formData.vendor,
-          deskripsi: formData.deskripsi,
+          kdAkunBiaya: formData.kdAkunBiaya || '-',
+          vendor: formData.vendor || '-',
+          deskripsi: formData.deskripsi || '-',
           headerText: formData.headerText || null,
-          klasifikasi: formData.klasifikasi,
+          klasifikasi: formData.klasifikasi || null,
           totalAmount: totalAmountToSend,
+          saldoAwal: saldoAwalToSend,
           costCenter: formData.costCenter || null,
-          startDate: formData.startDate,
-          jumlahPeriode: parseInt(formData.jumlahPeriode),
+          startDate: startDateToSend,
+          jumlahPeriode: periodeCount,
           pembagianType: formData.pembagianType,
           periodeAmounts: periodeAmountsToSend,
         }),
@@ -1337,6 +1354,7 @@ export default function MonitoringAccrualPage() {
         headerText: '',
         klasifikasi: '',
         totalAmount: '',
+        saldoAwal: '',
         costCenter: '',
         startDate: '',
         jumlahPeriode: '12',
@@ -2133,6 +2151,9 @@ export default function MonitoringAccrualPage() {
                       Periode
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
+                      Saldo Awal
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Total Accrual
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
@@ -2151,8 +2172,12 @@ export default function MonitoringAccrualPage() {
                     const isKodeAkunExpanded = expandedKodeAkun.has(kodeAkun);
                     const allItems = Object.values(vendorGroups).flat();
                     
-                    // Calculate totals using cache untuk performa lebih baik
+                    // Calculate totals using cache untuk performa lebih baik; saldo = saldo awal + total accrual - realisasi
                     const totalAmountKodeAkun = allItems.reduce((sum, item) => sum + Math.abs(item.totalAmount || 0), 0);
+                    const totalSaldoAwalKodeAkun = allItems.reduce((sum, item) => {
+                      const cached = itemTotalsCache.get(item.id);
+                      return sum + (cached?.saldoAwal ?? getSaldoAwal(item));
+                    }, 0);
                     const totalAccrualKodeAkun = allItems.reduce((sum, item) => {
                       const cached = itemTotalsCache.get(item.id);
                       return sum + (cached?.accrual || 0);
@@ -2161,7 +2186,7 @@ export default function MonitoringAccrualPage() {
                       const cached = itemTotalsCache.get(item.id);
                       return sum + (cached?.realisasi || 0);
                     }, 0);
-                    const totalSaldoKodeAkun = totalAccrualKodeAkun - totalRealisasiKodeAkun; // accrual dikurangi realisasi (semua positif)
+                    const totalSaldoKodeAkun = totalSaldoAwalKodeAkun + totalAccrualKodeAkun - totalRealisasiKodeAkun;
 
                     return (
                       <React.Fragment key={kodeAkun}>
@@ -2194,6 +2219,9 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalSaldoAwalKodeAkun)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalAccrualKodeAkun)}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
@@ -2221,7 +2249,11 @@ export default function MonitoringAccrualPage() {
                             const cached = itemTotalsCache.get(item.id);
                             return sum + (cached?.realisasi || 0);
                           }, 0);
-                          const totalSaldoVendor = totalAccrualVendor - totalRealisasiVendor; // accrual dikurangi realisasi (semua positif)
+                          const totalSaldoAwalVendor = items.reduce((sum, item) => {
+                            const cached = itemTotalsCache.get(item.id);
+                            return sum + (cached?.saldoAwal ?? getSaldoAwal(item));
+                          }, 0);
+                          const totalSaldoVendor = totalSaldoAwalVendor + totalAccrualVendor - totalRealisasiVendor;
 
                           return (
                             <React.Fragment key={vendorKey}>
@@ -2253,6 +2285,9 @@ export default function MonitoringAccrualPage() {
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalSaldoAwalVendor)}
+                                </td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalAccrualVendor)}
                                 </td>
@@ -2330,18 +2365,16 @@ export default function MonitoringAccrualPage() {
                             {item.jumlahPeriode} bulan
                           </td>
                           <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
+                            {formatCurrency(getSaldoAwal(item))}
+                          </td>
+                          <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
                             {formatCurrency(calculateItemAccrual(item))}
                           </td>
                           <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
                             {formatCurrency(calculateItemRealisasi(item))}
                           </td>
                           <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
-                            {(() => {
-                              const totalAccrual = calculateItemAccrual(item);
-                              const totalRealisasi = calculateItemRealisasi(item);
-                              const saldo = totalAccrual - totalRealisasi; // accrual dikurangi realisasi (semua positif)
-                              return formatCurrency(saldo);
-                            })()}
+                            {formatCurrency(calculateItemSaldo(item, calculateItemAccrual(item), calculateItemRealisasi(item)))}
                           </td>
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
@@ -2394,7 +2427,7 @@ export default function MonitoringAccrualPage() {
                         {/* Expanded Row - Periode Details */}
                         {isExpanded && item.periodes && item.periodes.length > 0 && (
                           <tr className="bg-gray-50">
-                            <td colSpan={canEdit ? 19 : 18} className="px-4 py-4 bg-gray-50">
+                            <td colSpan={canEdit ? 20 : 19} className="px-4 py-4 bg-gray-50">
                               <div className="ml-8">
                                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Detail Periode</h4>
                                 <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
@@ -2543,6 +2576,7 @@ export default function MonitoringAccrualPage() {
                     headerText: '',
                     klasifikasi: '',
                     totalAmount: '',
+                    saldoAwal: '',
                     costCenter: '',
                     startDate: '',
                     jumlahPeriode: '12',
@@ -2562,14 +2596,11 @@ export default function MonitoringAccrualPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 mb-4 sm:mb-6">
                 {/* Company Code */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Company Code <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Company Code</label>
                   <select
                     name="companyCode"
                     value={formData.companyCode}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   >
                     <option value="">Pilih Company Code</option>
@@ -2580,15 +2611,12 @@ export default function MonitoringAccrualPage() {
 
                 {/* No PO */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    No PO <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">No PO</label>
                   <input
                     type="text"
                     name="noPo"
                     value={formData.noPo}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan nomor PO"
                   />
@@ -2596,15 +2624,12 @@ export default function MonitoringAccrualPage() {
 
                 {/* Assignment/Order */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Assignment/Order <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Assignment/Order</label>
                   <input
                     type="text"
                     name="assignment"
                     value={formData.assignment}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan assignment/order"
                   />
@@ -2612,14 +2637,11 @@ export default function MonitoringAccrualPage() {
 
                 {/* Kode Akun Accrual */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Kode Akun Accrual <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Kode Akun Accrual</label>
                   <select
                     name="kdAkr"
                     value={formData.kdAkr}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   >
                     <option value="">Pilih Kode Akun</option>
@@ -2633,15 +2655,12 @@ export default function MonitoringAccrualPage() {
 
                 {/* Kode Akun Biaya */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Kode Akun Biaya <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Kode Akun Biaya</label>
                   <input
                     type="text"
                     name="kdAkunBiaya"
                     value={formData.kdAkunBiaya}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan kode akun biaya"
                   />
@@ -2649,15 +2668,12 @@ export default function MonitoringAccrualPage() {
 
                 {/* Vendor */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Vendor <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Vendor</label>
                   <input
                     type="text"
                     name="vendor"
                     value={formData.vendor}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan nama vendor"
                   />
@@ -2665,16 +2681,13 @@ export default function MonitoringAccrualPage() {
 
                 {/* Klasifikasi */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Klasifikasi <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Klasifikasi</label>
                   <input
                     type="text"
                     name="klasifikasi"
                     value={formData.klasifikasi}
                     onChange={handleInputChange}
                     list="klasifikasi-list"
-                    required
                     disabled={!formData.kdAkr}
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
                     placeholder={!formData.kdAkr ? 'Pilih Kode Akun terlebih dahulu' : 'Pilih atau ketik klasifikasi baru'}
@@ -2693,36 +2706,46 @@ export default function MonitoringAccrualPage() {
 
                 {/* Amount */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Amount <span className="text-red-600">*</span>
-                    {formData.pembagianType === 'manual' && (
-                      <span className="text-gray-500 font-normal ml-1">(isi total accrual; per periode bisa di-update nanti)</span>
-                    )}
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Amount</label>
+                  {formData.pembagianType === 'manual' && (
+                    <p className="text-xs text-gray-500 mb-1">Total accrual bisa diisi per periode di bawah</p>
+                  )}
                   <input
                     type="number"
                     name="totalAmount"
                     value={formData.totalAmount}
                     onChange={handleInputChange}
-                    required
                     min="0"
                     step="0.01"
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
-                    placeholder="Contoh: 50000000 (total)"
+                    placeholder="Contoh: 50000000"
+                  />
+                </div>
+
+                {/* Saldo Awal - sesuai kolom tabel */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Saldo Awal</label>
+                  <p className="text-xs text-gray-500 mb-1">Nilai tetap dari import (saldo akhir/outstanding)</p>
+                  <input
+                    type="number"
+                    name="saldoAwal"
+                    value={formData.saldoAwal}
+                    onChange={handleInputChange}
+                    min="0"
+                    step="0.01"
+                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
+                    placeholder="Opsional"
                   />
                 </div>
 
                 {/* Jumlah Periode */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Jumlah Periode <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Jumlah Periode</label>
                   <input
                     type="number"
                     name="jumlahPeriode"
                     value={formData.jumlahPeriode}
                     onChange={handleInputChange}
-                    required
                     min="1"
                     max="36"
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
@@ -2732,15 +2755,12 @@ export default function MonitoringAccrualPage() {
 
                 {/* Cost Center */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Cost Center <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Cost Center</label>
                   <input
                     type="text"
                     name="costCenter"
                     value={formData.costCenter}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                     placeholder="Masukkan cost center"
                   />
@@ -2748,24 +2768,19 @@ export default function MonitoringAccrualPage() {
 
                 {/* Start Date */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Start Date <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Start Date</label>
                   <input
                     type="date"
                     name="startDate"
                     value={formData.startDate}
                     onChange={handleInputChange}
-                    required
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all"
                   />
                 </div>
 
                 {/* Pembagian Type - Full Width */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Tipe Pembagian Periode <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Tipe Pembagian Periode</label>
                   <div className="flex gap-6">
                     <label className="flex items-center cursor-pointer">
                       <input
@@ -2798,14 +2813,11 @@ export default function MonitoringAccrualPage() {
 
                 {/* Deskripsi - Full Width */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Deskripsi <span className="text-red-600">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Deskripsi</label>
                   <textarea
                     name="deskripsi"
                     value={formData.deskripsi}
                     onChange={handleInputChange}
-                    required
                     rows={3}
                     className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm transition-all resize-none"
                     placeholder="Masukkan deskripsi accrual"
@@ -2846,6 +2858,7 @@ export default function MonitoringAccrualPage() {
                       headerText: '',
                       klasifikasi: '',
                       totalAmount: '',
+                      saldoAwal: '',
                       costCenter: '',
                       startDate: '',
                       jumlahPeriode: '12',

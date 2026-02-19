@@ -54,15 +54,22 @@ export default function DashboardPage() {
       const response = await fetch('/api/accrual');
       if (response.ok) {
         const accruals = await response.json();
-        const totalAccrual = accruals.reduce((sum: number, item: any) => sum + Math.abs(item.totalAmount || 0), 0);
-        const totalRealisasi = accruals.reduce((sum: number, item: any) =>
-          sum + (item.periodes?.reduce((pSum: number, p: any) => pSum + (p.totalRealisasi || 0), 0) || 0), 0);
-        const totalSaldo = totalAccrual - totalRealisasi;
-
+        // Saldo = saldo awal + total accrual - realisasi; total accrual = sum(amountAccrual) per periode
+        let totalAccrualSum = 0;
+        let totalRealisasiSum = 0;
+        let totalSaldoSum = 0;
+        accruals.forEach((item: any) => {
+          const saldoAwal = item.saldoAwal != null ? Number(item.saldoAwal) : Math.abs(item.totalAmount || 0);
+          const totalAccrualItem = item.periodes?.reduce((s: number, p: any) => s + Math.abs(p.amountAccrual || 0), 0) || 0;
+          const totalRealisasiItem = item.periodes?.reduce((s: number, p: any) => s + (p.totalRealisasi || 0), 0) || 0;
+          totalAccrualSum += totalAccrualItem;
+          totalRealisasiSum += totalRealisasiItem;
+          totalSaldoSum += saldoAwal + totalAccrualItem - totalRealisasiItem;
+        });
         setStats({
-          totalAccrual,
-          totalRealisasi,
-          totalSaldo,
+          totalAccrual: totalAccrualSum,
+          totalRealisasi: totalRealisasiSum,
+          totalSaldo: totalSaldoSum,
           jumlahAccrual: accruals.length,
         });
       }

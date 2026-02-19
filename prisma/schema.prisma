@@ -83,7 +83,8 @@ model Accrual {
   deskripsi      String
   headerText     String?          // Header text untuk jurnal SAP
   klasifikasi    String?
-  totalAmount    Float            // Total amount keseluruhan
+  totalAmount    Float            // Total amount keseluruhan (bisa 0; total accrual = sum periodes.amountAccrual)
+  saldoAwal      Float?           // Saldo awal dari import (saldo akhir/outstanding), fixed
   costCenter     String?
   startDate      DateTime         // Tanggal mulai periode pertama
   jumlahPeriode  Int              // Berapa bulan/periode
