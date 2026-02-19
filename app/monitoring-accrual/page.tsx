@@ -2456,7 +2456,7 @@ export default function MonitoringAccrualPage() {
                                     </tr>
                                   </thead>
                                   <tbody className="bg-white divide-y divide-gray-200">
-                                    {calculatePeriodeAllocations(item.periodes).map((periode) => (
+                                    {item.periodes?.map((periode) => (
                                       <tr key={periode.id} className="hover:bg-gray-50">
                                         <td className="px-3 py-2 text-gray-700 bg-white">Periode {periode.periodeKe}</td>
                                         <td className="px-3 py-2 text-gray-700 bg-white">{periode.bulan}</td>
