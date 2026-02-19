@@ -2528,7 +2528,7 @@ export default function MonitoringAccrualPage() {
                                               className="text-xs bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded transition-colors"
                                               title="Lihat history realisasi"
                                             >
-                                              📋 History
+                                              History
                                             </button>
                                           </div>
                                         </td>
@@ -2904,7 +2904,7 @@ export default function MonitoringAccrualPage() {
             <div className="sticky top-0 bg-gradient-to-r from-red-600 to-red-700 px-6 py-5 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">
-                  {realisasiViewOnly ? '✓ History Realisasi' : 'Input Realisasi'}
+                  {realisasiViewOnly ? 'History Realisasi' : 'Input Realisasi'}
                 </h2>
                 <p className="text-sm text-red-100 mt-1">
                   {selectedPeriode.bulan} - Periode {selectedPeriode.periodeKe}
@@ -2953,7 +2953,6 @@ export default function MonitoringAccrualPage() {
               {realisasiViewOnly && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                   <div className="flex items-center gap-2 text-green-800">
-                    <span className="text-2xl">✓</span>
                     <div>
                       <p className="font-semibold">Accrual Sudah Terpenuhi</p>
                       <p className="text-sm">Periode ini sudah direalisasi sepenuhnya. Anda hanya dapat melihat history realisasi.</p>
@@ -3214,7 +3213,7 @@ export default function MonitoringAccrualPage() {
               </div>
 
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
-                <p className="font-semibold mb-2">⚠️ Perhatian:</p>
+                <p className="font-semibold mb-2">Perhatian:</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li>Pastikan nomor PO di file Excel sama persis dengan data accrual</li>
                   <li>Import akan memproses semua baris yang memiliki PO dan amount valid</li>
@@ -3308,17 +3307,17 @@ export default function MonitoringAccrualPage() {
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-gray-700">
-                <p className="font-semibold mb-2">📋 Format File Excel:</p>
+                <p className="font-semibold mb-2">Format File Excel:</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li>File berisi beberapa sheet. Sistem memproses <strong>semua sheet yang namanya kode akun accrual</strong> (mis. 21600010, 21600012, 21600018).</li>
                   <li>Di sheet kode akun: kolom PEKERJAAN/KLASIFIKASI, VENDOR, PO/PR, ORDER, KETERANGAN, NILAI PO, <strong>OUTSTANDING/OUSTANDING/SALDO</strong>. <strong>Semua baris</strong> diproses (vendor sama, no PO beda = baris terpisah).</li>
-                  <li>Sheet <strong>REKAP</strong>: hanya digunakan untuk kode akun yang <strong>tidak punya sheet sendiri</strong>. Kolom AKUN, KETERANGAN, SALDO AKHIR. Keterangan &quot;BIAYA YMH ...&quot; disesuaikan otomatis ke <strong>klasifikasi</strong> per kode akun.</li>
+                  <li>Sheet <strong>REKAP</strong>: hanya digunakan untuk kode akun yang <strong>tidak punya sheet sendiri</strong>. Kolom AKUN, KETERANGAN, SALDO AKHIR. Keterangan "BIAYA YMH ..." disesuaikan otomatis ke <strong>klasifikasi</strong> per kode akun.</li>
                   <li>Proses import mungkin memakan waktu untuk file besar dengan banyak baris.</li>
                 </ul>
               </div>
 
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-gray-700">
-                <p className="font-semibold mb-2">⚠️ Perhatian:</p>
+                <p className="font-semibold mb-2">Perhatian:</p>
                 <ul className="list-disc list-inside space-y-1">
                   <li>Satu baris di Excel REKAP = satu baris di tabel. Nilai amount mengikuti file (tidak dibagi rata). Untuk kode akun dengan detail (mis. 21600001), isi file per baris (Gaji, Cuti Tahunan, dll.) dengan nilai masing-masing.</li>
                   <li>Accrual yang sudah ada (match kode akun + no PO + vendor, atau kode akun + klasifikasi) akan diupdate; lainnya dibuat baru.</li>
