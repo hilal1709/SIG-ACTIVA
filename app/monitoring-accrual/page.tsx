@@ -303,6 +303,16 @@ export default function MonitoringAccrualPage() {
     return total;
   }, []);
 
+  // Helper function to calculate actual realisasi (sum of all realisasi amounts without rollover)
+  const calculateActualRealisasi = useCallback((item: Accrual) => {
+    if (!item.periodes || item.periodes.length === 0) return 0;
+    
+    return item.periodes.reduce((total, periode) => {
+      // Sum all realisasi amounts from database (already positive)
+      return total + (periode.totalRealisasi || 0);
+    }, 0);
+  }, []);
+
   // Fetch accrual data
   useEffect(() => {
     fetchAccrualData();
@@ -375,7 +385,7 @@ export default function MonitoringAccrualPage() {
     const cache = new Map<number, { accrual: number; realisasi: number; saldoAwal: number }>();
     filteredData.forEach(item => {
       const accrual = calculateItemAccrual(item);
-      const realisasi = calculateItemRealisasi(item);
+      const realisasi = calculateActualRealisasi(item);
       const saldoAwal = getSaldoAwal(item);
       cache.set(item.id, {
         accrual,
@@ -384,7 +394,7 @@ export default function MonitoringAccrualPage() {
       });
     });
     return cache;
-  }, [filteredData, calculateItemAccrual, calculateItemRealisasi]);
+  }, [filteredData, calculateItemAccrual, calculateActualRealisasi]);
 
   // Calculate total saldo for metric card (saldo awal + total accrual - total realisasi)
   const totalSaldo = useMemo(() => {
@@ -2131,6 +2141,9 @@ export default function MonitoringAccrualPage() {
                       Total Accrual
                     </th>
                     <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
+                      Total Realisasi
+                    </th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
                       Saldo
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 whitespace-nowrap bg-gray-50">
@@ -2180,18 +2193,22 @@ export default function MonitoringAccrualPage() {
                               {isKodeAkunExpanded ? '▼' : '▶'}
                             </button>
                           </td>
-                          <td colSpan={7} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
+                          <td colSpan={8} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
                             Kode Akun: {kodeAkun}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalAmountKodeAkun)}
                           </td>
                           <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalSaldoAwalKodeAkun)}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalAccrualKodeAkun)}
+                          </td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalRealisasiKodeAkun)}
                           </td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalSaldoKodeAkun)}
@@ -2242,18 +2259,23 @@ export default function MonitoringAccrualPage() {
                                     {isVendorExpanded ? '▼' : '▶'}
                                   </button>
                                 </td>
-                                <td colSpan={7} className="px-4 py-3 text-left text-green-900 bg-green-50">
+                                <td colSpan={8} className="px-4 py-3 text-left text-green-900 bg-green-50">
                                   Vendor: {vendor}
                                 </td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalAmountVendor)}
                                 </td>
                                 <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalSaldoAwalVendor)}
                                 </td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalAccrualVendor)}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalRealisasiVendor)}
                                 </td>
                                 <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
                                   {formatCurrency(totalSaldoVendor)}
@@ -2331,8 +2353,11 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-4 text-right font-medium text-gray-800 whitespace-nowrap bg-white">
                             {formatCurrency(calculateItemAccrual(item))}
                           </td>
+                          <td className="px-4 py-4 text-right text-blue-700 whitespace-nowrap bg-white">
+                            {formatCurrency(calculateActualRealisasi(item))}
+                          </td>
                           <td className="px-4 py-4 text-right font-semibold text-gray-800 whitespace-nowrap bg-white">
-                            {formatCurrency(calculateItemSaldo(item, calculateItemAccrual(item), calculateItemRealisasi(item)))}
+                            {formatCurrency(calculateItemSaldo(item, calculateItemAccrual(item), calculateActualRealisasi(item)))}
                           </td>
                           <td className="px-4 py-4 text-center bg-white">
                             <div className="flex items-center justify-center gap-1">
@@ -2370,6 +2395,7 @@ export default function MonitoringAccrualPage() {
                                       <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Periode</th>
                                       <th className="px-3 py-2 text-left font-semibold text-gray-700 bg-white">Bulan</th>
                                       <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Accrual</th>
+                                      <th className="px-3 py-2 text-right font-semibold text-blue-700 bg-white">Total Realisasi</th>
                                       <th className="px-3 py-2 text-right font-semibold text-gray-700 bg-white">Saldo</th>
                                       <th className="px-3 py-2 text-center font-semibold text-gray-700 bg-white">Action</th>
                                     </tr>
@@ -2426,6 +2452,9 @@ export default function MonitoringAccrualPage() {
                                               )}
                                             </div>
                                           )}
+                                        </td>
+                                        <td className="px-3 py-2 text-right text-blue-700 bg-white">
+                                          {formatCurrency(periode.totalRealisasi || 0)}
                                         </td>
                                         <td className="px-3 py-2 text-right text-gray-800 font-semibold bg-white">
                                           {formatCurrency(periode.saldo || 0)}
