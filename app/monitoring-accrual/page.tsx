@@ -2696,9 +2696,15 @@ export default function MonitoringAccrualPage() {
                               {isKodeAkunExpanded ? '▼' : '▶'}
                             </button>
                           </td>
-                          <td colSpan={13} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
+                          <td colSpan={9} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
                             Kode Akun: {kodeAkun}
                           </td>
+                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
+                            {formatCurrency(totalAmountKodeAkun)}
+                          </td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
+                          <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-2 py-3 text-right font-bold text-blue-900 bg-blue-50" style={{ maxWidth: '140px' }}>
                             <div className="truncate overflow-hidden text-ellipsis" title={formatCurrency(totalSaldoAwalKodeAkun)}>
                               {formatCurrency(totalSaldoAwalKodeAkun)}
@@ -2876,9 +2882,15 @@ export default function MonitoringAccrualPage() {
                                     {isVendorExpanded ? '▼' : '▶'}
                                   </button>
                                 </td>
-                                <td colSpan={13} className="px-4 py-3 text-left text-green-900 bg-green-50">
+                                <td colSpan={9} className="px-4 py-3 text-left text-green-900 bg-green-50">
                                   Vendor: {vendor}
                                 </td>
+                                <td className="px-4 py-3 text-right font-bold text-green-900 bg-green-50">
+                                  {formatCurrency(totalAmountVendor)}
+                                </td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
+                                <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-2 py-3 text-right font-bold text-green-900 bg-green-50" style={{ maxWidth: '140px' }}>
                                   <div className="truncate overflow-hidden text-ellipsis" title={formatCurrency(totalSaldoAwalVendor)}>
                                     {formatCurrency(totalSaldoAwalVendor)}
