@@ -2706,7 +2706,6 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50"></td>
-                          <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalSaldoAwalKodeAkun)}
                           </td>
@@ -2880,7 +2879,6 @@ export default function MonitoringAccrualPage() {
                                 <td colSpan={11} className="px-4 py-3 text-left text-green-900 bg-green-50">
                                   Vendor: {vendor}
                                 </td>
-                                <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
                                 <td className="px-4 py-3 bg-green-50"></td>
