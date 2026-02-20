@@ -1,495 +1,770 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
-import { Upload, FileSpreadsheet, Download } from 'lucide-react';
+import { Upload, FileSpreadsheet, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 
-type FluktuasiRow = {
-  [key: string]: any;
-  __sheetName: string;
-  __rowIndex: number;
-  fluktuasiRp?: number;
-  fluktuasiPersen?: number;
-  reason?: string;
-};
-
-type RekapRow = {
+// ─── Types ────────────────────────────────────────────────────────────────────
+type SheetData = {
   sheetName: string;
-  totalFluktuasi: number;
-  avgFluktuasi: number;
-  maxFluktuasi: number;
-  minFluktuasi: number;
-  reason: string;
+  headers: string[];
+  rows: Record<string, any>[];
 };
 
-// Lazy load XLSX on demand (reuse pattern from ExcelImport)
+/** Parsed amount column from rekap sheet */
+type AmountCol = {
+  colIdx: number;        // index in headers array
+  label: string;         // original header label
+  yearLabel: string;     // top row label (e.g. "2025", "2026")
+  dateLabel: string;     // bottom row label (e.g. "31-Jan-25")
+  isCumulative: boolean; // "Total Up to" / "Up to" type column
+};
+
+type RekapSheetRow = {
+  values: (string | number)[];
+  type: 'category' | 'subtotal' | 'detail' | 'empty';
+  gapMoM: number;
+  pctMoM: number;
+  gapYoY: number;
+  pctYoY: number;
+};
+
+type RekapSheetData = {
+  sheetName: string;
+  headers: string[];
+  amountCols: AmountCol[];
+  momCurrIdx: number;   // index in amountCols for MoM current
+  momPrevIdx: number;   // index in amountCols for MoM previous
+  yoyCurrIdx: number;   // index in amountCols for YoY current
+  yoyPrevIdx: number;   // index in amountCols for YoY previous (same month last year)
+  rows: RekapSheetRow[];
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 let XLSX: any = null;
 const loadXLSX = async () => {
-  if (!XLSX) {
-    XLSX = await import('xlsx');
-  }
+  if (!XLSX) XLSX = await import('xlsx');
   return XLSX;
 };
 
+const parseNum = (val: any): number => {
+  if (val === '' || val === null || val === undefined) return 0;
+  if (typeof val === 'number') return val;
+  const n = Number(val.toString().replace(/\./g, '').replace(/,/g, '.'));
+  return Number.isNaN(n) ? 0 : n;
+};
+
+const parseDateToPeriode = (val: any): string => {
+  if (val === '' || val === null || val === undefined) return '';
+  let date: Date | null = null;
+  if (typeof val === 'number' && val > 40000) {
+    date = new Date(Date.UTC(1899, 11, 30) + val * 86400000);
+  } else if (typeof val === 'string') {
+    const s = val.trim();
+    let m: RegExpMatchArray | null;
+    m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) date = new Date(+m[3], +m[1] - 1, +m[2]);
+    if (!date) { m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if (m) date = new Date(+m[3], +m[2] - 1, +m[1]); }
+    if (!date) { m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/); if (m) date = new Date(+m[1], +m[2] - 1, +m[3]); }
+    if (!date) { m = s.match(/^(\d{4})(\d{2})(\d{2})$/); if (m) date = new Date(+m[1], +m[2] - 1, +m[3]); }
+  }
+  if (!date || isNaN(date.getTime())) return String(val ?? '');
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const extractKlasifikasi = (text: string): string => {
+  if (!text) return '';
+  const s = String(text).trim();
+  const cleaned = s
+    .replace(/^(Accrue|AKRU|Amortisasi Biaya Transaksi|Amortisasi|Accrual|Amort\.?)\s+/i, '')
+    .replace(/\s+\d{2}[.\-]\d{4,}.*$/, '')
+    .replace(/\s+\d{2}[.\-]\d{2}$/, '')
+    .trim();
+  return cleaned || s;
+};
+
+const findColIdx = (headers: string[], keywords: string[]): number => {
+  for (const kw of keywords) {
+    const idx = headers.findIndex((h) => h.toLowerCase().includes(kw.toLowerCase()));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+};
+
+const fmtRp = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
+const fmtPct = (n: number) =>
+  n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+
+const classifyRow = (values: any[], accountColIdx: number): RekapSheetRow['type'] => {
+  if (values.every((v) => v === '' || v === null || v === undefined)) return 'empty';
+  const acct = String(values[accountColIdx] ?? '').trim();
+
+  // Explicit subtotal keyword in any text cell
+  const hasSubtotalKeyword = values.some((v) =>
+    /\b(total|jumlah|sub[\s\-]?total|gesamt)\b/i.test(String(v ?? '')));
+  if (hasSubtotalKeyword) return 'subtotal';
+
+  // Account ends in 4+ zeros → subtotal
+  if (/\d/.test(acct) && /0{4,}$/.test(acct)) return 'subtotal';
+
+  // No account number but row has at least one numeric value → subtotal row
+  // (SAP rekap: subtotal rows often have blank account col but carry amounts)
+  if (!acct || !/\d/.test(acct)) {
+    const hasNumeric = values.some((v, i) => {
+      if (i === accountColIdx) return false;
+      if (v === '' || v === null || v === undefined) return false;
+      const n = typeof v === 'number' ? v : Number(String(v).replace(/\./g, '').replace(',', '.'));
+      return !isNaN(n) && n !== 0;
+    });
+    return hasNumeric ? 'subtotal' : 'category';
+  }
+
+  return 'detail';
+};
+
+/**
+ * Try to detect the "year" and "date" labels from a rekap header.
+ * Rekap sheets often have two header rows: row 0 = year, row 1 = specific date.
+ * We check if the header label looks like a date (contains month abbrev or slash-date).
+ */
+const parseAmountColLabel = (
+  label: string,
+  yearHint: string,
+): { yearLabel: string; dateLabel: string; isCumulative: boolean } => {
+  const isCumulative = /total|up to|s\.d\.|ytd|kumulatif/i.test(label);
+  const yearMatch = label.match(/20\d{2}/);
+  const yearLabel = yearMatch ? yearMatch[0] : yearHint;
+  return { yearLabel, dateLabel: label, isCumulative };
+};
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function FluktuasiOIPage() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [fileName, setFileName] = useState<string>('');
-  const [fluktuasiData, setFluktuasiData] = useState<FluktuasiRow[]>([]);
-  const [rekapData, setRekapData] = useState<RekapRow[]>([]);
+  const [fileName, setFileName] = useState('');
+  const [sheetDataList, setSheetDataList] = useState<SheetData[]>([]);
+  const [rekapSheetData, setRekapSheetData] = useState<RekapSheetData | null>(null);
+  const [activeSheetIdx, setActiveSheetIdx] = useState(0);
 
+  // ── Process file ─────────────────────────────────────────────────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsProcessing(true);
     setFileName(file.name);
+    setSheetDataList([]);
+    setRekapSheetData(null);
+    setActiveSheetIdx(0);
 
     try {
       const XLSXLib = await loadXLSX();
       const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSXLib.read(arrayBuffer);
-
+      const workbook = XLSXLib.read(arrayBuffer, { cellDates: false });
       const sheetNames: string[] = workbook.SheetNames || [];
-      if (sheetNames.length === 0) {
-        alert('File tidak memiliki sheet.');
+
+      const kodeAkunSheets = sheetNames.filter((n) => /^\d+$/.test(n.trim()));
+      const rekapSheetName = sheetNames.find((n) => !/^\d+$/.test(n.trim())) ?? null;
+
+      if (kodeAkunSheets.length === 0) {
+        alert('Tidak ada sheet kode akun (nama numerik) yang ditemukan.');
         return;
       }
 
-      // Sheet angka = hanya nama numeric (contoh: 71510001, 71410001, dll)
-      const detailSheetNames = sheetNames.filter((name) =>
-        /^\d+$/.test(name.trim())
-      );
-
-      if (detailSheetNames.length === 0) {
-        alert(
-          'Tidak ada sheet angka yang ditemukan. Pastikan nama sheet adalah angka (misal: 71510001).',
-        );
-      }
-
-      const allFluktuasiRows: FluktuasiRow[] = [];
-
-      for (const sheetName of detailSheetNames) {
+      // ── Process kode akun sheets ──────────────────────────────────────────
+      const result: SheetData[] = [];
+      for (const sheetName of kodeAkunSheets) {
         const ws = workbook.Sheets[sheetName];
         if (!ws) continue;
+        const raw: any[][] = XLSXLib.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (raw.length < 2) continue;
 
-        // Ambil sebagai array-of-arrays dulu supaya fleksibel
-        const raw: any[][] = XLSXLib.utils.sheet_to_json(ws, {
-          header: 1,
-          defval: '',
+        let headerRowIdx = 0;
+        for (let i = 0; i < raw.length; i++) {
+          if (raw[i].some((c: any) => c !== '' && c !== null)) { headerRowIdx = i; break; }
+        }
+        const rawHeaders = (raw[headerRowIdx] as any[]).map((h) =>
+          h !== null && h !== undefined ? String(h).trim() : '');
+        const headers: string[] = [];
+        const seen: Record<string, number> = {};
+        rawHeaders.forEach((h, i) => {
+          const key = h || `Col_${i + 1}`;
+          if (seen[key] !== undefined) { seen[key]++; headers.push(`${key}_${seen[key]}`); }
+          else { seen[key] = 0; headers.push(key); }
         });
 
-        if (raw.length < 2) continue; // minimal header + 1 data
+        const dateColIdx = findColIdx(headers, ['Posting Date','Pstng Date','Posting date','Document Date','Doc. Date','Tanggal Posting','Tanggal']);
+        const klasifikasiColIdx = findColIdx(headers, ['Document Header Text','Header Text','Doc. Header Text','Description','Keterangan','Uraian']);
+        const remarkColIdxRaw = findColIdx(headers, ['Assignment','Reference','Text','Ref. Doc.','Ref. document','PO Text','Item Text']);
+        const remarkColIdx = remarkColIdxRaw >= 0 && remarkColIdxRaw !== klasifikasiColIdx ? remarkColIdxRaw : klasifikasiColIdx;
 
-        const headerRow = raw[0] as string[];
-
-        // Asumsi: kolom dengan angka (nilai rupiah) berada setelah kolom deskripsi.
-        // Kita cari dua kolom angka terakhir untuk hitung fluktuasi.
-        const numericColumnIndexes: number[] = [];
-        for (let col = 0; col < headerRow.length; col++) {
-          // cek beberapa baris ke bawah untuk lihat apakah mayoritas numeric
-          let numericCount = 0;
-          let nonEmptyCount = 0;
-          for (let r = 1; r < Math.min(raw.length, 10); r++) {
-            const val = raw[r][col];
-            if (val !== '' && val !== null && val !== undefined) {
-              nonEmptyCount++;
-              const num = Number(
-                typeof val === 'string'
-                  ? val.replace(/\./g, '').replace(/,/g, '.')
-                  : val,
-              );
-              if (!Number.isNaN(num)) numericCount++;
-            }
-          }
-          if (nonEmptyCount > 0 && numericCount / nonEmptyCount >= 0.7) {
-            numericColumnIndexes.push(col);
-          }
+        const rows: Record<string, any>[] = [];
+        for (let r = headerRowIdx + 1; r < raw.length; r++) {
+          const rawRow = raw[r];
+          if (!rawRow || rawRow.every((c: any) => c === '' || c === null)) continue;
+          const obj: Record<string, any> = {};
+          headers.forEach((h, idx) => { obj[h] = rawRow[idx] ?? ''; });
+          obj['__periode']     = parseDateToPeriode(dateColIdx >= 0 ? rawRow[dateColIdx] : '');
+          obj['__klasifikasi'] = extractKlasifikasi(String(klasifikasiColIdx >= 0 ? rawRow[klasifikasiColIdx] : ''));
+          obj['__remark']      = String(remarkColIdx >= 0 ? rawRow[remarkColIdx] : '').trim();
+          rows.push(obj);
         }
+        result.push({ sheetName, headers, rows });
+      }
+      setSheetDataList(result);
 
-        if (numericColumnIndexes.length < 2) {
-          // Kalau kurang dari dua kolom angka, kita tetap simpan datanya tanpa fluktuasi
-          for (let r = 1; r < raw.length; r++) {
-            const row = raw[r];
-            if (!row || row.every((cell: any) => cell === '' || cell === null)) {
-              continue;
-            }
-            const obj: FluktuasiRow = {
-              __sheetName: sheetName,
-              __rowIndex: r,
-            };
-            headerRow.forEach((h, idx) => {
-              if (!h) return;
-              obj[h] = row[idx];
-            });
-            allFluktuasiRows.push(obj);
-          }
-          continue;
-        }
+      // ── Process rekap sheet ───────────────────────────────────────────────
+      if (rekapSheetName) {
+        const wsR = workbook.Sheets[rekapSheetName];
+        if (wsR) {
+          // Read 2 header rows
+          const rawR: any[][] = XLSXLib.utils.sheet_to_json(wsR, { header: 1, defval: '' });
 
-        const lastIdx = numericColumnIndexes[numericColumnIndexes.length - 1];
-        const prevIdx = numericColumnIndexes[numericColumnIndexes.length - 2];
-
-        for (let r = 1; r < raw.length; r++) {
-          const row = raw[r];
-          if (!row || row.every((cell: any) => cell === '' || cell === null)) {
-            continue;
+          // Find the header section: look for 2 consecutive rows both having >=2 non-empty cells
+          let hRow1 = 0, hRow2 = 1;
+          for (let i = 0; i < Math.min(rawR.length - 1, 10); i++) {
+            const r0 = rawR[i].filter((c: any) => c !== '' && c !== null).length;
+            const r1 = rawR[i + 1].filter((c: any) => c !== '' && c !== null).length;
+            if (r0 >= 2 && r1 >= 2) { hRow1 = i; hRow2 = i + 1; break; }
           }
 
-          const obj: FluktuasiRow = {
-            __sheetName: sheetName,
-            __rowIndex: r,
-          };
+          // If only single header row detected, use same row for both
+          const topRow    = rawR[hRow1] as any[];
+          const bottomRow = rawR[hRow2] as any[];
 
-          headerRow.forEach((h, idx) => {
-            if (!h) return;
-            obj[h] = row[idx];
+          // Build merged header labels: if top cell is non-empty use it, otherwise look up
+          const lastTopLabel: string[] = [];
+          const fullHeaders: string[] = [];
+          const topLabels: string[]   = [];
+          const bottomLabels: string[] = [];
+
+          const maxCols = Math.max(topRow.length, bottomRow.length);
+          let currentTopLabel = '';
+          for (let c = 0; c < maxCols; c++) {
+            const t = String(topRow[c] ?? '').trim();
+            const b = String(bottomRow[c] ?? '').trim();
+            if (t) currentTopLabel = t;
+            topLabels.push(currentTopLabel);
+            bottomLabels.push(b);
+            fullHeaders.push(b || t || `Col_${c + 1}`);
+          }
+
+          // Deduplicate headers
+          const headers: string[] = [];
+          const seenR: Record<string, number> = {};
+          fullHeaders.forEach((h, i) => {
+            const key = h || `Col_${i + 1}`;
+            if (seenR[key] !== undefined) { seenR[key]++; headers.push(`${key}_${seenR[key]}`); }
+            else { seenR[key] = 0; headers.push(key); }
           });
 
-          const parseNumber = (val: any): number => {
-            if (val === '' || val === null || val === undefined) return 0;
-            if (typeof val === 'number') return val;
-            const cleaned = val
-              .toString()
-              .replace(/\./g, '')
-              .replace(/,/g, '.');
-            const n = Number(cleaned);
-            return Number.isNaN(n) ? 0 : n;
-          };
-
-          const current = parseNumber(row[lastIdx]);
-          const previous = parseNumber(row[prevIdx]);
-          const fluktuasi = current - previous;
-          const persen =
-            previous === 0 ? 0 : (fluktuasi / Math.abs(previous)) * 100;
-
-          obj.fluktuasiRp = fluktuasi;
-          obj.fluktuasiPersen = persen;
-
-          // Reason sederhana di-generate dari nilai fluktuasi + nama sheet
-          if (fluktuasi > 0) {
-            obj.reason = `Kenaikan saldo pada sheet ${sheetName}`;
-          } else if (fluktuasi < 0) {
-            obj.reason = `Penurunan saldo pada sheet ${sheetName}`;
-          } else {
-            obj.reason = `Tidak ada perubahan signifikan pada sheet ${sheetName}`;
+          // Detect account column
+          let accountColIdx = 0;
+          for (let col = 0; col < headers.length; col++) {
+            const samples = rawR.slice(hRow2 + 1, hRow2 + 20)
+              .map((r) => String(r?.[col] ?? '').trim())
+              .filter((v) => /^\d{5,}$/.test(v));
+            if (samples.length >= 2) { accountColIdx = col; break; }
           }
 
-          allFluktuasiRows.push(obj);
+          // Detect numeric amount columns
+          const amountCols: AmountCol[] = [];
+          for (let col = 0; col < headers.length; col++) {
+            if (col === accountColIdx) continue;
+            let numCnt = 0, nonEmpty = 0;
+            for (let r = hRow2 + 1; r < Math.min(rawR.length, hRow2 + 25); r++) {
+              const v = rawR[r]?.[col];
+              if (v !== '' && v !== null && v !== undefined) {
+                nonEmpty++;
+                if (typeof v === 'number' || (!isNaN(parseNum(v)) && String(v).length > 0)) numCnt++;
+              }
+            }
+            if (nonEmpty > 0 && numCnt / nonEmpty >= 0.4) {
+              const parsed = parseAmountColLabel(headers[col], topLabels[col]);
+              amountCols.push({
+                colIdx: col,
+                label: headers[col],
+                yearLabel: topLabels[col] || parsed.yearLabel,
+                dateLabel: bottomLabels[col] || headers[col],
+                isCumulative: parsed.isCumulative,
+              });
+            }
+          }
+
+          // Determine MoM and YoY column indices within amountCols array
+          // Non-cumulative cols only for point-in-time comparison
+          const pointCols = amountCols.filter((c) => !c.isCumulative);
+          // MoM: last two non-cumulative cols
+          const momCurrIdx = amountCols.length >= 1 ? amountCols.length - 1 : 0;
+          const momPrevIdx = amountCols.length >= 2 ? amountCols.length - 2 : 0;
+          // YoY: last col vs first point-in-time col with same month (heuristic: first non-cumulative)
+          const yoyCurrIdx = momCurrIdx;
+          const yoyPrevIdx = pointCols.length >= 2
+            ? amountCols.findIndex((c) => c.colIdx === pointCols[0].colIdx)
+            : 0;
+
+          // Build rows
+          const rekapRows: RekapSheetRow[] = [];
+          for (let r = hRow2 + 1; r < rawR.length; r++) {
+            const rawRow = rawR[r] as any[];
+            const values = headers.map((_, i) => rawRow?.[i] ?? '');
+            const type = classifyRow(values, accountColIdx);
+
+            const currAmtCol = amountCols[momCurrIdx];
+            const prevAmtCol = amountCols[momPrevIdx];
+            const yoyCurrCol = amountCols[yoyCurrIdx];
+            const yoyPrevCol = amountCols[yoyPrevIdx];
+
+            const curr    = currAmtCol ? parseNum(rawRow?.[currAmtCol.colIdx]) : 0;
+            const prev    = prevAmtCol ? parseNum(rawRow?.[prevAmtCol.colIdx]) : 0;
+            const yoyCurr = yoyCurrCol ? parseNum(rawRow?.[yoyCurrCol.colIdx]) : 0;
+            const yoyPrev = yoyPrevCol ? parseNum(rawRow?.[yoyPrevCol.colIdx]) : 0;
+
+            const gapMoM = curr - prev;
+            const pctMoM = prev === 0 ? 0 : (gapMoM / Math.abs(prev)) * 100;
+            const gapYoY = yoyCurr - yoyPrev;
+            const pctYoY = yoyPrev === 0 ? 0 : (gapYoY / Math.abs(yoyPrev)) * 100;
+
+            rekapRows.push({ values, type, gapMoM, pctMoM, gapYoY, pctYoY });
+          }
+
+          setRekapSheetData({
+            sheetName: rekapSheetName,
+            headers,
+            amountCols,
+            momCurrIdx,
+            momPrevIdx,
+            yoyCurrIdx,
+            yoyPrevIdx,
+            rows: rekapRows,
+          });
         }
       }
-
-      setFluktuasiData(allFluktuasiRows);
-
-      // Bangun data rekap per sheet
-      const rekapPerSheet: Record<string, RekapRow> = {};
-      allFluktuasiRows.forEach((row) => {
-        const sheetName = row.__sheetName;
-        if (!rekapPerSheet[sheetName]) {
-          rekapPerSheet[sheetName] = {
-            sheetName,
-            totalFluktuasi: 0,
-            avgFluktuasi: 0,
-            maxFluktuasi: Number.NEGATIVE_INFINITY,
-            minFluktuasi: Number.POSITIVE_INFINITY,
-            reason: '',
-          };
-        }
-        const r = rekapPerSheet[sheetName];
-        const f = row.fluktuasiRp ?? 0;
-        r.totalFluktuasi += f;
-        if (f > r.maxFluktuasi) r.maxFluktuasi = f;
-        if (f < r.minFluktuasi) r.minFluktuasi = f;
-
-        // Ambil reason text dari baris-baris, gabung singkat
-        if (row.reason) {
-          if (!r.reason) {
-            r.reason = String(row.reason);
-          } else if (!r.reason.includes(row.reason)) {
-            r.reason += `; ${row.reason}`;
-          }
-        }
-      });
-
-      // Hitung rata-rata
-      Object.values(rekapPerSheet).forEach((r) => {
-        const relatedRows = allFluktuasiRows.filter(
-          (row) => row.__sheetName === r.sheetName,
-        );
-        const count = relatedRows.length || 1;
-        r.avgFluktuasi = r.totalFluktuasi / count;
-        if (r.maxFluktuasi === Number.NEGATIVE_INFINITY) r.maxFluktuasi = 0;
-        if (r.minFluktuasi === Number.POSITIVE_INFINITY) r.minFluktuasi = 0;
-      });
-
-      setRekapData(Object.values(rekapPerSheet));
-    } catch (error: any) {
-      console.error('Error processing fluktuasi file:', error);
-      alert(
-        'Terjadi kesalahan saat membaca file Excel fluktuasi: ' +
-          (error?.message || error),
-      );
+    } catch (err: any) {
+      console.error(err);
+      alert('Gagal membaca file: ' + (err?.message || err));
       setFileName('');
-      setFluktuasiData([]);
-      setRekapData([]);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleDownloadExcel = async () => {
-    if (!fluktuasiData.length && !rekapData.length) {
-      alert('Belum ada data untuk di-download. Upload file terlebih dahulu.');
+  // ── Download ──────────────────────────────────────────────────────────────────
+  const handleDownload = async () => {
+    if (!sheetDataList.length && !rekapSheetData) {
+      alert('Belum ada data. Upload file terlebih dahulu.');
       return;
     }
-
     const XLSXLib = await loadXLSX();
     const wb = XLSXLib.utils.book_new();
 
-    if (fluktuasiData.length) {
-      const detailSheet = XLSXLib.utils.json_to_sheet(
-        fluktuasiData.map((row) => {
-          const { __sheetName, __rowIndex, ...rest } = row;
-          return {
-            Sheet: __sheetName,
-            Row: __rowIndex,
-            ...rest,
-          };
-        }),
-      );
-      XLSXLib.utils.book_append_sheet(wb, detailSheet, 'Fluktuasi_Detail');
+    for (const sd of sheetDataList) {
+      const sheetRows = sd.rows.map((row) => {
+        const out: Record<string, any> = {};
+        sd.headers.forEach((h) => { out[h] = row[h] ?? ''; });
+        out['Periode']     = row['__periode']     ?? '';
+        out['Klasifikasi'] = row['__klasifikasi'] ?? '';
+        out['Remark']      = row['__remark']      ?? '';
+        return out;
+      });
+      const ws = XLSXLib.utils.json_to_sheet(sheetRows);
+      XLSXLib.utils.book_append_sheet(wb, ws, sd.sheetName.slice(0, 31));
     }
 
-    if (rekapData.length) {
-      const rekapSheet = XLSXLib.utils.json_to_sheet(
-        rekapData.map((r) => ({
-          'Sheet / GL': r.sheetName,
-          'Total Fluktuasi (Rp)': r.totalFluktuasi,
-          'Rata-rata Fluktuasi (Rp)': r.avgFluktuasi,
-          'Max Fluktuasi (Rp)': r.maxFluktuasi,
-          'Min Fluktuasi (Rp)': r.minFluktuasi,
-          Reason: r.reason,
-        })),
-      );
-      XLSXLib.utils.book_append_sheet(wb, rekapSheet, 'Rekap_Fluktuasi');
+    if (rekapSheetData) {
+      // Build 2-row header: top = year groups, bottom = date labels + added cols
+      const origLen = rekapSheetData.headers.length;
+      const addedLabels = ['GAP\nMoM', 'MoM\n%', 'Reason MoM', 'GAP\nYoY', 'YoY\n%', 'Reason YoY'];
+      const headerRow1 = rekapSheetData.headers.map((_, i) => {
+        const ac = rekapSheetData.amountCols.find((a) => a.colIdx === i);
+        return ac ? ac.yearLabel : '';
+      });
+      const headerRow2 = [...rekapSheetData.headers, ...addedLabels];
+
+      const wsData: any[][] = [headerRow1.concat(['','','','','','']) as any[], headerRow2 as any[]];
+      rekapSheetData.rows.forEach((row) => {
+        if (row.type === 'empty') return;
+        wsData.push([
+          ...row.values,
+          row.gapMoM,
+          row.pctMoM,
+          '',
+          row.gapYoY,
+          row.pctYoY,
+          '',
+        ]);
+      });
+      const wsRekap = XLSXLib.utils.aoa_to_sheet(wsData);
+      XLSXLib.utils.book_append_sheet(wb, wsRekap, rekapSheetData.sheetName.slice(0, 31));
     }
 
-    const safeName =
-      fileName?.replace(/\.[^.]+$/, '') || 'Fluktuasi_Other_Income_Expenses';
-    XLSXLib.writeFile(wb, `${safeName}_HASIL_FLUKTUASI.xlsx`);
+    const base = fileName.replace(/\.[^.]+$/, '') || 'Fluktuasi_OI';
+    XLSXLib.writeFile(wb, `${base}_HASIL.xlsx`);
+  };
+
+  const activeSheet = sheetDataList[activeSheetIdx] ?? null;
+  const ADDED_KA_HEADERS = ['Periode', 'Klasifikasi', 'Remark'];
+
+  // Row styling for rekap
+  const rekapRowStyle = (type: RekapSheetRow['type'], ri: number) => {
+    if (type === 'category') return { bg: '#1F3864', text: '#ffffff', weight: '700', border: 'rgba(255,255,255,0.15)' };
+    if (type === 'subtotal') return { bg: '#C00000', text: '#ffffff', weight: '700', border: 'rgba(255,255,255,0.2)' };
+    return { bg: ri % 2 === 0 ? '#ffffff' : '#f0f4ff', text: '#374151', weight: '400', border: '#e5e7eb' };
+  };
+
+  // Column header color helpers
+  const amtColBg = (ac: AmountCol) => {
+    if (ac.isCumulative) return '#E36C09'; // orange for Total Up to
+    const yr = ac.yearLabel.match(/20(\d{2})/);
+    if (!yr) return '#244185';
+    const yy = parseInt(yr[1]);
+    const cyy = new Date().getFullYear() % 100;
+    return yy < cyy ? '#1F3864' : '#244185'; // darker for older year
   };
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      {/* Mobile Sidebar Overlay */}
       {isMobileSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setIsMobileSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileSidebarOpen(false)} />
       )}
-
-      {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
-          isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
-      >
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 ease-in-out ${
+        isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
         <Sidebar onClose={() => setIsMobileSidebarOpen(false)} />
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 bg-gray-50 lg:ml-64 overflow-x-hidden">
         <Header
           title="Fluktuasi Other Income / Expenses"
-          subtitle="Upload file Excel dan otomatis hitung fluktuasi serta rekap reason"
+          subtitle="Upload file Excel multi-sheet → sistem tambah kolom GAP MoM, MoM%, Reason MoM, GAP YoY, YoY%, Reason YoY"
           onMenuClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         />
 
         <div className="p-3 sm:p-4 md:p-6 lg:p-8 space-y-4 sm:space-y-6">
-          {/* Upload Card */}
+
+          {/* ── Upload Card ──────────────────────────────────────────────── */}
           <div className="bg-white rounded-lg p-5 border border-gray-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
                   <FileSpreadsheet className="text-indigo-600" size={22} />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800">
-                    Upload File Fluktuasi
-                  </h2>
-                  <p className="text-xs sm:text-sm text-gray-600">
-                    Gunakan file template yang memiliki sheet angka (71510001, 71410001, dll)
-                    dan sheet Rekap seperti contoh.
+                  <h2 className="text-lg font-semibold text-gray-800">Upload File Fluktuasi</h2>
+                  <p className="text-xs sm:text-sm text-gray-500">
+                    File Excel: sheet kode akun (nama angka) + 1 sheet Rekap (nama teks)
                   </p>
                 </div>
               </div>
               <button
-                onClick={handleDownloadExcel}
-                className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-indigo-600 text-xs sm:text-sm text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isProcessing || (!fluktuasiData.length && !rekapData.length)}
+                onClick={handleDownload}
+                disabled={isProcessing || (!sheetDataList.length && !rekapSheetData)}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-sm text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Download size={16} />
-                <span>Download Excel Hasil</span>
+                Download Excel Hasil
               </button>
             </div>
 
-            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-colors">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                <Upload className="text-gray-400 mb-2" size={32} />
-                <p className="mb-2 text-sm text-gray-500">
-                  <span className="font-semibold">
-                    {fileName ? fileName : 'Klik untuk upload'}
-                  </span>{' '}
-                  {!fileName && 'atau drag & drop'}
-                </p>
-                <p className="text-xs text-gray-500">
-                  Excel file (.xlsx, .xls) – isi sampai kolom header biru, sistem
-                  akan buat tabel merah & rekap otomatis
-                </p>
-              </div>
-              <input
-                type="file"
-                className="hidden"
-                accept=".xlsx,.xls"
-                onChange={handleFileUpload}
-                disabled={isProcessing}
-              />
+            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 transition-colors">
+              <Upload className="text-gray-400 mb-2" size={28} />
+              <p className="text-sm text-gray-500">
+                <span className="font-semibold text-gray-700">{fileName || 'Klik untuk upload'}</span>{' '}
+                {!fileName && 'atau drag & drop'}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">.xlsx / .xls</p>
+              <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleFileUpload} disabled={isProcessing} />
             </label>
 
             {isProcessing && (
-              <div className="flex items-center justify-center mt-4">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
-                <p className="ml-3 text-xs sm:text-sm text-gray-600">
-                  Memproses file, mohon tunggu...
-                </p>
+              <div className="flex items-center justify-center mt-4 gap-3 text-sm text-gray-600">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600" />
+                Memproses file…
               </div>
             )}
           </div>
 
-          {/* Rekap Table */}
-          {rekapData.length > 0 && (
+          {/* ── Legend ───────────────────────────────────────────────────── */}
+          {(sheetDataList.length > 0 || rekapSheetData) && (
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-gray-600">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3.5 h-3.5 rounded" style={{ backgroundColor: '#4472C4' }} />
+                Kolom asli Excel
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3.5 h-3.5 rounded" style={{ backgroundColor: '#C00000' }} />
+                Kolom tambahan sistem / baris subtotal
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3.5 h-3.5 rounded" style={{ backgroundColor: '#1F3864' }} />
+                Header kategori
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3.5 h-3.5 rounded" style={{ backgroundColor: '#E36C09' }} />
+                Kolom kumulatif
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block w-3.5 h-3.5 rounded" style={{ backgroundColor: '#FFC000' }} />
+                GAP / % kolom sistem
+              </span>
+            </div>
+          )}
+
+          {/* ── Kode Akun Tabs + Table ────────────────────────────────────── */}
+          {sheetDataList.length > 0 && (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-red-50 to-yellow-50">
-                <h3 className="text-sm sm:text-base md:text-lg font-bold text-red-700">
-                  Rekap Fluktuasi Other Income / Expenses
-                </h3>
-                <p className="text-xs text-gray-600 mt-1">
-                  Merangkum total fluktuasi dan reason per sheet (mirip sheet Rekap di
-                  Excel).
-                </p>
+              <div className="flex items-center border-b border-gray-200 bg-gray-50">
+                <button className="flex-shrink-0 px-2 py-2 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                  disabled={activeSheetIdx === 0} onClick={() => setActiveSheetIdx((i) => Math.max(0, i - 1))}>
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                  {sheetDataList.map((sd, idx) => (
+                    <button key={sd.sheetName} onClick={() => setActiveSheetIdx(idx)}
+                      className={`flex-shrink-0 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
+                        idx === activeSheetIdx
+                          ? 'border-blue-600 text-blue-700 bg-white'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      }`}>
+                      {sd.sheetName}
+                    </button>
+                  ))}
+                </div>
+                <button className="flex-shrink-0 px-2 py-2 text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                  disabled={activeSheetIdx === sheetDataList.length - 1}
+                  onClick={() => setActiveSheetIdx((i) => Math.min(sheetDataList.length - 1, i + 1))}>
+                  <ChevronRight size={16} />
+                </button>
               </div>
+
+              {activeSheet && (
+                <>
+                  <div className="px-4 py-2 border-b border-gray-100 text-xs text-gray-500">
+                    Kode Akun: <span className="font-semibold text-gray-800">{activeSheet.sheetName}</span>
+                    &ensp;·&ensp;<span className="font-semibold text-gray-800">{activeSheet.rows.length}</span> baris
+                    &ensp;·&ensp;<span className="font-semibold" style={{ color: '#4472C4' }}>{activeSheet.headers.length}</span> kolom asli
+                    &ensp;+&ensp;<span className="font-semibold" style={{ color: '#C00000' }}>3</span> kolom sistem
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr>
+                          {activeSheet.headers.map((h) => (
+                            <th key={h} className="px-3 py-2 text-left font-semibold text-white whitespace-nowrap"
+                              style={{ backgroundColor: '#4472C4', border: '1px solid #3a62a8' }}>{h}</th>
+                          ))}
+                          {ADDED_KA_HEADERS.map((h) => (
+                            <th key={h} className="px-3 py-2 text-left font-semibold text-white whitespace-nowrap"
+                              style={{ backgroundColor: '#C00000', border: '1px solid #900000' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeSheet.rows.map((row, ri) => (
+                          <tr key={ri} style={{ backgroundColor: ri % 2 === 0 ? '#ffffff' : '#eff6ff' }}>
+                            {activeSheet.headers.map((h) => (
+                              <td key={h} className="px-3 py-1.5 text-gray-700 whitespace-nowrap"
+                                style={{ border: '1px solid #e5e7eb' }}>{row[h] ?? ''}</td>
+                            ))}
+                            <td className="px-3 py-1.5 font-medium whitespace-nowrap text-gray-800"
+                              style={{ border: '1px solid #fecaca', backgroundColor: ri % 2 === 0 ? '#fff5f5' : '#fff0f0' }}>
+                              {row['__periode'] ?? ''}</td>
+                            <td className="px-3 py-1.5 whitespace-nowrap text-gray-800"
+                              style={{ border: '1px solid #fecaca', backgroundColor: ri % 2 === 0 ? '#fff5f5' : '#fff0f0' }}>
+                              {row['__klasifikasi'] ?? ''}</td>
+                            <td className="px-3 py-1.5 whitespace-nowrap text-gray-800"
+                              style={{ border: '1px solid #fecaca', backgroundColor: ri % 2 === 0 ? '#fff5f5' : '#fff0f0' }}>
+                              {row['__remark'] ?? ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Rekap Sheet Table ─────────────────────────────────────────── */}
+          {rekapSheetData && (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between"
+                style={{ background: 'linear-gradient(to right,#1F3864,#2e4d8a)' }}>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-white">
+                    Rekap — {rekapSheetData.sheetName}
+                  </h3>
+                  <p className="text-xs mt-0.5" style={{ color: '#c7d4f0' }}>
+                    {rekapSheetData.rows.filter((r) => r.type === 'detail').length} akun detail
+                    &ensp;·&ensp;
+                    <span style={{ color: '#fca5a5' }}>6 kolom tambahan sistem</span>
+                    &ensp;(GAP MoM · MoM% · Reason MoM · GAP YoY · YoY% · Reason YoY)
+                  </p>
+                </div>
+              </div>
+
               <div className="overflow-x-auto">
-                <table className="min-w-full text-xs sm:text-sm">
-                  <thead className="bg-red-600 text-white">
+                <table className="min-w-full text-[11px] border-collapse">
+                  <thead>
+                    {/* ── Row 1: year labels + group labels ── */}
                     <tr>
-                      <th className="px-3 py-2 text-left">Sheet / GL</th>
-                      <th className="px-3 py-2 text-right">Total Fluktuasi (Rp)</th>
-                      <th className="px-3 py-2 text-right">
-                        Rata-rata Fluktuasi (Rp)
-                      </th>
-                      <th className="px-3 py-2 text-right">Max</th>
-                      <th className="px-3 py-2 text-right">Min</th>
-                      <th className="px-3 py-2 text-left">Reason</th>
+                      {rekapSheetData.headers.map((_, ci) => {
+                        const ac = rekapSheetData.amountCols.find((a) => a.colIdx === ci);
+                        const bg = ac ? amtColBg(ac) : '#1F3864';
+                        const label = ac ? ac.yearLabel : '';
+                        return (
+                          <th key={ci} className="px-3 py-1 text-center text-white text-[10px] font-bold whitespace-nowrap"
+                            style={{ backgroundColor: bg, border: '1px solid rgba(255,255,255,0.15)' }}>
+                            {label}
+                          </th>
+                        );
+                      })}
+                      {/* MoM group */}
+                      <th className="px-3 py-1 text-center text-black text-[10px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>MoM</th>
+                      <th className="px-3 py-1 text-center text-black text-[10px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>MoM</th>
+                      <th className="px-3 py-1 text-center text-white text-[10px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#1F3864', border: '1px solid rgba(255,255,255,0.15)' }}>Reason MoM</th>
+                      {/* YoY group */}
+                      <th className="px-3 py-1 text-center text-black text-[10px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>YoY</th>
+                      <th className="px-3 py-1 text-center text-black text-[10px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>YoY</th>
+                      <th className="px-3 py-1 text-center text-white text-[10px] font-bold whitespace-nowrap"
+                        style={{ backgroundColor: '#1F3864', border: '1px solid rgba(255,255,255,0.15)' }}>Reason YoY</th>
+                    </tr>
+                    {/* ── Row 2: date labels + sub-labels ── */}
+                    <tr>
+                      {rekapSheetData.headers.map((h, ci) => {
+                        const ac = rekapSheetData.amountCols.find((a) => a.colIdx === ci);
+                        const bg = ac ? amtColBg(ac) : '#244185';
+                        const label = ac ? ac.dateLabel : h;
+                        return (
+                          <th key={ci} className="px-3 py-1.5 text-center text-white text-[10px] font-semibold whitespace-nowrap"
+                            style={{ backgroundColor: bg, border: '1px solid rgba(255,255,255,0.15)' }}>
+                            {label}
+                          </th>
+                        );
+                      })}
+                      <th className="px-3 py-1.5 text-center text-black text-[10px] font-semibold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>GAP<br/>MoM</th>
+                      <th className="px-3 py-1.5 text-center text-black text-[10px] font-semibold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>MoM<br/>%</th>
+                      <th className="px-3 py-1.5 text-center text-white text-[10px] font-semibold"
+                        style={{ backgroundColor: '#1F3864', border: '1px solid rgba(255,255,255,0.15)', minWidth: '220px' }}></th>
+                      <th className="px-3 py-1.5 text-center text-black text-[10px] font-semibold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>GAP<br/>YoY</th>
+                      <th className="px-3 py-1.5 text-center text-black text-[10px] font-semibold whitespace-nowrap"
+                        style={{ backgroundColor: '#FFC000', border: '1px solid #cc9a00' }}>YoY<br/>%</th>
+                      <th className="px-3 py-1.5 text-center text-white text-[10px] font-semibold"
+                        style={{ backgroundColor: '#1F3864', border: '1px solid rgba(255,255,255,0.15)', minWidth: '220px' }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rekapData.map((row) => (
-                      <tr key={row.sheetName} className="border-b border-gray-100">
-                        <td className="px-3 py-2 font-semibold text-gray-800">
-                          {row.sheetName}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-800">
-                          {row.totalFluktuasi.toLocaleString('id-ID', {
-                            maximumFractionDigits: 0,
+                    {rekapSheetData.rows.map((row, ri) => {
+                      if (row.type === 'empty') return null;
+                      const s = rekapRowStyle(row.type, ri);
+                      const isSpecial = row.type === 'category' || row.type === 'subtotal';
+                      const gapColor = (v: number) =>
+                        isSpecial ? '#fff' : v < 0 ? '#b91c1c' : v > 0 ? '#15803d' : '#374151';
+                      return (
+                        <tr key={ri}>
+                          {rekapSheetData.headers.map((_, ci) => {
+                            const ac = rekapSheetData.amountCols.find((a) => a.colIdx === ci);
+                            const isAmt = !!ac;
+                            return (
+                              <td key={ci} className="px-3 py-1.5 whitespace-nowrap"
+                                style={{
+                                  backgroundColor: s.bg,
+                                  color: s.text,
+                                  fontWeight: s.weight,
+                                  border: `1px solid ${s.border}`,
+                                  textAlign: isAmt ? 'right' : 'left',
+                                }}>
+                                {isAmt
+                                  ? (row.values[ci] !== '' && row.values[ci] !== null
+                                      ? fmtRp(parseNum(row.values[ci]))
+                                      : '')
+                                  : String(row.values[ci] ?? '')}
+                              </td>
+                            );
                           })}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-800">
-                          {row.avgFluktuasi.toLocaleString('id-ID', {
-                            maximumFractionDigits: 0,
-                          })}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-800">
-                          {row.maxFluktuasi.toLocaleString('id-ID', {
-                            maximumFractionDigits: 0,
-                          })}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-800">
-                          {row.minFluktuasi.toLocaleString('id-ID', {
-                            maximumFractionDigits: 0,
-                          })}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700 max-w-xl">
-                          {row.reason}
-                        </td>
-                      </tr>
-                    ))}
+                          {/* GAP MoM */}
+                          <td className="px-3 py-1.5 whitespace-nowrap text-right font-medium"
+                            style={{
+                              backgroundColor: isSpecial ? s.bg : ri % 2 === 0 ? '#fffbeb' : '#fef9e0',
+                              color: gapColor(row.gapMoM),
+                              fontWeight: s.weight,
+                              border: '1px solid #fde68a',
+                            }}>
+                            {row.values.some((v) => v !== '') ? fmtRp(row.gapMoM) : ''}
+                          </td>
+                          {/* MoM % */}
+                          <td className="px-3 py-1.5 whitespace-nowrap text-right font-medium"
+                            style={{
+                              backgroundColor: isSpecial ? s.bg : ri % 2 === 0 ? '#fffbeb' : '#fef9e0',
+                              color: gapColor(row.pctMoM),
+                              fontWeight: s.weight,
+                              border: '1px solid #fde68a',
+                            }}>
+                            {row.values.some((v) => v !== '') ? fmtPct(row.pctMoM) : ''}
+                          </td>
+                          {/* Reason MoM */}
+                          <td className="px-3 py-1.5"
+                            style={{
+                              backgroundColor: isSpecial ? s.bg : ri % 2 === 0 ? '#f0f3ff' : '#e8ecff',
+                              color: isSpecial ? '#fff' : '#374151',
+                              border: '1px solid #c7d2fe',
+                              minWidth: '220px',
+                              fontStyle: row.type === 'detail' ? 'italic' : 'normal',
+                              fontWeight: s.weight,
+                            }}>
+                            {row.type === 'detail' ? '—' : ''}
+                          </td>
+                          {/* GAP YoY */}
+                          <td className="px-3 py-1.5 whitespace-nowrap text-right font-medium"
+                            style={{
+                              backgroundColor: isSpecial ? s.bg : ri % 2 === 0 ? '#fffbeb' : '#fef9e0',
+                              color: gapColor(row.gapYoY),
+                              fontWeight: s.weight,
+                              border: '1px solid #fde68a',
+                            }}>
+                            {row.values.some((v) => v !== '') ? fmtRp(row.gapYoY) : ''}
+                          </td>
+                          {/* YoY % */}
+                          <td className="px-3 py-1.5 whitespace-nowrap text-right font-medium"
+                            style={{
+                              backgroundColor: isSpecial ? s.bg : ri % 2 === 0 ? '#fffbeb' : '#fef9e0',
+                              color: gapColor(row.pctYoY),
+                              fontWeight: s.weight,
+                              border: '1px solid #fde68a',
+                            }}>
+                            {row.values.some((v) => v !== '') ? fmtPct(row.pctYoY) : ''}
+                          </td>
+                          {/* Reason YoY */}
+                          <td className="px-3 py-1.5"
+                            style={{
+                              backgroundColor: isSpecial ? s.bg : ri % 2 === 0 ? '#f0f3ff' : '#e8ecff',
+                              color: isSpecial ? '#fff' : '#374151',
+                              border: '1px solid #c7d2fe',
+                              minWidth: '220px',
+                              fontStyle: row.type === 'detail' ? 'italic' : 'normal',
+                              fontWeight: s.weight,
+                            }}>
+                            {row.type === 'detail' ? '—' : ''}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* Detail Table */}
-          {fluktuasiData.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-green-50">
-                <h3 className="text-sm sm:text-base md:text-lg font-bold text-blue-700">
-                  Detail Fluktuasi per Baris (Gabungan Semua Sheet Angka)
-                </h3>
-                <p className="text-xs text-gray-600 mt-1">
-                  Representasi tabel dengan header biru + tambahan kolom merah (Fluktuasi
-                  & Reason). Anda dapat filter kembali di Excel hasil download.
-                </p>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-[11px] sm:text-xs">
-                  <thead className="bg-blue-600 text-white">
-                    <tr>
-                      <th className="px-2 py-2 text-left">Sheet</th>
-                      <th className="px-2 py-2 text-right">Row</th>
-                      <th className="px-2 py-2 text-right">Fluktuasi (Rp)</th>
-                      <th className="px-2 py-2 text-right">Fluktuasi (%)</th>
-                      <th className="px-2 py-2 text-left">Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fluktuasiData.map((row, idx) => (
-                      <tr
-                        key={`${row.__sheetName}-${row.__rowIndex}-${idx}`}
-                        className="border-b border-gray-100"
-                      >
-                        <td className="px-2 py-1 text-gray-800 font-medium">
-                          {row.__sheetName}
-                        </td>
-                        <td className="px-2 py-1 text-right text-gray-500">
-                          {row.__rowIndex}
-                        </td>
-                        <td className="px-2 py-1 text-right text-gray-800">
-                          {(row.fluktuasiRp ?? 0).toLocaleString('id-ID', {
-                            maximumFractionDigits: 0,
-                          })}
-                        </td>
-                        <td className="px-2 py-1 text-right text-gray-800">
-                          {((row.fluktuasiPersen ?? 0)).toLocaleString('id-ID', {
-                            maximumFractionDigits: 2,
-                          })}
-                          %
-                        </td>
-                        <td className="px-2 py-1 text-gray-700 max-w-xl">
-                          {row.reason}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
   );
 }
-
