@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Sidebar from '../components/Sidebar';
 import Header from '../components/Header';
 import { Upload, FileSpreadsheet, Download, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -28,12 +28,15 @@ type RekapSheetRow = {
   pctMoM: number;
   gapYoY: number;
   pctYoY: number;
+  reasonMoM: string;  // auto-populated from kode akun Klasifikasi
+  reasonYoY: string;  // auto-populated from kode akun Remark
 };
 
 type RekapSheetData = {
   sheetName: string;
   headers: string[];
   amountCols: AmountCol[];
+  accountColIdx: number;
   momCurrIdx: number;   // index in amountCols for MoM current
   momPrevIdx: number;   // index in amountCols for MoM previous
   yoyCurrIdx: number;   // index in amountCols for YoY current
@@ -92,9 +95,11 @@ const findColIdx = (headers: string[], keywords: string[]): number => {
   return -1;
 };
 
-const fmtRp = (n: number) => n.toLocaleString('id-ID', { maximumFractionDigits: 0 });
-const fmtPct = (n: number) =>
-  n.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+// Cached formatters — created once, reused on every render
+const FMT_RP  = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
+const FMT_PCT = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtRp  = (n: number) => FMT_RP.format(n);
+const fmtPct = (n: number) => FMT_PCT.format(n) + '%';
 
 const classifyRow = (values: any[], accountColIdx: number): RekapSheetRow['type'] => {
   if (values.every((v) => v === '' || v === null || v === undefined)) return 'empty';
@@ -138,6 +143,27 @@ const parseAmountColLabel = (
   return { yearLabel, dateLabel: label, isCumulative };
 };
 
+// Pure helpers outside component — no re-creation on render
+const REKAP_ROW_STYLES = {
+  category: { bg: '#1F3864', text: '#ffffff', weight: '700', border: 'rgba(255,255,255,0.15)' },
+  subtotal:  { bg: '#C00000', text: '#ffffff', weight: '700', border: 'rgba(255,255,255,0.2)'  },
+} as const;
+const rekapRowStyle = (type: RekapSheetRow['type'], ri: number) =>
+  type === 'category' ? REKAP_ROW_STYLES.category
+  : type === 'subtotal' ? REKAP_ROW_STYLES.subtotal
+  : { bg: ri % 2 === 0 ? '#ffffff' : '#f0f4ff', text: '#374151', weight: '400', border: '#e5e7eb' };
+
+const amtColBg = (ac: AmountCol) => {
+  if (ac.isCumulative) return '#E36C09';
+  const yr = ac.yearLabel.match(/20(\d{2})/);
+  if (!yr) return '#244185';
+  return parseInt(yr[1]) < 26 ? '#1F3864' : '#244185';
+};
+
+const KA_PAGE_SIZE   = 100;
+const REKAP_PAGE_SIZE = 200;
+const ADDED_KA_HEADERS = ['Periode', 'Klasifikasi', 'Remark'];
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function FluktuasiOIPage() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -146,6 +172,8 @@ export default function FluktuasiOIPage() {
   const [sheetDataList, setSheetDataList] = useState<SheetData[]>([]);
   const [rekapSheetData, setRekapSheetData] = useState<RekapSheetData | null>(null);
   const [activeSheetIdx, setActiveSheetIdx] = useState(0);
+  const [kaPage,    setKaPage]    = useState(0);
+  const [rekapPage, setRekapPage] = useState(0);
 
   // ── Process file ─────────────────────────────────────────────────────────────
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -193,10 +221,59 @@ export default function FluktuasiOIPage() {
           else { seen[key] = 0; headers.push(key); }
         });
 
-        const dateColIdx = findColIdx(headers, ['Posting Date','Pstng Date','Posting date','Document Date','Doc. Date','Tanggal Posting','Tanggal']);
-        const klasifikasiColIdx = findColIdx(headers, ['Document Header Text','Header Text','Doc. Header Text','Description','Keterangan','Uraian']);
-        const remarkColIdxRaw = findColIdx(headers, ['Assignment','Reference','Text','Ref. Doc.','Ref. document','PO Text','Item Text']);
-        const remarkColIdx = remarkColIdxRaw >= 0 && remarkColIdxRaw !== klasifikasiColIdx ? remarkColIdxRaw : klasifikasiColIdx;
+        // ── Column detection: keyword first, then auto-detect from data ──────
+        let dateColIdx = findColIdx(headers, [
+          'Posting Date','Pstng Date','Posting date','Pstng.Date',
+          'Document Date','Doc. Date','Doc.Date','DocDate',
+          'Tanggal Posting','Tanggal Dok','Tanggal','Tgl Posting',
+        ]);
+        // Fallback: scan for column whose values mostly look like dates
+        if (dateColIdx < 0) {
+          const sampleRows = raw.slice(headerRowIdx + 1, headerRowIdx + 20);
+          const isDateLike = (v: any) => {
+            if (typeof v === 'number' && v > 40000 && v < 60000) return true;
+            const s = String(v ?? '').trim();
+            return /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/.test(s) ||
+              /^\d{2}[.\-]\d{2}[.\-]\d{4}$/.test(s) ||
+              /^\d{4}-\d{2}-\d{2}$/.test(s) ||
+              /^\d{8}$/.test(s);
+          };
+          let bestDateScore = 0;
+          headers.forEach((_, col) => {
+            const vals = sampleRows.map((r) => r[col]).filter((v) => v !== '' && v !== null && v !== undefined);
+            if (vals.length === 0) return;
+            const score = vals.filter(isDateLike).length / vals.length;
+            if (score > 0.5 && score > bestDateScore) { bestDateScore = score; dateColIdx = col; }
+          });
+        }
+
+        let klasifikasiColIdx = findColIdx(headers, [
+          'Document Header Text','Header Text','Doc. Header Text','Doc.HeaderText',
+          'DocHeaderText','Header Dokumen','Deskripsi Header','Description',
+          'Keterangan','Uraian','Narasi','Nama Akun',
+        ]);
+        // Fallback: find the text column with highest avg length (likely description)
+        if (klasifikasiColIdx < 0) {
+          const sampleRows = raw.slice(headerRowIdx + 1, headerRowIdx + 30);
+          let bestAvg = 0;
+          headers.forEach((_, col) => {
+            if (col === dateColIdx) return;
+            const vals = sampleRows.map((r) => String(r?.[col] ?? '').trim()).filter((v) => v.length > 0);
+            if (vals.length === 0) return;
+            const numericCount = vals.filter((v) => !isNaN(Number(v.replace(/[.,]/g, '')))).length;
+            if (numericCount > vals.length * 0.5) return; // skip numeric cols
+            const avg = vals.reduce((acc, v) => acc + v.length, 0) / vals.length;
+            if (avg > bestAvg) { bestAvg = avg; klasifikasiColIdx = col; }
+          });
+        }
+
+        const remarkColIdxRaw = findColIdx(headers, [
+          'Assignment','Zuordnung','Reference','Ref. Doc.','Ref. document',
+          'Text','Item Text','PO Text','Teks','Keterangan Item','Narasi Item',
+        ]);
+        const remarkColIdx = remarkColIdxRaw >= 0 && remarkColIdxRaw !== klasifikasiColIdx
+          ? remarkColIdxRaw
+          : klasifikasiColIdx;
 
         const rows: Record<string, any>[] = [];
         for (let r = headerRowIdx + 1; r < raw.length; r++) {
@@ -212,6 +289,21 @@ export default function FluktuasiOIPage() {
         result.push({ sheetName, headers, rows });
       }
       setSheetDataList(result);
+
+      // ── Build lookup map: accountCode → { klasifikasi[], remark[] } ─────────
+      const acctReasonMap: Record<string, { klasifikasi: Set<string>; remark: Set<string> }> = {};
+      for (const sd of result) {
+        const code = sd.sheetName.trim();
+        const kSet = new Set<string>();
+        const rSet = new Set<string>();
+        for (const row of sd.rows) {
+          const k = String(row['__klasifikasi'] ?? '').trim();
+          const r = String(row['__remark'] ?? '').trim();
+          if (k) kSet.add(k);
+          if (r) rSet.add(r);
+        }
+        acctReasonMap[code] = { klasifikasi: kSet, remark: rSet };
+      }
 
       // ── Process rekap sheet ───────────────────────────────────────────────
       if (rekapSheetName) {
@@ -325,13 +417,20 @@ export default function FluktuasiOIPage() {
             const gapYoY = yoyCurr - yoyPrev;
             const pctYoY = yoyPrev === 0 ? 0 : (gapYoY / Math.abs(yoyPrev)) * 100;
 
-            rekapRows.push({ values, type, gapMoM, pctMoM, gapYoY, pctYoY });
+            // Auto-populate reasons from kode akun lookup
+            const acctCode = String(values[accountColIdx] ?? '').trim();
+            const acctEntry = acctReasonMap[acctCode];
+            const reasonMoM = acctEntry ? [...acctEntry.klasifikasi].join('; ') : '';
+            const reasonYoY = acctEntry ? [...acctEntry.remark].join('; ') : '';
+
+            rekapRows.push({ values, type, gapMoM, pctMoM, gapYoY, pctYoY, reasonMoM, reasonYoY });
           }
 
           setRekapSheetData({
             sheetName: rekapSheetName,
             headers,
             amountCols,
+            accountColIdx,
             momCurrIdx,
             momPrevIdx,
             yoyCurrIdx,
@@ -349,78 +448,64 @@ export default function FluktuasiOIPage() {
     }
   };
 
-  // ── Download ──────────────────────────────────────────────────────────────────
+  // ── Download (via API → ExcelJS with full formatting) ────────────────────────
+  const [isDownloading, setIsDownloading] = useState(false);
+
   const handleDownload = async () => {
     if (!sheetDataList.length && !rekapSheetData) {
       alert('Belum ada data. Upload file terlebih dahulu.');
       return;
     }
-    const XLSXLib = await loadXLSX();
-    const wb = XLSXLib.utils.book_new();
-
-    for (const sd of sheetDataList) {
-      const sheetRows = sd.rows.map((row) => {
-        const out: Record<string, any> = {};
-        sd.headers.forEach((h) => { out[h] = row[h] ?? ''; });
-        out['Periode']     = row['__periode']     ?? '';
-        out['Klasifikasi'] = row['__klasifikasi'] ?? '';
-        out['Remark']      = row['__remark']      ?? '';
-        return out;
+    setIsDownloading(true);
+    try {
+      const res = await fetch('/api/fluktuasi/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName, sheetDataList, rekapSheetData }),
       });
-      const ws = XLSXLib.utils.json_to_sheet(sheetRows);
-      XLSXLib.utils.book_append_sheet(wb, ws, sd.sheetName.slice(0, 31));
+      if (!res.ok) throw new Error(`Server error ${res.status}`);
+      const blob = await res.blob();
+      const base = fileName.replace(/\.[^.]+$/, '') || 'Fluktuasi_OI';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${base}_HASIL.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error(err);
+      alert('Gagal download: ' + (err?.message || err));
+    } finally {
+      setIsDownloading(false);
     }
-
-    if (rekapSheetData) {
-      // Build 2-row header: top = year groups, bottom = date labels + added cols
-      const origLen = rekapSheetData.headers.length;
-      const addedLabels = ['GAP\nMoM', 'MoM\n%', 'Reason MoM', 'GAP\nYoY', 'YoY\n%', 'Reason YoY'];
-      const headerRow1 = rekapSheetData.headers.map((_, i) => {
-        const ac = rekapSheetData.amountCols.find((a) => a.colIdx === i);
-        return ac ? ac.yearLabel : '';
-      });
-      const headerRow2 = [...rekapSheetData.headers, ...addedLabels];
-
-      const wsData: any[][] = [headerRow1.concat(['','','','','','']) as any[], headerRow2 as any[]];
-      rekapSheetData.rows.forEach((row) => {
-        if (row.type === 'empty') return;
-        wsData.push([
-          ...row.values,
-          row.gapMoM,
-          row.pctMoM,
-          '',
-          row.gapYoY,
-          row.pctYoY,
-          '',
-        ]);
-      });
-      const wsRekap = XLSXLib.utils.aoa_to_sheet(wsData);
-      XLSXLib.utils.book_append_sheet(wb, wsRekap, rekapSheetData.sheetName.slice(0, 31));
-    }
-
-    const base = fileName.replace(/\.[^.]+$/, '') || 'Fluktuasi_OI';
-    XLSXLib.writeFile(wb, `${base}_HASIL.xlsx`);
   };
 
-  const activeSheet = sheetDataList[activeSheetIdx] ?? null;
-  const ADDED_KA_HEADERS = ['Periode', 'Klasifikasi', 'Remark'];
+  // ── Derived / memoized values ──────────────────────────────────────────────
+  const activeSheet = useMemo(() => sheetDataList[activeSheetIdx] ?? null, [sheetDataList, activeSheetIdx]);
 
-  // Row styling for rekap
-  const rekapRowStyle = (type: RekapSheetRow['type'], ri: number) => {
-    if (type === 'category') return { bg: '#1F3864', text: '#ffffff', weight: '700', border: 'rgba(255,255,255,0.15)' };
-    if (type === 'subtotal') return { bg: '#C00000', text: '#ffffff', weight: '700', border: 'rgba(255,255,255,0.2)' };
-    return { bg: ri % 2 === 0 ? '#ffffff' : '#f0f4ff', text: '#374151', weight: '400', border: '#e5e7eb' };
-  };
+  // Paginated kode-akun rows
+  const kaRows = useMemo(() => activeSheet?.rows ?? [], [activeSheet]);
+  const kaTotalPages = Math.ceil(kaRows.length / KA_PAGE_SIZE);
+  const kaPageRows   = useMemo(() => kaRows.slice(kaPage * KA_PAGE_SIZE, (kaPage + 1) * KA_PAGE_SIZE), [kaRows, kaPage]);
 
-  // Column header color helpers
-  const amtColBg = (ac: AmountCol) => {
-    if (ac.isCumulative) return '#E36C09'; // orange for Total Up to
-    const yr = ac.yearLabel.match(/20(\d{2})/);
-    if (!yr) return '#244185';
-    const yy = parseInt(yr[1]);
-    const cyy = new Date().getFullYear() % 100;
-    return yy < cyy ? '#1F3864' : '#244185'; // darker for older year
-  };
+  // Precomputed amountCols set for O(1) lookup per cell
+  const amtColMap = useMemo(() => {
+    const m = new Map<number, AmountCol>();
+    rekapSheetData?.amountCols.forEach((ac) => m.set(ac.colIdx, ac));
+    return m;
+  }, [rekapSheetData]);
+
+  // Paginated rekap rows (skip empty)
+  const rekapDisplayRows = useMemo(() =>
+    (rekapSheetData?.rows ?? []).filter((r) => r.type !== 'empty'),
+  [rekapSheetData]);
+  const rekapTotalPages = Math.ceil(rekapDisplayRows.length / REKAP_PAGE_SIZE);
+  const rekapPageRows   = useMemo(() =>
+    rekapDisplayRows.slice(rekapPage * REKAP_PAGE_SIZE, (rekapPage + 1) * REKAP_PAGE_SIZE),
+  [rekapDisplayRows, rekapPage]);
+
+  // Reset pages when switching tabs
+  const switchTab = useCallback((idx: number) => { setActiveSheetIdx(idx); setKaPage(0); }, []);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -458,11 +543,12 @@ export default function FluktuasiOIPage() {
               </div>
               <button
                 onClick={handleDownload}
-                disabled={isProcessing || (!sheetDataList.length && !rekapSheetData)}
+                disabled={isProcessing || isDownloading || (!sheetDataList.length && !rekapSheetData)}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-sm text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Download size={16} />
-                Download Excel Hasil
+                {isDownloading
+                  ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Menyiapkan…</>
+                  : <><Download size={16} />Download Excel Hasil</>}
               </button>
             </div>
 
@@ -515,12 +601,12 @@ export default function FluktuasiOIPage() {
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
               <div className="flex items-center border-b border-gray-200 bg-gray-50">
                 <button className="flex-shrink-0 px-2 py-2 text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                  disabled={activeSheetIdx === 0} onClick={() => setActiveSheetIdx((i) => Math.max(0, i - 1))}>
+                  disabled={activeSheetIdx === 0} onClick={() => switchTab(Math.max(0, activeSheetIdx - 1))}>
                   <ChevronLeft size={16} />
                 </button>
                 <div className="flex overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                   {sheetDataList.map((sd, idx) => (
-                    <button key={sd.sheetName} onClick={() => setActiveSheetIdx(idx)}
+                    <button key={sd.sheetName} onClick={() => switchTab(idx)}
                       className={`flex-shrink-0 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
                         idx === activeSheetIdx
                           ? 'border-blue-600 text-blue-700 bg-white'
@@ -532,18 +618,26 @@ export default function FluktuasiOIPage() {
                 </div>
                 <button className="flex-shrink-0 px-2 py-2 text-gray-400 hover:text-gray-600 disabled:opacity-30"
                   disabled={activeSheetIdx === sheetDataList.length - 1}
-                  onClick={() => setActiveSheetIdx((i) => Math.min(sheetDataList.length - 1, i + 1))}>
+                  onClick={() => switchTab(Math.min(sheetDataList.length - 1, activeSheetIdx + 1))}>
                   <ChevronRight size={16} />
                 </button>
               </div>
 
               {activeSheet && (
                 <>
-                  <div className="px-4 py-2 border-b border-gray-100 text-xs text-gray-500">
-                    Kode Akun: <span className="font-semibold text-gray-800">{activeSheet.sheetName}</span>
-                    &ensp;·&ensp;<span className="font-semibold text-gray-800">{activeSheet.rows.length}</span> baris
-                    &ensp;·&ensp;<span className="font-semibold" style={{ color: '#4472C4' }}>{activeSheet.headers.length}</span> kolom asli
-                    &ensp;+&ensp;<span className="font-semibold" style={{ color: '#C00000' }}>3</span> kolom sistem
+                  <div className="px-4 py-2 border-b border-gray-100 text-xs text-gray-500 flex flex-wrap items-center gap-3">
+                    <span>Kode Akun: <span className="font-semibold text-gray-800">{activeSheet.sheetName}</span></span>
+                    <span><span className="font-semibold text-gray-800">{kaRows.length}</span> baris</span>
+                    <span><span className="font-semibold" style={{ color: '#4472C4' }}>{activeSheet.headers.length}</span> kolom asli + <span className="font-semibold" style={{ color: '#C00000' }}>3</span> kolom sistem</span>
+                    {kaTotalPages > 1 && (
+                      <span className="ml-auto flex items-center gap-1">
+                        <button onClick={() => setKaPage((p) => Math.max(0, p - 1))} disabled={kaPage === 0}
+                          className="px-2 py-0.5 rounded border text-gray-600 hover:bg-gray-100 disabled:opacity-30">‹</button>
+                        <span className="text-gray-500">Hal {kaPage + 1}/{kaTotalPages}</span>
+                        <button onClick={() => setKaPage((p) => Math.min(kaTotalPages - 1, p + 1))} disabled={kaPage === kaTotalPages - 1}
+                          className="px-2 py-0.5 rounded border text-gray-600 hover:bg-gray-100 disabled:opacity-30">›</button>
+                      </span>
+                    )}
                   </div>
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-[11px] border-collapse">
@@ -560,23 +654,28 @@ export default function FluktuasiOIPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {activeSheet.rows.map((row, ri) => (
-                          <tr key={ri} style={{ backgroundColor: ri % 2 === 0 ? '#ffffff' : '#eff6ff' }}>
+                        {kaPageRows.map((row, ri) => {
+                          const globalRi = kaPage * KA_PAGE_SIZE + ri;
+                          const rowBg = globalRi % 2 === 0 ? '#ffffff' : '#eff6ff';
+                          const addBg = globalRi % 2 === 0 ? '#fff5f5' : '#fff0f0';
+                          return (
+                          <tr key={ri} style={{ backgroundColor: rowBg }}>
                             {activeSheet.headers.map((h) => (
                               <td key={h} className="px-3 py-1.5 text-gray-700 whitespace-nowrap"
                                 style={{ border: '1px solid #e5e7eb' }}>{row[h] ?? ''}</td>
                             ))}
                             <td className="px-3 py-1.5 font-medium whitespace-nowrap text-gray-800"
-                              style={{ border: '1px solid #fecaca', backgroundColor: ri % 2 === 0 ? '#fff5f5' : '#fff0f0' }}>
+                              style={{ border: '1px solid #fecaca', backgroundColor: addBg }}>
                               {row['__periode'] ?? ''}</td>
                             <td className="px-3 py-1.5 whitespace-nowrap text-gray-800"
-                              style={{ border: '1px solid #fecaca', backgroundColor: ri % 2 === 0 ? '#fff5f5' : '#fff0f0' }}>
+                              style={{ border: '1px solid #fecaca', backgroundColor: addBg }}>
                               {row['__klasifikasi'] ?? ''}</td>
                             <td className="px-3 py-1.5 whitespace-nowrap text-gray-800"
-                              style={{ border: '1px solid #fecaca', backgroundColor: ri % 2 === 0 ? '#fff5f5' : '#fff0f0' }}>
+                              style={{ border: '1px solid #fecaca', backgroundColor: addBg }}>
                               {row['__remark'] ?? ''}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -603,13 +702,25 @@ export default function FluktuasiOIPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+                  {rekapTotalPages > 1 && (
+                    <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                      <span><span className="font-semibold text-gray-800">{rekapDisplayRows.length}</span> baris</span>
+                      <span className="flex items-center gap-1">
+                        <button onClick={() => setRekapPage((p) => Math.max(0, p - 1))} disabled={rekapPage === 0}
+                          className="px-2 py-0.5 rounded border text-gray-600 hover:bg-gray-100 disabled:opacity-30">‹</button>
+                        <span>Hal {rekapPage + 1}/{rekapTotalPages}</span>
+                        <button onClick={() => setRekapPage((p) => Math.min(rekapTotalPages - 1, p + 1))} disabled={rekapPage === rekapTotalPages - 1}
+                          className="px-2 py-0.5 rounded border text-gray-600 hover:bg-gray-100 disabled:opacity-30">›</button>
+                      </span>
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
                 <table className="min-w-full text-[11px] border-collapse">
                   <thead>
                     {/* ── Row 1: year labels + group labels ── */}
                     <tr>
                       {rekapSheetData.headers.map((_, ci) => {
-                        const ac = rekapSheetData.amountCols.find((a) => a.colIdx === ci);
+                        const ac = amtColMap.get(ci);
                         const bg = ac ? amtColBg(ac) : '#1F3864';
                         const label = ac ? ac.yearLabel : '';
                         return (
@@ -637,7 +748,7 @@ export default function FluktuasiOIPage() {
                     {/* ── Row 2: date labels + sub-labels ── */}
                     <tr>
                       {rekapSheetData.headers.map((h, ci) => {
-                        const ac = rekapSheetData.amountCols.find((a) => a.colIdx === ci);
+                        const ac = amtColMap.get(ci);
                         const bg = ac ? amtColBg(ac) : '#244185';
                         const label = ac ? ac.dateLabel : h;
                         return (
@@ -662,16 +773,16 @@ export default function FluktuasiOIPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rekapSheetData.rows.map((row, ri) => {
-                      if (row.type === 'empty') return null;
-                      const s = rekapRowStyle(row.type, ri);
+                    {rekapPageRows.map((row, ri) => {
+                      const globalRi = rekapPage * REKAP_PAGE_SIZE + ri;
+                      const s = rekapRowStyle(row.type, globalRi);
                       const isSpecial = row.type === 'category' || row.type === 'subtotal';
                       const gapColor = (v: number) =>
                         isSpecial ? '#fff' : v < 0 ? '#b91c1c' : v > 0 ? '#15803d' : '#374151';
                       return (
                         <tr key={ri}>
                           {rekapSheetData.headers.map((_, ci) => {
-                            const ac = rekapSheetData.amountCols.find((a) => a.colIdx === ci);
+                            const ac = amtColMap.get(ci);
                             const isAmt = !!ac;
                             return (
                               <td key={ci} className="px-3 py-1.5 whitespace-nowrap"
@@ -717,10 +828,10 @@ export default function FluktuasiOIPage() {
                               color: isSpecial ? '#fff' : '#374151',
                               border: '1px solid #c7d2fe',
                               minWidth: '220px',
-                              fontStyle: row.type === 'detail' ? 'italic' : 'normal',
+                              fontStyle: !isSpecial && !row.reasonMoM ? 'italic' : 'normal',
                               fontWeight: s.weight,
                             }}>
-                            {row.type === 'detail' ? '—' : ''}
+                            {isSpecial ? '' : (row.reasonMoM || '—')}
                           </td>
                           {/* GAP YoY */}
                           <td className="px-3 py-1.5 whitespace-nowrap text-right font-medium"
@@ -749,10 +860,10 @@ export default function FluktuasiOIPage() {
                               color: isSpecial ? '#fff' : '#374151',
                               border: '1px solid #c7d2fe',
                               minWidth: '220px',
-                              fontStyle: row.type === 'detail' ? 'italic' : 'normal',
+                              fontStyle: !isSpecial && !row.reasonYoY ? 'italic' : 'normal',
                               fontWeight: s.weight,
                             }}>
-                            {row.type === 'detail' ? '—' : ''}
+                            {isSpecial ? '' : (row.reasonYoY || '—')}
                           </td>
                         </tr>
                       );
