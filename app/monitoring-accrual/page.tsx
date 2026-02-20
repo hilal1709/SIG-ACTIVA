@@ -2719,9 +2719,6 @@ export default function MonitoringAccrualPage() {
                           <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
                             {formatCurrency(totalSaldoKodeAkun)}
                           </td>
-                          <td className="px-4 py-3 text-right font-bold text-blue-900 bg-blue-50">
-                            {formatCurrency(totalSaldoKodeAkun)}
-                          </td>
                           <td className="px-4 py-3 bg-blue-50"></td>
                           <td className="px-4 py-3 bg-blue-50">
                             <div className="flex items-center justify-center gap-1">
