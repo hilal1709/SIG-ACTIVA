@@ -62,7 +62,9 @@ export async function GET(request: NextRequest) {
                 id: true,
                 tanggalRealisasi: true,
                 amount: true,
-                keterangan: true
+                keterangan: true,
+                kdAkunBiaya: true,
+                costCenter: true
               }
             }
           },

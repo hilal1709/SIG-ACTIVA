@@ -195,6 +195,7 @@ export default function MonitoringAccrualPage() {
   const [selectedPeriode, setSelectedPeriode] = useState<AccrualPeriode | null>(null);
   const [realisasiViewOnly, setRealisasiViewOnly] = useState(false);
   const [realisasiData, setRealisasiData] = useState<RealisasiData[]>([]);
+  const [loadingRealisasiData, setLoadingRealisasiData] = useState(false);
   const [currentAccrualItem, setCurrentAccrualItem] = useState<Accrual | null>(null);
   const [realisasiForm, setRealisasiForm] = useState<RealisasiFormData>({
     tanggalRealisasi: new Date().toISOString().split('T')[0],
@@ -1902,6 +1903,8 @@ export default function MonitoringAccrualPage() {
     setSelectedPeriode(periode);
     setRealisasiViewOnly(viewOnly);
     setShowRealisasiModal(true);
+    setLoadingRealisasiData(true);
+    setRealisasiData([]); // Clear previous data
     
     // Find the parent accrual item
     const parentAccrual = accrualData.find(acc => 
@@ -1911,13 +1914,23 @@ export default function MonitoringAccrualPage() {
     
     // Fetch existing realisasi
     try {
+      console.log('Fetching realisasi for periode ID:', periode.id);
       const response = await fetch(`/api/accrual/realisasi?periodeId=${periode.id}`);
+      console.log('Response status:', response.status, response.ok);
       if (response.ok) {
         const data = await response.json();
+        console.log('Realisasi data fetched:', data);
         setRealisasiData(data);
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to fetch realisasi:', response.status, errorText);
+        setRealisasiData([]);
       }
     } catch (error) {
       console.error('Error fetching realisasi:', error);
+      setRealisasiData([]);
+    } finally {
+      setLoadingRealisasiData(false);
     }
   };
 
@@ -3536,6 +3549,7 @@ export default function MonitoringAccrualPage() {
                   setSelectedPeriode(null);
                   setRealisasiViewOnly(false);
                   setRealisasiData([]);
+                  setLoadingRealisasiData(false);
                   setRealisasiForm({
                     tanggalRealisasi: new Date().toISOString().split('T')[0],
                     amount: '',
@@ -3718,7 +3732,12 @@ export default function MonitoringAccrualPage() {
                 <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
                   <h3 className="text-sm font-semibold text-gray-700">History Realisasi</h3>
                 </div>
-                {realisasiData.length === 0 ? (
+                {loadingRealisasiData ? (
+                  <div className="p-8 text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                    <p className="text-gray-500 text-sm mt-2">Memuat history realisasi...</p>
+                  </div>
+                ) : realisasiData.length === 0 ? (
                   <div className="p-8 text-center text-gray-500 text-sm">
                     Belum ada realisasi untuk periode ini
                   </div>
@@ -3829,6 +3848,7 @@ export default function MonitoringAccrualPage() {
                   setSelectedPeriode(null);
                   setRealisasiViewOnly(false);
                   setRealisasiData([]);
+                  setLoadingRealisasiData(false);
                   setEditingRealisasiId(null);
                   setRealisasiForm({
                     tanggalRealisasi: new Date().toISOString().split('T')[0],
