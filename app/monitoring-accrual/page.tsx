@@ -2696,7 +2696,7 @@ export default function MonitoringAccrualPage() {
                               {isKodeAkunExpanded ? '▼' : '▶'}
                             </button>
                           </td>
-                          <td colSpan={9} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
+                          <td colSpan={10} className="px-4 py-3 text-left text-blue-900 bg-blue-50">
                             Kode Akun: {kodeAkun}
                           </td>
                           <td className="px-4 py-3 bg-blue-50"></td>
@@ -2877,7 +2877,7 @@ export default function MonitoringAccrualPage() {
                                     {isVendorExpanded ? '▼' : '▶'}
                                   </button>
                                 </td>
-                                <td colSpan={9} className="px-4 py-3 text-left text-green-900 bg-green-50">
+                                <td colSpan={10} className="px-4 py-3 text-left text-green-900 bg-green-50">
                                   Vendor: {vendor}
                                 </td>
                                 <td className="px-4 py-3 bg-green-50"></td>
