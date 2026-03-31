@@ -1550,6 +1550,8 @@ export default function FluktuasiOIPage() {
   const [dbPeriodeStats,  setDbPeriodeStats]  = useState<{ periodes: string[]; accounts: number } | null>(null);
   const [selectedPeriodes, setSelectedPeriodes] = useState<Set<string>>(new Set());
   const [persistedSheetRowCodes, setPersistedSheetRowCodes] = useState<Set<string>>(new Set());
+  // Breakdown from DB: accountCode -> klasifikasi -> periode -> amount
+  const [dbBreakdown, setDbBreakdown] = useState<Record<string, Record<string, Record<string, number>>>>({});
 
   const fetchJsonWithRetry = useCallback(async (url: string, init?: RequestInit, retries = 2, delayMs = 350) => {
     let lastErr: unknown = null;
@@ -1674,6 +1676,11 @@ export default function FluktuasiOIPage() {
     loadKeywords();
     loadDbStats();
     loadPersistedSheetRowCodes();
+    // Fetch breakdown from DB for template reasons (works across browsers)
+    fetch('/api/fluktuasi/sheet-rows/breakdown')
+      .then(r => r.json())
+      .then(d => { if (d.success) setDbBreakdown(d.data ?? {}); })
+      .catch(() => {});
   }, []);
 
   // Check if user can edit (only ADMIN_SYSTEM and STAFF_ACCOUNTING)
@@ -3599,8 +3606,8 @@ export default function FluktuasiOIPage() {
         return rekapSheetData.rows.some((r) => String(r.values[ci] ?? '').trim() !== '');
       }) ?? -1;
 
-    // Pre-build sub-breakdown per accountCode from sheetDataList
-    // Map: accountCode -> Map<klasifikasi, Map<periodeKey, amount>>
+    // Pre-build sub-breakdown per accountCode from sheetDataList (in-memory, current session)
+    // Falls back to dbBreakdown (fetched from DB, works across browsers)
     const acctKlasPeriodeMap = new Map<string, Map<string, Map<string, number>>>();
     for (const sd of sheetDataList) {
       const acctCode = (sd.sheetName.trim().match(/^(\d{5,})/)?.[1] ?? sd.sheetName.trim());
@@ -3623,14 +3630,26 @@ export default function FluktuasiOIPage() {
       currPeriode: string,
       prevPeriode: string,
     ): { klasifikasi: string; currAmount: number; prevAmount: number }[] => {
+      // Prefer in-memory sheetDataList, fallback to DB breakdown
       const klasMap = acctKlasPeriodeMap.get(acctCode);
-      if (!klasMap) return [];
+      const dbKlas  = dbBreakdown[acctCode];
+
       const result: { klasifikasi: string; currAmount: number; prevAmount: number }[] = [];
-      for (const [klas, periodeMap] of klasMap) {
-        const curr = periodeMap.get(currPeriode) ?? 0;
-        const prev = periodeMap.get(prevPeriode) ?? 0;
-        if (curr !== 0 || prev !== 0) result.push({ klasifikasi: klas, currAmount: curr, prevAmount: prev });
+
+      if (klasMap && klasMap.size > 0) {
+        for (const [klas, periodeMap] of klasMap) {
+          const curr = periodeMap.get(currPeriode) ?? 0;
+          const prev = periodeMap.get(prevPeriode) ?? 0;
+          if (curr !== 0 || prev !== 0) result.push({ klasifikasi: klas, currAmount: curr, prevAmount: prev });
+        }
+      } else if (dbKlas) {
+        for (const [klas, periodeMap] of Object.entries(dbKlas)) {
+          const curr = periodeMap[currPeriode] ?? 0;
+          const prev = periodeMap[prevPeriode] ?? 0;
+          if (curr !== 0 || prev !== 0) result.push({ klasifikasi: klas, currAmount: curr, prevAmount: prev });
+        }
       }
+
       return result.sort((a, b) => Math.abs(b.currAmount) - Math.abs(a.currAmount));
     };
 
@@ -3676,7 +3695,7 @@ export default function FluktuasiOIPage() {
       map.set(idx, { mom, yoy, ytd });
     });
     return map;
-  }, [rekapDisplayRowsLive, rekapSheetData, sheetDataList, momSel, yoySel, ytdSel]);
+  }, [rekapDisplayRowsLive, rekapSheetData, sheetDataList, dbBreakdown, momSel, yoySel, ytdSel]);
 
   return (
     <div className="flex min-h-screen bg-gray-50">
