@@ -242,16 +242,45 @@ const extractKlasifikasi = (text: string): string => {
   return cleaned || s;
 };
 
+type KeywordBuckets = { positive: Keyword[]; not: Keyword[] };
+const KEYWORD_BUCKET_CACHE = new WeakMap<Keyword[], Map<string, KeywordBuckets>>();
+const SOURCE_COL_PARSE_CACHE = new Map<string, string[]>();
+
 const parseSourceColumns = (raw: string): string[] => {
-  return [...new Set(
-    String(raw ?? '')
+  const key = String(raw ?? '');
+  const cached = SOURCE_COL_PARSE_CACHE.get(key);
+  if (cached) return cached;
+  const parsed = [...new Set(
+    key
       .split(/[,|/]+/)
       .map((s) => s.trim())
       .filter(Boolean)
   )];
+  SOURCE_COL_PARSE_CACHE.set(key, parsed);
+  return parsed;
 };
 
 const normalizeSourceColumns = (raw: string): string => parseSourceColumns(raw).join(', ');
+
+const getKeywordBuckets = (keywords: Keyword[], type: string): KeywordBuckets => {
+  let byType = KEYWORD_BUCKET_CACHE.get(keywords);
+  if (!byType) {
+    byType = new Map<string, KeywordBuckets>();
+    KEYWORD_BUCKET_CACHE.set(keywords, byType);
+  }
+  const hit = byType.get(type);
+  if (hit) return hit;
+
+  const relevant = keywords
+    .filter((kw) => kw.type === type)
+    .sort((a, b) => b.priority - a.priority);
+  const buckets: KeywordBuckets = {
+    positive: relevant.filter((kw) => !kw.keyword.toLowerCase().startsWith('not:')),
+    not: relevant.filter((kw) => kw.keyword.toLowerCase().startsWith('not:')),
+  };
+  byType.set(type, buckets);
+  return buckets;
+};
 
 const ACCOUNT_NAME_BY_CODE: Record<string, string> = {
   '71510000': 'BEBAN BUNGA PINJAMAN',
@@ -578,14 +607,7 @@ const matchKeywords = (text: string, keywords: Keyword[], type: string, docno?: 
   // so overlapping keywords do not produce merged labels in a single row.
   const collectAll = false;
 
-  // Filter by type and sort by priority (highest first)
-  const relevantKeywords = keywords
-    .filter((kw) => kw.type === type)
-    .sort((a, b) => b.priority - a.priority);
-
-  // Separate positive (including docno/col) and NOT keywords
-  const positiveKeywords = relevantKeywords.filter(kw => !kw.keyword.toLowerCase().startsWith('not:'));
-  const notKeywords = relevantKeywords.filter(kw => kw.keyword.toLowerCase().startsWith('not:'));
+  const { positive: positiveKeywords, not: notKeywords } = getKeywordBuckets(keywords, type);
 
   // -- Helper: resolve effective text for a keyword (sourceColumn can target multiple columns)
   const getEffText = (kw: Keyword): { str: string; lower: string } => {
@@ -2754,6 +2776,7 @@ export default function FluktuasiOIPage() {
 
       // -- Save rows per-account to DB (so other users can view without re-uploading) -
       // Run in background and stop early if DB is unavailable to avoid 500 spam.
+      setTimeout(() => {
       void (async () => {
         let shouldStop = false;
         let warned = false;
@@ -2806,6 +2829,7 @@ export default function FluktuasiOIPage() {
           }
         }
       })();
+      }, 0);
 
     } catch (err: any) {
       console.error(err);
