@@ -890,7 +890,7 @@ const buildRekapFromAkunPeriodes = (
   records: AkunPeriodeRecord[],
 ): RekapSheetData => {
   // 1. All unique sorted periods
-  const allPeriodes = lastNPeriodes(records.map((r) => r.periode), MAX_PERIOD_COLUMNS);
+  const allPeriodes = lastNPeriodes(records.map((r) => String(r.periode ?? '')), MAX_PERIOD_COLUMNS);
 
   // 2. Aggregate per account, combining amounts + reasons from records
   const accountMap = new Map<
@@ -907,8 +907,8 @@ const buildRekapFromAkunPeriodes = (
     }
     const entry = accountMap.get(r.accountCode)!;
     entry.amounts.set(r.periode, (entry.amounts.get(r.periode) ?? 0) + r.amount);
-    r.klasifikasi.split(';').map((s) => s.trim()).filter(Boolean).forEach((k) => entry.klasifikasi.add(k));
-    r.remark.split(';').map((s) => s.trim()).filter(Boolean).forEach((k) => entry.remark.add(k));
+    String(r.klasifikasi ?? '').split(';').map((s) => s.trim()).filter(Boolean).forEach((k) => entry.klasifikasi.add(k));
+    String(r.remark ?? '').split(';').map((s) => s.trim()).filter(Boolean).forEach((k) => entry.remark.add(k));
   }
 
   const toMonthEndLabel = (periode: string): string => {
@@ -2500,7 +2500,7 @@ export default function FluktuasiOIPage() {
       }
 
       try {
-        const latestRes = await fetch('/api/fluktuasi/akun-periodes?slim=1');
+        const latestRes = await fetch('/api/fluktuasi/akun-periodes');
         const latestJson = await latestRes.json();
         if (latestJson.success && Array.isArray(latestJson.data)) {
           latestDbRecords = latestJson.data as AkunPeriodeRecord[];
