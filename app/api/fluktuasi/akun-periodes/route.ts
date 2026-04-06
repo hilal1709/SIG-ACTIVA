@@ -73,9 +73,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Deduplicate by unique key to avoid concurrent upserts targeting the same
+    // accountCode+periode pair (can trigger transient write conflicts).
+    const normalizedMap = new Map<string, {
+      accountCode: string;
+      periode: string;
+      amount: number;
+      klasifikasi: string;
+      remark: string;
+    }>();
+    for (const rec of records) {
+      const accountCode = String(rec.accountCode ?? '').trim();
+      const periode = String(rec.periode ?? '').trim();
+      if (!accountCode || !periode) continue;
+      const amountNum = Number(rec.amount ?? 0);
+      normalizedMap.set(`${accountCode}__${periode}`, {
+        accountCode,
+        periode,
+        amount: Number.isFinite(amountNum) ? amountNum : 0,
+        klasifikasi: String(rec.klasifikasi ?? ''),
+        remark: String(rec.remark ?? ''),
+      });
+    }
+    const normalizedRecords = [...normalizedMap.values()];
+    if (normalizedRecords.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'records valid tidak ditemukan' },
+        { status: 400 },
+      );
+    }
+
     // Preserve previously stored non-zero amounts when a newer upload sends 0
     // for the same account+periode key.
-    const uniqKeys = [...new Set(records.map((r) => `${r.accountCode}__${r.periode}`))]
+    const uniqKeys = [...new Set(normalizedRecords.map((r) => `${r.accountCode}__${r.periode}`))]
       .map((k) => {
         const [accountCode, periode] = k.split('__');
         return { accountCode, periode };
@@ -106,6 +136,7 @@ export async function POST(req: NextRequest) {
     // Batch upsert in small chunks to avoid connection spikes when uploading
     // large files (previously this caused partial save failures on production DB).
     const UPSERT_BATCH_SIZE = 100;
+    const UPSERT_CONCURRENCY = 10;
     let success = 0;
     let failed = 0;
     const failedSamples: string[] = [];
@@ -144,36 +175,37 @@ export async function POST(req: NextRequest) {
       });
     };
 
-    for (let i = 0; i < records.length; i += UPSERT_BATCH_SIZE) {
-      const chunk = records.slice(i, i + UPSERT_BATCH_SIZE);
-      const chunkResults = await Promise.allSettled(chunk.map((r) => upsertOne(r)));
+    const runLimited = async (rows: typeof normalizedRecords) => {
+      const failedRows: typeof normalizedRecords = [];
+      for (let i = 0; i < rows.length; i += UPSERT_CONCURRENCY) {
+        const part = rows.slice(i, i + UPSERT_CONCURRENCY);
+        const results = await Promise.allSettled(part.map((r) => upsertOne(r)));
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled') {
+            success++;
+            return;
+          }
+          failedRows.push(part[idx]);
+          if (failedSamples.length < 5) {
+            const message =
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason ?? 'Unknown upsert error');
+            failedSamples.push(message);
+          }
+        });
+      }
+      return failedRows;
+    };
 
-      const retryRows: typeof chunk = [];
-      chunkResults.forEach((result, idx) => {
-        if (result.status === 'fulfilled') {
-          success++;
-          return;
-        }
-        retryRows.push(chunk[idx]);
-      });
-
+    for (let i = 0; i < normalizedRecords.length; i += UPSERT_BATCH_SIZE) {
+      const chunk = normalizedRecords.slice(i, i + UPSERT_BATCH_SIZE);
+      const retryRows = await runLimited(chunk);
       if (!retryRows.length) continue;
 
-      const retryResults = await Promise.allSettled(retryRows.map((r) => upsertOne(r)));
-      for (const result of retryResults) {
-        if (result.status === 'fulfilled') {
-          success++;
-          continue;
-        }
-        failed++;
-        if (failedSamples.length < 5) {
-          const message =
-            result.reason instanceof Error
-              ? result.reason.message
-              : String(result.reason ?? 'Unknown upsert error');
-          failedSamples.push(message);
-        }
-      }
+      // retry once for transient DB conflicts/timeouts
+      const retryFailed = await runLimited(retryRows);
+      failed += retryFailed.length;
     }
 
     broadcast('fluktuasi');
@@ -182,6 +214,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `${success} record berhasil disimpan${failed ? `, ${failed} gagal` : ''}`,
+      received: records.length,
+      processed: normalizedRecords.length,
       saved: success,
       failed,
       failedSamples,
