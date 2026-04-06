@@ -625,16 +625,12 @@ export default function OverviewFluktuasiPage() {
       fetch('/api/fluktuasi/keywords')
         .then((r) => r.json())
         .catch(() => ({ success: false, data: [] as KeywordRule[] })),
-      fetch('/api/fluktuasi/sheet-rows')
-        .then((r) => r.json())
-        .catch(() => ({ success: false, data: [] })),
     ])
-      .then(async ([akunData, rekapData, rekapGroupData, kwResp, sheetRowsMeta]: [
+      .then(async ([akunData, rekapData, rekapGroupData, kwResp]: [
         { success: boolean; data: AkunPeriodeRecord[] },
         { success: boolean; data: RekapReasonRecord[] },
         RekapGroupResponse,
         { success?: boolean; data?: KeywordRule[] },
-        { success?: boolean; data?: { accountCode: string }[] },
       ]) => {
         const groupedAccounts = buildFrameAccountsFromRekap(rekapGroupData);
         setFrameAccountsFromRekap(groupedAccounts);
@@ -671,77 +667,81 @@ export default function OverviewFluktuasiPage() {
           }
         }
 
-        // Collect which account codes have persisted sheet rows
-        // Normalize: strip non-numeric suffix (e.g. "71510001 Beban Bunga" -> "71510001")
-        const accountsWithSheetRows = new Set<string>(
-          sheetRowsMeta?.success && Array.isArray(sheetRowsMeta.data)
-            ? sheetRowsMeta.data.flatMap((r: { accountCode: string }) => {
-                const raw = String(r.accountCode ?? '').trim();
-                const numeric = raw.match(/^(\d{5,})/)?.[1];
-                return numeric ? [raw, numeric] : [raw];
-              })
-            : []
-        );
+        const accountsWithSheetRows = new Set<string>();
 
         // Map: "accountCode|klasifikasi|periode" -> amount (from sheet rows)
         const sheetRowAmountMap = new Map<string, number>();
 
-        const allAccountCodes = [...new Set(akunData.data.map(r => r.accountCode))];
-        // Try all accounts — if no sheet rows exist, fetch returns 404 and we skip
-        const accountsToFetch = allAccountCodes;
+        const sourceRowsByAccount = new Map<string, AkunPeriodeRecord[]>();
+        for (const row of akunData.data) {
+          const code = String(row.accountCode ?? '').trim();
+          if (!code) continue;
+          const arr = sourceRowsByAccount.get(code) ?? [];
+          arr.push(row);
+          sourceRowsByAccount.set(code, arr);
+        }
 
+        const accountsToFetch = [...sourceRowsByAccount.keys()];
         if (accountsToFetch.length > 0) {
-          const BATCH = 10;
-          for (let i = 0; i < accountsToFetch.length; i += BATCH) {
-            const batch = accountsToFetch.slice(i, i + BATCH);
-            await Promise.all(batch.map(async (accountCode) => {
-              try {
-                const res = await fetch(`/api/fluktuasi/sheet-rows?accountCode=${encodeURIComponent(accountCode)}`);
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!data.success || !Array.isArray(data.data?.rows)) return;
-                // Get klasifikasi parts from akun-periodes for this account (fallback for unclassified rows)
-                const akunRows = akunData.data.filter(r => r.accountCode === accountCode);
-                const periodeKlasiMap = new Map<string, string>();
-                for (const r of akunRows) {
-                  periodeKlasiMap.set(r.periode, String(r.klasifikasi ?? '').trim());
-                }
-                for (const row of data.data.rows as Record<string, unknown>[]) {
-                  const rawKlasifikasi = String(row['__klasifikasi'] ?? '').trim();
-                  const periode        = String(row['__periode']     ?? '').trim();
-                  const amount         = Number(row['__amount']      ?? 0);
-                  if (!periode || amount === 0) continue;
+          try {
+            const res = await fetch(`/api/fluktuasi/sheet-rows?accountCodes=${encodeURIComponent(accountsToFetch.join(','))}`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.success && Array.isArray(data.data)) {
+                for (const rec of data.data as Array<{ accountCode?: string; rows?: Record<string, unknown>[] }>) {
+                  const accountCode = String(rec.accountCode ?? '').trim();
+                  if (!accountCode || !Array.isArray(rec.rows)) continue;
 
-                  let klasifikasi = rawKlasifikasi;
+                  const numeric = accountCode.match(/^(\d{5,})/)?.[1];
+                  accountsWithSheetRows.add(accountCode);
+                  if (numeric) accountsWithSheetRows.add(numeric);
 
-                  // Re-apply keywords if __klasifikasi is empty
-                  if (!klasifikasi && kwResp?.data?.length) {
-                    const rawText   = String(row['__klasifikasi_raw'] ?? '').trim();
-                    const docnoText = String(row['__docno_raw'] ?? '').trim();
-                    if (rawText) {
-                      klasifikasi = clientMatchKlasifikasi(rawText, docnoText, kwResp.data as KeywordRule[]);
-                    }
+                  // Get klasifikasi parts from akun-periodes for this account (fallback for unclassified rows)
+                  const akunRows = sourceRowsByAccount.get(accountCode) ?? [];
+                  const periodeKlasiMap = new Map<string, string>();
+                  for (const r of akunRows) {
+                    periodeKlasiMap.set(r.periode, String(r.klasifikasi ?? '').trim());
                   }
 
-                  if (!klasifikasi) {
-                    // Fallback: distribute equally to all klasifikasi from akun-periodes
-                    const fallback = periodeKlasiMap.get(periode) ?? '';
-                    const parts = fallback.split(';').map(s => s.trim()).filter(Boolean);
-                    if (parts.length > 0) {
-                      const share = amount / parts.length;
-                      for (const part of parts) {
-                        const key = `${accountCode}|${part}|${periode}`;
-                        sheetRowAmountMap.set(key, (sheetRowAmountMap.get(key) ?? 0) + share);
+                  for (const row of rec.rows) {
+                    const rawKlasifikasi = String(row['__klasifikasi'] ?? '').trim();
+                    const periode        = String(row['__periode']     ?? '').trim();
+                    const amount         = Number(row['__amount']      ?? 0);
+                    if (!periode || amount === 0) continue;
+
+                    let klasifikasi = rawKlasifikasi;
+
+                    // Re-apply keywords if __klasifikasi is empty
+                    if (!klasifikasi && kwResp?.data?.length) {
+                      const rawText   = String(row['__klasifikasi_raw'] ?? '').trim();
+                      const docnoText = String(row['__docno_raw'] ?? '').trim();
+                      if (rawText) {
+                        klasifikasi = clientMatchKlasifikasi(rawText, docnoText, kwResp.data as KeywordRule[]);
                       }
                     }
-                    continue;
-                  }
 
-                  const key = `${accountCode}|${klasifikasi}|${periode}`;
-                  sheetRowAmountMap.set(key, (sheetRowAmountMap.get(key) ?? 0) + amount);
+                    if (!klasifikasi) {
+                      // Fallback: distribute equally to all klasifikasi from akun-periodes
+                      const fallback = periodeKlasiMap.get(periode) ?? '';
+                      const parts = fallback.split(';').map(s => s.trim()).filter(Boolean);
+                      if (parts.length > 0) {
+                        const share = amount / parts.length;
+                        for (const part of parts) {
+                          const key = `${accountCode}|${part}|${periode}`;
+                          sheetRowAmountMap.set(key, (sheetRowAmountMap.get(key) ?? 0) + share);
+                        }
+                      }
+                      continue;
+                    }
+
+                    const key = `${accountCode}|${klasifikasi}|${periode}`;
+                    sheetRowAmountMap.set(key, (sheetRowAmountMap.get(key) ?? 0) + amount);
+                  }
                 }
-              } catch { /* best-effort */ }
-            }));
+              }
+            }
+          } catch {
+            // best-effort: fallback tetap pakai akun-periodes
           }
         }
 

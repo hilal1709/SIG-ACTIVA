@@ -23,6 +23,36 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const accountCode = searchParams.get('accountCode');
+    const accountCodesRaw = searchParams.get('accountCodes');
+
+    if (accountCodesRaw) {
+      const accountCodes = [...new Set(
+        accountCodesRaw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )];
+
+      if (accountCodes.length === 0) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+
+      const records = await prisma.fluktuasiSheetRows.findMany({
+        where: { accountCode: { in: accountCodes } },
+        select: {
+          accountCode: true,
+          rows: true,
+          headers: true,
+          originalHeaders: true,
+          klasifikasiColIdx: true,
+          docnoColIdx: true,
+          fileName: true,
+        },
+        orderBy: { accountCode: 'asc' },
+      });
+
+      return NextResponse.json({ success: true, data: records });
+    }
 
     if (accountCode) {
       // Single account

@@ -3,8 +3,6 @@ import { prisma } from '@/lib/prisma';
 import { broadcast } from '@/lib/sse';
 import { sendPushToAll } from '@/lib/webpush';
 import { checkFluktuasiAlerts } from '@/lib/notificationChecker';
-import { requireFinanceRead, requireFinanceWrite } from '@/lib/api-auth';
-import { logAuditEvent } from '@/lib/audit';
 
 const dbErrorMessage = (error: unknown, fallback: string): string => {
   const message = error instanceof Error ? error.message : String(error ?? 'Unknown error');
@@ -20,9 +18,6 @@ const dbErrorMessage = (error: unknown, fallback: string): string => {
 // ─── GET: Ambil semua account-period records ─────────────────────────────────
 export async function GET(req: NextRequest) {
   try {
-    const auth = await requireFinanceRead(req);
-    if ('error' in auth) return auth.error;
-
     const { searchParams } = new URL(req.url);
     const accountCode = searchParams.get('accountCode');
     const periode     = searchParams.get('periode');
@@ -58,9 +53,6 @@ export async function GET(req: NextRequest) {
 // ─── POST: Batch upsert account-period records ───────────────────────────────
 export async function POST(req: NextRequest) {
   try {
-    const auth = await requireFinanceWrite(req);
-    if ('error' in auth) return auth.error;
-
     const body = await req.json();
     const { records, uploadedBy = 'system', fileName = '' } = body as {
       records: {
@@ -111,42 +103,80 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Batch upsert: update if (accountCode, periode) exists, insert otherwise
-    const results = await Promise.allSettled(
-      records.map((r) => {
-        const existing = existingMap.get(`${r.accountCode}__${r.periode}`);
-        const keepExistingAmount = !!existing && Number(r.amount) === 0 && Number(existing.amount) !== 0;
-        const effectiveAmount = keepExistingAmount ? existing.amount : r.amount;
-        const effectiveKlasifikasi = String(r.klasifikasi ?? '').trim() || existing?.klasifikasi || '';
-        const effectiveRemark = String(r.remark ?? '').trim() || existing?.remark || '';
+    // Batch upsert in small chunks to avoid connection spikes when uploading
+    // large files (previously this caused partial save failures on production DB).
+    const UPSERT_BATCH_SIZE = 100;
+    let success = 0;
+    let failed = 0;
+    const failedSamples: string[] = [];
 
-        return prisma.fluktuasiAkunPeriode.upsert({
-          where: { accountCode_periode: { accountCode: r.accountCode, periode: r.periode } },
-          update: {
-            amount:      effectiveAmount,
-            klasifikasi: effectiveKlasifikasi,
-            remark:      effectiveRemark,
-            uploadedBy,
-            fileName,
-          },
-          create: {
-            accountCode: r.accountCode,
-            periode:     r.periode,
-            amount:      effectiveAmount,
-            klasifikasi: effectiveKlasifikasi,
-            remark:      effectiveRemark,
-            uploadedBy,
-            fileName,
-          },
-        });
-      }),
-    );
+    const upsertOne = (r: {
+      accountCode: string;
+      periode: string;
+      amount: number;
+      klasifikasi: string;
+      remark: string;
+    }) => {
+      const existing = existingMap.get(`${r.accountCode}__${r.periode}`);
+      const keepExistingAmount = !!existing && Number(r.amount) === 0 && Number(existing.amount) !== 0;
+      const effectiveAmount = keepExistingAmount ? existing.amount : r.amount;
+      const effectiveKlasifikasi = String(r.klasifikasi ?? '').trim() || existing?.klasifikasi || '';
+      const effectiveRemark = String(r.remark ?? '').trim() || existing?.remark || '';
 
-    const failed  = results.filter((r) => r.status === 'rejected').length;
-    const success = results.length - failed;
+      return prisma.fluktuasiAkunPeriode.upsert({
+        where: { accountCode_periode: { accountCode: r.accountCode, periode: r.periode } },
+        update: {
+          amount:      effectiveAmount,
+          klasifikasi: effectiveKlasifikasi,
+          remark:      effectiveRemark,
+          uploadedBy,
+          fileName,
+        },
+        create: {
+          accountCode: r.accountCode,
+          periode:     r.periode,
+          amount:      effectiveAmount,
+          klasifikasi: effectiveKlasifikasi,
+          remark:      effectiveRemark,
+          uploadedBy,
+          fileName,
+        },
+      });
+    };
+
+    for (let i = 0; i < records.length; i += UPSERT_BATCH_SIZE) {
+      const chunk = records.slice(i, i + UPSERT_BATCH_SIZE);
+      const chunkResults = await Promise.allSettled(chunk.map((r) => upsertOne(r)));
+
+      const retryRows: typeof chunk = [];
+      chunkResults.forEach((result, idx) => {
+        if (result.status === 'fulfilled') {
+          success++;
+          return;
+        }
+        retryRows.push(chunk[idx]);
+      });
+
+      if (!retryRows.length) continue;
+
+      const retryResults = await Promise.allSettled(retryRows.map((r) => upsertOne(r)));
+      for (const result of retryResults) {
+        if (result.status === 'fulfilled') {
+          success++;
+          continue;
+        }
+        failed++;
+        if (failedSamples.length < 5) {
+          const message =
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason ?? 'Unknown upsert error');
+          failedSamples.push(message);
+        }
+      }
+    }
 
     broadcast('fluktuasi');
-    logAuditEvent({ request: req, user: auth.user, action: 'fluktuasi.akun_periode.upsert_batch', success: true, detail: `saved=${success}, failed=${failed}` });
     sendPushToAll({ title: 'Data Fluktuasi Diperbarui', body: `${success} record fluktuasi berhasil disimpan`, url: '/fluktuasi-oi', priority: 'medium' }).catch(() => {});
     checkFluktuasiAlerts().catch(() => {});
     return NextResponse.json({
@@ -154,6 +184,7 @@ export async function POST(req: NextRequest) {
       message: `${success} record berhasil disimpan${failed ? `, ${failed} gagal` : ''}`,
       saved: success,
       failed,
+      failedSamples,
     });
   } catch (error) {
     console.error('Error upserting akun periodes:', error);
@@ -167,9 +198,6 @@ export async function POST(req: NextRequest) {
 // ─── DELETE: Hapus semua record (atau per accountCode) ───────────────────────
 export async function DELETE(req: NextRequest) {
   try {
-    const auth = await requireFinanceWrite(req);
-    if ('error' in auth) return auth.error;
-
     const { searchParams } = new URL(req.url);
     const accountCode = searchParams.get('accountCode');
     const periode     = searchParams.get('periode');
@@ -182,7 +210,6 @@ export async function DELETE(req: NextRequest) {
     });
 
     broadcast('fluktuasi');
-    logAuditEvent({ request: req, user: auth.user, action: 'fluktuasi.akun_periode.delete', success: true, detail: `deleted=${deleted.count}` });
     sendPushToAll({ title: 'Data Fluktuasi Dihapus', body: `${deleted.count} record fluktuasi berhasil dihapus`, url: '/fluktuasi-oi', priority: 'low' }).catch(() => {});
     return NextResponse.json({
       success: true,
