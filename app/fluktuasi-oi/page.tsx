@@ -2217,8 +2217,10 @@ export default function FluktuasiOIPage() {
     // If user wants to replace, delete old data first
     if (shouldClearOldData) {
       try {
-        await fetch('/api/fluktuasi/sheet-rows', { method: 'DELETE' });
-        await fetch('/api/fluktuasi/akun-periodes', { method: 'DELETE' });
+        await Promise.all([
+          fetch('/api/fluktuasi/sheet-rows', { method: 'DELETE' }),
+          fetch('/api/fluktuasi/akun-periodes', { method: 'DELETE' }),
+        ]);
       } catch (err) {
         console.warn('Warning: Could not clear old data:', err);
         // Continue anyway, new data will replace old
@@ -2400,24 +2402,14 @@ export default function FluktuasiOIPage() {
           const sourceText = String(klasifikasiColIdx >= 0 ? rawRow[klasifikasiColIdx] : '');
           const docnoText  = String(docnoColIdx >= 0 ? rawRow[docnoColIdx] : '');
 
-          obj['__klasifikasi'] = matchKeywords(sourceText, keywords, 'klasifikasi', docnoText, obj);
-          obj['__remark']      = matchKeywords(sourceText, keywords, 'remark',       docnoText, obj);
+          obj['__klasifikasi'] = matchKeywords(sourceText, scopedKeywords, 'klasifikasi', docnoText, obj);
+          obj['__remark']      = matchKeywords(sourceText, scopedKeywords, 'remark',       docnoText, obj);
           // Store raw source text so keywords can be re-matched reactively after the file is parsed
           obj['__klasifikasi_raw'] = sourceText;
           obj['__remark_raw']      = sourceText;   // same source — keyword type drives the output
           obj['__docno_raw']       = docnoText;
           obj['__amount']          = amountColIdx >= 0 ? parseNum(rawRow[amountColIdx]) : 0;
           rows.push(obj);
-        }
-        // Apply scoped keywords when populating klasifikasi/remark per row.
-        // (We do this after rows are collected to keep rowData mappings intact.)
-        // However, we already call matchKeywords above; so we must re-run it with scopedKeywords.
-        // To avoid double work, we re-run directly on each row here.
-        for (const rowObj of rows) {
-          const sourceText = String(klasifikasiColIdx >= 0 ? rowObj[headers[klasifikasiColIdx]] : rowObj['__klasifikasi_raw'] ?? '');
-          const docnoText  = String(docnoColIdx >= 0 ? rowObj[headers[docnoColIdx]] : rowObj['__docno_raw'] ?? '');
-          rowObj['__klasifikasi'] = matchKeywords(sourceText, scopedKeywords, 'klasifikasi', docnoText, rowObj);
-          rowObj['__remark']      = matchKeywords(sourceText, scopedKeywords, 'remark', docnoText, rowObj);
         }
 
         result.push({ sheetName, headers, originalHeaders, rows, klasifikasiColIdx, docnoColIdx });
@@ -2508,7 +2500,7 @@ export default function FluktuasiOIPage() {
       }
 
       try {
-        const latestRes = await fetch('/api/fluktuasi/akun-periodes');
+        const latestRes = await fetch('/api/fluktuasi/akun-periodes?slim=1');
         const latestJson = await latestRes.json();
         if (latestJson.success && Array.isArray(latestJson.data)) {
           latestDbRecords = latestJson.data as AkunPeriodeRecord[];
@@ -2752,8 +2744,9 @@ export default function FluktuasiOIPage() {
         setRekapSheetData(normalizeRekapDescriptions(dbRekap));
       }
 
-      // -- Save to database ---------------------------------------------------
-      await saveToDatabase(file.name, result, rekapData);
+      // -- Save snapshot to database (non-blocking) ---------------------------
+      // Keep upload responsive; snapshot persistence runs in background.
+      void saveToDatabase(file.name, result, rekapData);
 
       // -- Save to L1 + L2 cache ---------------------------------------------------
       _sheetCache = { sheets: result, rekap: normalizeRekapDescriptions(rekapData), fileName: file.name };
