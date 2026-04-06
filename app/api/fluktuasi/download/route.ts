@@ -357,20 +357,23 @@ export async function POST(req: NextRequest) {
       const pctYtD = hasOverride('pctYtD') ? Number(rowOverride.pctYtD ?? 0) : Number(row.pctYtD ?? 0);
       const reasonYtD = hasOverride('reasonYtD') ? String(rowOverride.reasonYtD ?? '') : String(row.reasonYtD ?? '');
 
+      const isSpecialRow = row.type === 'category' || row.type === 'subtotal';
+      const valOrBlank = (n: number): number | string => (isSpecialRow && n === 0 ? '' : n);
+
       const values: any[] = [
         ...baseCols.map((c) => {
-          if (c.kind === 'ytdval') return c.valueKey === 'ytdCurrV' ? ytdCurrV : ytdPrevV;
+          if (c.kind === 'ytdval') return valOrBlank(c.valueKey === 'ytdCurrV' ? ytdCurrV : ytdPrevV);
           const rawVal = row.values?.[c.colIdx] ?? '';
-          return c.kind === 'amount' ? parseNum(rawVal) : rawVal;
+          return c.kind === 'amount' ? valOrBlank(parseNum(rawVal)) : rawVal;
         }),
-        gapMoM,
-        pctMoM / 100,     // store as decimal for Excel % format
+        valOrBlank(gapMoM),
+        valOrBlank(pctMoM / 100),     // store as decimal for Excel % format
         reasonMoM,
-        gapYoY,
-        pctYoY / 100,
+        valOrBlank(gapYoY),
+        valOrBlank(pctYoY / 100),
         reasonYoY,
-        gapYtD,
-        pctYtD / 100,
+        valOrBlank(gapYtD),
+        valOrBlank(pctYtD / 100),
         reasonYtD,
       ];
 
