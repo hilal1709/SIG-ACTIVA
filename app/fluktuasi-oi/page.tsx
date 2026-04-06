@@ -2477,61 +2477,72 @@ export default function FluktuasiOIPage() {
         }
       }
       let latestDbRecords: AkunPeriodeRecord[] = [];
-      let recordsToUpsert = akunPeriodesFlat;
+      const recordsToUpsert = akunPeriodesFlat;
 
-      // Append mode: keep old periods, but still upsert uploaded keys so
-      // corrected klasifikasi/remark can overwrite previously wrong mappings.
+      // Append mode: load existing records once so we can build an optimistic
+      // merged state immediately (no need to block UI waiting post-save reload).
       if (!shouldClearOldData && akunPeriodesFlat.length > 0) {
         try {
-          const existingRes = await fetch('/api/fluktuasi/akun-periodes?slim=1');
+          const existingRes = await fetch('/api/fluktuasi/akun-periodes');
           const existingJson = await existingRes.json();
           if (existingJson.success && Array.isArray(existingJson.data)) {
             latestDbRecords = existingJson.data as AkunPeriodeRecord[];
-            recordsToUpsert = akunPeriodesFlat;
           }
         } catch (e) {
-          console.warn('Could not load existing akun-periode keys before append:', e);
+          console.warn('Could not load existing akun-periode records before append:', e);
         }
       }
 
-      if (recordsToUpsert.length > 0) {
-        try {
-          const saveRes = await fetch('/api/fluktuasi/akun-periodes', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ records: recordsToUpsert, uploadedBy: 'system', fileName: file.name }),
-          });
-          const saveJson = await saveRes.json().catch(() => null);
-          if (!saveRes.ok) {
-            console.error('Gagal menyimpan akun periodes:', saveJson?.error ?? `HTTP ${saveRes.status}`);
-            toast.error(`Gagal menyimpan akun periodes (HTTP ${saveRes.status}).`);
-          } else if (!saveJson?.success) {
-            console.error('Gagal menyimpan akun periodes:', saveJson?.error ?? `HTTP ${saveRes.status}`);
-            toast.error(`Gagal menyimpan akun periodes: ${String(saveJson?.error ?? '')}`);
-          } else if (typeof saveJson.failed === 'number' && saveJson.failed > 0) {
-            // Partial failures can be hidden because API still returns {success:true}
-            // (append mode hides this by keeping old values, replace mode exposes it).
-            toast.info(
-              `Sebagian record gagal tersimpan (${saveJson.failed} dari ${recordsToUpsert.length}). Nilai bisa jadi tidak lengkap.`
-            );
-            console.warn('Partial save failures:', saveJson);
-          }
-        } catch (e) {
-          console.error('Gagal menyimpan akun periodes:', e);
-        }
+      // Optimistic local merge for faster UI completion (server sync runs in background).
+      if (shouldClearOldData) {
+        latestDbRecords = akunPeriodesFlat;
+      } else if (latestDbRecords.length > 0) {
+        const merged = new Map<string, AkunPeriodeRecord>();
+        for (const r of latestDbRecords) merged.set(`${r.accountCode}__${r.periode}`, r);
+        for (const r of akunPeriodesFlat) merged.set(`${r.accountCode}__${r.periode}`, r);
+        latestDbRecords = [...merged.values()];
+      } else {
+        latestDbRecords = akunPeriodesFlat;
       }
+      setDbAkunPeriodes(latestDbRecords);
 
-      try {
-        const latestRes = await fetch('/api/fluktuasi/akun-periodes');
-        const latestJson = await latestRes.json();
-        if (latestJson.success && Array.isArray(latestJson.data)) {
-          latestDbRecords = latestJson.data as AkunPeriodeRecord[];
-          setDbAkunPeriodes(latestDbRecords);
+      void (async () => {
+        if (recordsToUpsert.length > 0) {
+          try {
+            const saveRes = await fetch('/api/fluktuasi/akun-periodes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ records: recordsToUpsert, uploadedBy: 'system', fileName: file.name }),
+            });
+            const saveJson = await saveRes.json().catch(() => null);
+            if (!saveRes.ok) {
+              console.error('Gagal menyimpan akun periodes:', saveJson?.error ?? `HTTP ${saveRes.status}`);
+              toast.error(`Gagal menyimpan akun periodes (HTTP ${saveRes.status}).`);
+            } else if (!saveJson?.success) {
+              console.error('Gagal menyimpan akun periodes:', saveJson?.error ?? `HTTP ${saveRes.status}`);
+              toast.error(`Gagal menyimpan akun periodes: ${String(saveJson?.error ?? '')}`);
+            } else if (typeof saveJson.failed === 'number' && saveJson.failed > 0) {
+              toast.info(
+                `Sebagian record gagal tersimpan (${saveJson.failed} dari ${recordsToUpsert.length}). Nilai bisa jadi tidak lengkap.`
+              );
+              console.warn('Partial save failures:', saveJson);
+              // Reload authoritative data only when partial failures happen.
+              try {
+                const latestRes = await fetch('/api/fluktuasi/akun-periodes');
+                const latestJson = await latestRes.json();
+                if (latestJson.success && Array.isArray(latestJson.data)) {
+                  setDbAkunPeriodes(latestJson.data as AkunPeriodeRecord[]);
+                }
+              } catch (e) {
+                console.warn('Could not reload akun periodes after partial save:', e);
+              }
+            }
+          } catch (e) {
+            console.error('Gagal menyimpan akun periodes:', e);
+          }
         }
-      } catch (e) {
-        console.warn('Could not reload akun periodes after upload:', e);
-      }
-      loadDbStats();
+        loadDbStats();
+      })();
 
       // -- Build lookup map: accountCode ? { klasifikasi[], remark[] } ---------
       const acctReasonMap: Record<string, { klasifikasi: Set<string>; remark: Set<string> }> = {};
