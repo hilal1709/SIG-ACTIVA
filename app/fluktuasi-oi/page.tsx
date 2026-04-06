@@ -2853,6 +2853,8 @@ export default function FluktuasiOIPage() {
 
   // -- Download (via API ? ExcelJS with full formatting) ------------------------
   const [isDownloading, setIsDownloading] = useState(false);
+  type DownloadMode = 'combined' | 'rekap' | 'akun';
+  const [downloadMode, setDownloadMode] = useState<DownloadMode>('combined');
 
   // -- Generate AI reason for a rekap row (with auto-retry on 429) ----------
   const generateReason = async (
@@ -3036,8 +3038,16 @@ export default function FluktuasiOIPage() {
     }
   };
 
-  const handleDownload = async () => {
-    if (!sheetDataList.length && !rekapSheetData) {
+  const handleDownload = async (mode: DownloadMode = downloadMode) => {
+    if (mode === 'rekap' && !rekapSheetData) {
+      toast.info('Data rekap belum tersedia. Upload file terlebih dahulu.');
+      return;
+    }
+    if (mode === 'akun' && !sheetDataList.length) {
+      toast.info('Data sheet per akun belum tersedia. Upload file terlebih dahulu.');
+      return;
+    }
+    if (mode === 'combined' && !sheetDataList.length && !rekapSheetData) {
       toast.info('Belum ada data. Upload file terlebih dahulu.');
       return;
     }
@@ -3154,6 +3164,7 @@ export default function FluktuasiOIPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          downloadMode: mode,
           fileName,
           sheetDataList: sheetDataListForExport,
           rekapSheetData,
@@ -3164,10 +3175,11 @@ export default function FluktuasiOIPage() {
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const blob = await res.blob();
       const base = fileName.replace(/\.[^.]+$/, '') || 'Fluktuasi_OI';
+      const suffix = mode === 'rekap' ? '_REKAP' : mode === 'akun' ? '_SHEET_AKUN' : '_HASIL';
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${base}_HASIL.xlsx`;
+      a.download = `${base}${suffix}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
@@ -4167,15 +4179,27 @@ export default function FluktuasiOIPage() {
             {showUploadSection && (
               <div className="px-3 sm:px-5 pb-4 sm:pb-5 border-t border-gray-200 pt-3 sm:pt-4">
                 <div className="flex justify-end mb-3 sm:mb-4">
-                  <button
-                    onClick={handleDownload}
-                    disabled={isProcessing || isDownloading || (!sheetDataList.length && !rekapSheetData)}
-                    className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-indigo-600 text-xs sm:text-sm text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isDownloading
-                      ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Menyiapkan…</>
-                      : <><Download size={16} />Download Excel Hasil</>}
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <select
+                      value={downloadMode}
+                      onChange={(e) => setDownloadMode(e.target.value as DownloadMode)}
+                      disabled={isProcessing || isDownloading}
+                      className="px-3 sm:px-4 py-2 rounded-lg border border-gray-300 bg-white text-xs sm:text-sm text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <option value="combined">Download Gabungan</option>
+                      <option value="rekap">Download Tabel Rekap</option>
+                      <option value="akun">Download Tabel Sheet Per Akun</option>
+                    </select>
+                    <button
+                      onClick={() => handleDownload()}
+                      disabled={isProcessing || isDownloading || (!sheetDataList.length && !rekapSheetData)}
+                      className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-indigo-600 text-xs sm:text-sm text-white hover:bg-indigo-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isDownloading
+                        ? <><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />Menyiapkan…</>
+                        : <><Download size={16} />Download Excel</>}
+                    </button>
+                  </div>
                 </div>
 
                 <label className={`flex flex-col items-center justify-center w-full h-24 sm:h-32 border-2 border-dashed rounded-lg transition-all duration-300 ${

@@ -60,10 +60,11 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { fileName, sheetDataList, rekapSheetData, rekapRowOverrides, rekapExportConfig } = body as {
+  const { fileName, sheetDataList, rekapSheetData, rekapRowOverrides, rekapExportConfig, downloadMode } = body as {
     fileName: string;
     sheetDataList: any[];
     rekapSheetData: any | null;
+    downloadMode?: 'combined' | 'rekap' | 'akun';
     rekapRowOverrides?: Record<string, {
       gapMoM?: number;
       pctMoM?: number;
@@ -86,6 +87,9 @@ export async function POST(req: NextRequest) {
       ytdPrevLabel?: string;
     };
   };
+  const mode = downloadMode ?? 'combined';
+  const includeAkunSheets = mode !== 'rekap';
+  const includeRekap = mode !== 'akun';
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'SIG Activa';
@@ -117,7 +121,7 @@ export async function POST(req: NextRequest) {
   // ──────────────────────────────────────────────────────────────────────────
   // 1. Kode Akun Sheets
   // ──────────────────────────────────────────────────────────────────────────
-  for (const sd of sheetDataList) {
+  for (const sd of (includeAkunSheets ? (sheetDataList ?? []) : [])) {
     const ws = wb.addWorksheet(sd.sheetName.slice(0, 31));
     ws.views = [{ state: 'frozen', ySplit: 1 }];
 
@@ -184,7 +188,7 @@ export async function POST(req: NextRequest) {
   // ──────────────────────────────────────────────────────────────────────────
   // 2. Rekap Sheet
   // ──────────────────────────────────────────────────────────────────────────
-  if (rekapSheetData) {
+  if (includeRekap && rekapSheetData) {
     const ws = wb.addWorksheet(rekapSheetData.sheetName.slice(0, 31));
     ws.views = [{ state: 'frozen', ySplit: 2 }];
 
@@ -487,10 +491,11 @@ export async function POST(req: NextRequest) {
   const buffer = await wb.xlsx.writeBuffer();
 
   const base = (fileName || 'Fluktuasi_OI').replace(/\.[^.]+$/, '');
+  const suffix = mode === 'rekap' ? '_REKAP' : mode === 'akun' ? '_SHEET_AKUN' : '_HASIL';
   return new NextResponse(buffer, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${base}_HASIL.xlsx"`,
+      'Content-Disposition': `attachment; filename="${base}${suffix}.xlsx"`,
     },
   });
 }
