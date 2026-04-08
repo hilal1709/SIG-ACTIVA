@@ -426,15 +426,21 @@ const buildDetailChartOptions = (isCompact: boolean, labelPrev: string, labelCur
       },
       anchor: (ctx: any) => {
         const v = Number(ctx.dataset?.data?.[ctx.dataIndex] ?? 0);
-        return v === 0 ? 'center' : 'end';
+        if (v === 0) return 'center';
+        // Untuk batang negatif, anchor ke sisi baseline (nol).
+        return v < 0 ? 'start' : 'end';
       },
       align: (ctx: any) => {
         const v = Number(ctx.dataset?.data?.[ctx.dataIndex] ?? 0);
-        return v === 0 ? 'top' : 'end';
+        // Nilai nol ditaruh di bawah baseline agar tidak ter-clip di atas area chart.
+        if (v === 0) return 'bottom';
+        // Nilai negatif ditempatkan sedikit ke dalam batang dari baseline agar tidak terpotong.
+        return v < 0 ? 'bottom' : 'end';
       },
       offset: (ctx: any) => {
         const v = Number(ctx.dataset?.data?.[ctx.dataIndex] ?? 0);
-        return v === 0 ? 6 : 2;
+        if (v === 0) return 2;
+        return v < 0 ? 2 : 2;
       },
       clamp: true,
       clip: false,
