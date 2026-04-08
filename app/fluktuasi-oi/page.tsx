@@ -1221,6 +1221,7 @@ const buildRekapFromAkunPeriodes = (
 // Cached formatters — created once, reused on every render
 const FMT_RP  = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 });
 const FMT_PCT = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const FMT_M   = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtRp  = (n: number) => FMT_RP.format(n);
 const fmtPct = (n: number) => FMT_PCT.format(n) + '%';
 
@@ -1248,7 +1249,7 @@ const buildTemplateReason = (
   const abs    = Math.abs(gap);
   const fmtAmt = (n: number) => {
     const a = Math.abs(n);
-    if (a >= 1_000_000_000) return `${FMT_RP.format(Math.round(a / 1_000_000_000 * 10) / 10)} M`;
+    if (a >= 1_000_000_000) return `${FMT_M.format(a / 1_000_000_000)} M`;
     if (a >= 1_000_000)     return `${FMT_RP.format(Math.round(a / 1_000_000))} JT`;
     if (a >= 1_000)         return `${FMT_RP.format(Math.round(a / 1_000))} RB`;
     return FMT_RP.format(a);
