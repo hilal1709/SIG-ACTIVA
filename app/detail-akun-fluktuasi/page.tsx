@@ -422,7 +422,7 @@ const buildDetailChartOptions = (isCompact: boolean, labelPrev: string, labelCur
     datalabels: {
       display: (ctx: any) => {
         const v = Number(ctx.dataset?.data?.[ctx.dataIndex] ?? 0);
-        return !isCompact || v === 0;
+        return !isCompact || v !== 0;
       },
       anchor: (ctx: any) => {
         const v = Number(ctx.dataset?.data?.[ctx.dataIndex] ?? 0);
