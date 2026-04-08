@@ -1105,6 +1105,9 @@ export default function DetailAkunFluktuasiPage() {
                 if (!allowed) return true;
                 return allowed.has(accountCode);
               });
+              const normalizedParts = parts.length > 0
+                ? parts
+                : (accountCode.startsWith('716') ? [] : [klasifikasi]);
 
               processed.push({
                 accountCode,
@@ -1115,7 +1118,7 @@ export default function DetailAkunFluktuasiPage() {
                 reasonMoM: String(mergedReason?.reasonMoM ?? baseRow?.reasonMoM ?? fallbackReason),
                 reasonYoY: String(mergedReason?.reasonYoY ?? baseRow?.reasonYoY ?? fallbackReason),
                 reasonYtD: String(mergedReason?.reasonYtD ?? baseRow?.reasonYtD ?? fallbackReason),
-                _parts: parts.length > 0 ? parts : [klasifikasi],
+                _parts: normalizedParts,
               });
               anyPushed = true;
             }
@@ -1454,15 +1457,15 @@ export default function DetailAkunFluktuasiPage() {
           .filter((row) => row.prev !== 0 || row.curr !== 0)
           .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-        // ─── TOP 5 untuk chart display ─────────────────────────────────
-        const top5ClassificationRows = detailRows
-          .slice(0, 5)
+        // ─── TOP 7 untuk chart display ─────────────────────────────────
+        const top7ClassificationRows = detailRows
+          .slice(0, 7)
           .map((r) => ({ klasifikasi: r.klasifikasi, prev: r.prev, curr: r.curr }))
           .sort((a, b) => Math.max(Math.abs(b.prev), Math.abs(b.curr)) - Math.max(Math.abs(a.prev), Math.abs(a.curr)));
 
         return {
           accountCode,
-          rows: top5ClassificationRows,
+          rows: top7ClassificationRows,
           detailRows,
           frameReason: summarizeAccountFrameReason(detailRows, compMode),
         };
