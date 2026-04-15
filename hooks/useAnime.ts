@@ -3,6 +3,21 @@
 import { useEffect, useRef } from 'react';
 import { animate, stagger, random } from 'animejs';
 
+function renderTypewriterText(el: HTMLElement, text: string) {
+  el.replaceChildren();
+
+  const fragment = document.createDocumentFragment();
+  for (const char of text) {
+    const span = document.createElement('span');
+    span.style.display = 'inline-block';
+    span.style.opacity = '0';
+    span.textContent = char === ' ' ? '\u00A0' : char;
+    fragment.appendChild(span);
+  }
+
+  el.appendChild(fragment);
+}
+
 // â”€â”€â”€ anime.js v4: stagger reveal a list of elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function useAnimeStagger(
   selector: string,
@@ -59,10 +74,7 @@ export function useAnimeTypewriter(
     const el = document.getElementById(elementId);
     if (!el) return;
 
-    el.innerHTML = text
-      .split('')
-      .map(l => `<span style="display:inline-block;opacity:0">${l === ' ' ? '&nbsp;' : l}</span>`)
-      .join('');
+    renderTypewriterText(el, text);
 
     animate(`#${elementId} span`, {
       opacity: [0, 1],
@@ -166,10 +178,7 @@ export function animateStaggerItems(selector: string, container?: Element | null
 
 // â”€â”€â”€ anime.js v4: typewriter helper (standalone) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export function typewriterAnimate(text: string, el: HTMLElement, startDelay = 0) {
-  el.innerHTML = text
-    .split('')
-    .map(l => `<span style="display:inline-block;opacity:0">${l === ' ' ? '&nbsp;' : l}</span>`)
-    .join('');
+  renderTypewriterText(el, text);
 
   animate(el.querySelectorAll('span'), {
     opacity: [0, 1],

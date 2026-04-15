@@ -139,7 +139,7 @@ export async function PUT(
       },
     });
 
-    broadcast('users', { id: userId });
+    broadcast('users', { id: userId }, { roles: ['ADMIN_SYSTEM'] });
     return NextResponse.json({
       success: true,
       user,
@@ -182,7 +182,7 @@ export async function DELETE(
       where: { id: userId },
     });
 
-    broadcast('users', { id: userId, action: 'delete' });
+    broadcast('users', { id: userId, action: 'delete' }, { roles: ['ADMIN_SYSTEM'] });
     return NextResponse.json({
       success: true,
       message: 'User berhasil dihapus',

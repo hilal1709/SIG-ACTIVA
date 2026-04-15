@@ -5,7 +5,7 @@ import { broadcast } from '@/lib/sse';
 import { sendPushToAll } from '@/lib/webpush';
 import { checkPrepaidAlerts } from '@/lib/notificationChecker';
 import { requireFinanceWrite } from '@/lib/api-auth';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
@@ -91,8 +91,8 @@ export async function POST(request: NextRequest) {
     const auth = await requireFinanceWrite(request);
     if ('error' in auth) return auth.error;
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`prepaid-import:ip:${clientIp}`, 4, 60_000);
+    const clientIp = getClientIp(request);
+    const ipRateLimit = await checkRateLimit(`prepaid-import:uid:${auth.user.uid}:ip:${clientIp}`, 4, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { error: 'Terlalu banyak import prepaid. Coba lagi sebentar.' },

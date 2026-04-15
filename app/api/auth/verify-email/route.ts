@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendAdminNotification } from '@/lib/email';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`verify-email:ip:${clientIp}`, 10, 60_000);
+    const clientIp = getClientIp(request);
+    const ipRateLimit = await checkRateLimit(`verify-email:ip:${clientIp}`, 10, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { error: 'Terlalu banyak percobaan verifikasi. Coba lagi sebentar.' },

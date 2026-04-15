@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { prisma } from '@/lib/prisma';
 import { requireFinanceRead } from '@/lib/api-auth';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 // ─── Colour palette (matches UI) ────────────────────────────────────────────
 const C = {
@@ -50,8 +50,8 @@ export async function POST(req: NextRequest) {
   const auth = await requireFinanceRead(req);
   if ('error' in auth) return auth.error;
 
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const ipRateLimit = checkRateLimit(`fluktuasi-download:ip:${clientIp}`, 10, 60_000);
+  const clientIp = getClientIp(req);
+  const ipRateLimit = await checkRateLimit(`fluktuasi-download:uid:${auth.user.uid}:ip:${clientIp}`, 10, 60_000);
   if (!ipRateLimit.allowed) {
     return NextResponse.json(
       { error: 'Terlalu banyak request download. Coba lagi sebentar.' },

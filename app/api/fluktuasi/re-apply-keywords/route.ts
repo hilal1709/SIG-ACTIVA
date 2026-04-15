@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { NextRequest } from 'next/server';
 import { requireFinanceWrite } from '@/lib/api-auth';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 const dbErrorMessage = (error: unknown, fallback: string): string => {
   const errObj = error as { message?: string; cause?: { message?: string } } | undefined;
@@ -212,8 +212,8 @@ export async function POST(request: NextRequest) {
     const auth = await requireFinanceWrite(request);
     if ('error' in auth) return auth.error;
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`fluktuasi-reapply:ip:${clientIp}`, 3, 60_000);
+    const clientIp = getClientIp(request);
+    const ipRateLimit = await checkRateLimit(`fluktuasi-reapply:uid:${auth.user.uid}:ip:${clientIp}`, 3, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { success: false, error: 'Terlalu banyak request re-apply. Coba lagi sebentar.' },

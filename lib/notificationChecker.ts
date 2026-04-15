@@ -10,15 +10,37 @@ import { sendPushToAll } from '@/lib/webpush';
 // In-memory dedup — key = alert id, value = timestamp last pushed
 const pushedCache = new Map<string, number>();
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+let lastCacheSweepAt = 0;
+
+function sweepPushedCache(now: number) {
+  if (now - lastCacheSweepAt < CACHE_SWEEP_INTERVAL_MS) return;
+
+  lastCacheSweepAt = now;
+  for (const [id, pushedAt] of pushedCache.entries()) {
+    if (now - pushedAt > CACHE_TTL_MS) {
+      pushedCache.delete(id);
+    }
+  }
+}
 
 function shouldPush(id: string): boolean {
+  const now = Date.now();
+  sweepPushedCache(now);
+
   const last = pushedCache.get(id);
-  if (!last) return true;
-  return Date.now() - last > CACHE_TTL_MS;
+  if (last === undefined) return true;
+  if (now - last > CACHE_TTL_MS) {
+    pushedCache.delete(id);
+    return true;
+  }
+
+  return false;
 }
 
 function markPushed(id: string) {
   pushedCache.set(id, Date.now());
+  sweepPushedCache(Date.now());
 }
 
 // ─── Material selisih check ─────────────────────────────────────────────────

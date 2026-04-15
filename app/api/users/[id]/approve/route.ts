@@ -44,7 +44,7 @@ export async function PUT(
       },
     });
 
-    broadcast('users', { id: userId });
+    broadcast('users', { id: userId }, { roles: ['ADMIN_SYSTEM'] });
     return NextResponse.json({
       success: true,
       user,

@@ -188,6 +188,11 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
     const instanceId = process.env.NEXT_PUBLIC_BEAMS_INSTANCE_ID;
     if (!instanceId) return;
 
+    const rawRole = localStorage.getItem('userRole') || '';
+    const normalizedRole = rawRole.trim().toUpperCase();
+    const roleInterest = normalizedRole ? `role:${normalizedRole}` : null;
+    if (!roleInterest) return;
+
     const beamsWindow = window as WindowWithBeamsState;
     if (beamsWindow.__beamsRegistrationPromise) {
       await beamsWindow.__beamsRegistrationPromise;
@@ -212,8 +217,7 @@ export default function Header({ title, subtitle, onMenuClick }: HeaderProps) {
         }
         
         try {
-          await beamsClient.addDeviceInterest('all-users');
-          await beamsClient.addDeviceInterest('hello');
+          await beamsClient.addDeviceInterest(roleInterest);
           console.log('[Beams] Device interests added successfully');
         } catch (interestErr) {
           throw new Error(`Failed to add device interests: ${interestErr instanceof Error ? interestErr.message : 'Unknown error'}`);

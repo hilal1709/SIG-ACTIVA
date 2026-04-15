@@ -26,9 +26,13 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set('X-Content-Type-Options', 'nosniff');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  const isProduction = process.env.NODE_ENV === 'production';
+  const scriptSrc = isProduction
+    ? "script-src 'self';"
+    : "script-src 'self' 'unsafe-eval';";
   response.headers.set(
     'Content-Security-Policy',
-    "default-src 'self'; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+    `default-src 'self'; img-src 'self' data: blob:; ${scriptSrc} style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';`
   );
   return response;
 }
@@ -65,8 +69,14 @@ function hasValidSameOrigin(request: NextRequest): boolean {
   const expectedOrigin = request.nextUrl.origin;
   const originHeader = request.headers.get('origin');
   const refererHeader = request.headers.get('referer');
+  const secFetchSite = request.headers.get('sec-fetch-site');
+  const isBrowserRequest = secFetchSite !== null;
 
-  if (!originHeader && !refererHeader) return true;
+  if (!originHeader && !refererHeader) {
+    // Browser write requests should always carry Origin/Referer.
+    // Non-browser clients may omit both and are handled by auth/rate-limit controls.
+    return !isBrowserRequest;
+  }
 
   if (originHeader && originHeader !== expectedOrigin) return false;
 

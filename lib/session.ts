@@ -12,11 +12,11 @@ function getSessionSecret(): string {
   const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
   if (secret) return secret;
 
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('AUTH_SECRET is required in production');
+  if (process.env.NODE_ENV === 'development') {
+    return 'dev-insecure-secret-change-this';
   }
 
-  return 'dev-insecure-secret-change-this';
+  throw new Error('AUTH_SECRET is required outside local development');
 }
 
 function bytesToBase64Url(bytes: Uint8Array): string {
@@ -32,6 +32,17 @@ function base64UrlToBytes(input: string): Uint8Array {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+function constantTimeEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left[i] ^ right[i];
+  }
+
+  return diff === 0;
 }
 
 async function sign(data: string): Promise<string> {
@@ -66,10 +77,13 @@ export async function verifySessionToken(token?: string | null): Promise<Session
   const [encodedPayload, providedSignature] = token.split('.');
   if (!encodedPayload || !providedSignature) return null;
 
-  const expectedSignature = await sign(encodedPayload);
-  if (providedSignature !== expectedSignature) return null;
-
   try {
+    const expectedSignature = await sign(encodedPayload);
+    const providedSignatureBytes = base64UrlToBytes(providedSignature);
+    const expectedSignatureBytes = base64UrlToBytes(expectedSignature);
+
+    if (!constantTimeEqual(providedSignatureBytes, expectedSignatureBytes)) return null;
+
     const payload = JSON.parse(
       new TextDecoder().decode(base64UrlToBytes(encodedPayload))
     ) as SessionPayload;

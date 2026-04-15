@@ -56,115 +56,11 @@
             <input type="email" id="email" placeholder="contoh@email.com" value="aszra.tjahjaningrat23@student.ui.ac.id">
         </div>
         
-        <button onclick="forceVerify()" id="verifyBtn">Force Verify Email</button>
+        <button type="button" id="verifyBtn">Force Verify Email</button>
         
         <div id="result" class="result"></div>
     </div>
 
-    <script>
-        async function forceVerify() {
-            const email = document.getElementById('email').value.trim();
-            const resultDiv = document.getElementById('result');
-            const btn = document.getElementById('verifyBtn');
-            
-            if (!email) {
-                resultDiv.className = 'result error show';
-                resultDiv.innerHTML = '<h3>❌ Error</h3><p>Email tidak boleh kosong</p>';
-                return;
-            }
-            
-            if (!confirm(`Anda yakin ingin force verify email:\n${email}?\n\nIni akan mengubah status emailVerified menjadi true.`)) {
-                return;
-            }
-            
-            btn.disabled = true;
-            btn.textContent = 'Memverifikasi...';
-            resultDiv.className = 'result';
-            resultDiv.innerHTML = '';
-            
-            try {
-                const response = await fetch('/api/users/force-verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email })
-                });
-                
-                const data = await response.json();
-                
-                if (!response.ok || !data.success) {
-                    resultDiv.className = 'result error show';
-                    resultDiv.innerHTML = `
-                        <h3>❌ Gagal Memverifikasi</h3>
-                        <p>${data.error || 'Terjadi kesalahan'}</p>
-                    `;
-                    return;
-                }
-                
-                const user = data.user;
-                const canLogin = user.emailVerified && user.isApproved;
-                
-                resultDiv.className = 'result success show';
-                resultDiv.innerHTML = `
-                    <h3>✅ Email Berhasil Di-verify!</h3>
-                    
-                    <div class="status-grid">
-                        <div class="status-item">
-                            <div class="status-icon">✅</div>
-                            <div class="status-info">
-                                <div class="status-label">Verifikasi Email</div>
-                                <div class="status-value">Sudah terverifikasi (force)</div>
-                            </div>
-                        </div>
-                        
-                        <div class="status-item">
-                            <div class="status-icon">${user.isApproved ? '✅' : '⏳'}</div>
-                            <div class="status-info">
-                                <div class="status-label">Approval Admin</div>
-                                <div class="status-value">${user.isApproved ? 'Sudah di-approve' : 'Menunggu approval'}</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    ${canLogin ? `
-                        <div class="steps">
-                            <h4>🎉 User Sekarang Bisa Login!</h4>
-                            <p>Instruksi untuk user:</p>
-                            <ol>
-                                <li>Buka halaman login</li>
-                                <li>Masukkan email: <strong>${user.email}</strong></li>
-                                <li>Masukkan password yang sudah dibuat</li>
-                                <li>Klik tombol "Masuk"</li>
-                            </ol>
-                        </div>
-                    ` : `
-                        <div class="steps">
-                            <h4>⏳ Email Sudah Terverifikasi</h4>
-                            <p>Tapi user masih perlu di-approve admin untuk bisa login.</p>
-                            <p style="margin-top: 12px;">Silakan approve user di halaman User Management atau gunakan tool approve-user.</p>
-                        </div>
-                    `}
-                    
-                    <button onclick="location.reload()" class="btn-secondary" style="width: 100%;">
-                        Verify User Lain
-                    </button>
-                `;
-                
-            } catch (error) {
-                resultDiv.className = 'result error show';
-                resultDiv.innerHTML = `
-                    <h3>❌ Error</h3>
-                    <p>${error.message}</p>
-                `;
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Force Verify Email';
-            }
-        }
-        
-        // Allow Enter key to submit
-        document.getElementById('email').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') forceVerify();
-        });
-    </script>
+    <script src="/js/force-verify.js" defer></script>
 </body>
 </html>

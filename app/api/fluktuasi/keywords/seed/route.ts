@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { broadcast } from '@/lib/sse';
 import { requireAdmin } from '@/lib/api-auth';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 const exampleKeywords = [
   // Klasifikasi keywords
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
     const auth = await requireAdmin(req);
     if ('error' in auth) return auth.error;
 
-    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`fluktuasi-keyword-seed:ip:${clientIp}`, 3, 60_000);
+    const clientIp = getClientIp(req);
+    const ipRateLimit = await checkRateLimit(`fluktuasi-keyword-seed:uid:${auth.user.uid}:ip:${clientIp}`, 3, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { success: false, error: 'Terlalu banyak request seed. Coba lagi sebentar.' },

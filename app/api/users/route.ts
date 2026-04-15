@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    broadcast('users', { id: user.id });
+    broadcast('users', { id: user.id }, { roles: ['ADMIN_SYSTEM'] });
     return NextResponse.json({
       success: true,
       user,

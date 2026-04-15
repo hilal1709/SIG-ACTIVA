@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 import { createSessionToken, getSessionCookieName, getSessionMaxAgeSeconds } from '@/lib/session';
 
 export async function POST(request: NextRequest) {
   try {
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`login:ip:${clientIp}`, 10, 60_000);
+    const clientIp = getClientIp(request);
+    const ipRateLimit = await checkRateLimit(`login:ip:${clientIp}`, 10, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { error: 'Terlalu banyak percobaan login. Coba lagi sebentar.' },

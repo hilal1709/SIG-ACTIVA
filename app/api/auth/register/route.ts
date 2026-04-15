@@ -3,12 +3,12 @@ import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { sendVerificationEmail } from '@/lib/email';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`register:ip:${clientIp}`, 5, 60_000);
+    const clientIp = getClientIp(request);
+    const ipRateLimit = await checkRateLimit(`register:ip:${clientIp}`, 5, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { error: 'Terlalu banyak percobaan registrasi. Coba lagi sebentar.' },

@@ -4,14 +4,18 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
-
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
-
 async function main() {
+  if (process.env.ALLOW_DESTRUCTIVE_SCRIPTS !== 'true') {
+    throw new Error('Set ALLOW_DESTRUCTIVE_SCRIPTS=true to run clear-accruals-fast.ts');
+  }
+
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+  });
+
+  const adapter = new PrismaPg(pool);
+  const prisma = new PrismaClient({ adapter });
+
   console.log('Menghapus semua data accrual (FAST MODE)...');
   const startTime = Date.now();
   
@@ -42,9 +46,10 @@ async function main() {
     // Ensure constraints are re-enabled even if error occurs
     await prisma.$executeRaw`SET session_replication_role = DEFAULT;`;
     throw error;
+  } finally {
+    await prisma.$disconnect();
+    await pool.end();
   }
-  
-  await pool.end();
 }
 
 main()

@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAdmin } from '@/lib/api-auth';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
   try {
     const auth = await requireAdmin(request);
     if ('error' in auth) return auth.error;
 
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const ipRateLimit = checkRateLimit(`force-verify:ip:${clientIp}`, 20, 60_000);
+    const clientIp = getClientIp(request);
+    const ipRateLimit = await checkRateLimit(`force-verify:uid:${auth.user.uid}:ip:${clientIp}`, 20, 60_000);
     if (!ipRateLimit.allowed) {
       return NextResponse.json(
         { error: 'Terlalu banyak request. Coba lagi sebentar.' },

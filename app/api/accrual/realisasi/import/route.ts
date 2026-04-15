@@ -4,9 +4,15 @@ import * as XLSX from 'xlsx';
 import { broadcast } from '@/lib/sse';
 import { sendPushToAll } from '@/lib/webpush';
 
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_XML_ROWS = 10000;
+const MAX_XML_CELLS = 300000;
+const MAX_PROCESS_ROWS = 10000;
+
 // Simple XML parser for SpreadsheetML format
 function parseSpreadsheetML(xmlText: string): any[][] {
   const rows: any[][] = [];
+  let totalCells = 0;
   
   // Extract all Row elements using regex (simpler than full XML parser)
   // Handle both <Row>...</Row> and self-closing <Row/>
@@ -14,6 +20,10 @@ function parseSpreadsheetML(xmlText: string): any[][] {
   let rowMatch;
   
   while ((rowMatch = rowRegex.exec(xmlText)) !== null) {
+    if (rows.length >= MAX_XML_ROWS) {
+      throw new Error(`XML terlalu besar: maksimum ${MAX_XML_ROWS} baris`);
+    }
+
     const rowContent = rowMatch[1];
     const row: any[] = [];
     
@@ -59,6 +69,11 @@ function parseSpreadsheetML(xmlText: string): any[][] {
       
       row.push(value);
       currentIndex++;
+      totalCells++;
+
+      if (totalCells > MAX_XML_CELLS) {
+        throw new Error(`XML terlalu besar: maksimum ${MAX_XML_CELLS} cell`);
+      }
     }
     
     // Only add row if it has at least one cell
@@ -193,6 +208,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return NextResponse.json(
+        { error: `Ukuran file terlalu besar. Maksimum ${Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024))} MB` },
+        { status: 413 }
+      );
+    }
+
     const fileName = file.name.toLowerCase();
     const isXml = fileName.endsWith('.xml');
     const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
@@ -250,6 +272,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'No data rows found in XML file' },
         { status: 400 }
+      );
+    }
+
+    if (dataRows.length > MAX_PROCESS_ROWS) {
+      return NextResponse.json(
+        { error: `Jumlah baris data terlalu besar. Maksimum ${MAX_PROCESS_ROWS} baris` },
+        { status: 413 }
       );
     }
 

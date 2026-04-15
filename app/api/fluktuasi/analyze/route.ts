@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireFinanceRead } from '@/lib/api-auth';
-import { checkRateLimit } from '@/lib/rate-limit';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 // ─── Analyze uses the default Free Models Router key (keyIdx 0) ──────────────
 // The model is google/gemini-2.0-flash-001, which is free on OpenRouter.
@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
   const auth = await requireFinanceRead(req);
   if ('error' in auth) return auth.error;
 
-  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-  const ipRateLimit = checkRateLimit(`fluktuasi-analyze:ip:${clientIp}`, 15, 60_000);
+  const clientIp = getClientIp(req);
+  const ipRateLimit = await checkRateLimit(`fluktuasi-analyze:uid:${auth.user.uid}:ip:${clientIp}`, 15, 60_000);
   if (!ipRateLimit.allowed) {
     return NextResponse.json(
       { error: 'Terlalu banyak request analisis. Coba lagi sebentar.' },
