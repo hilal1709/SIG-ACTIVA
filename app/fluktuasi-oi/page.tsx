@@ -1230,7 +1230,7 @@ const buildTemplateReason = (
   gap: number,
   pct: number,
   accountName: string,
-  side: 'mom' | 'yoy',
+  side: 'mom' | 'yoy' | 'ytd',
   amountCols: AmountCol[],
   rowValues: (string | number)[],
   currIdx: number,
@@ -1242,7 +1242,7 @@ const buildTemplateReason = (
   const absPct = Math.abs(pct);
 
   if (gap === 0)
-    return `Tidak ada fluktuasi ${side === 'mom' ? 'MoM' : 'YoY'} — nilai ${name} tidak berubah pada periode ini.`;
+    return `Tidak ada fluktuasi ${side === 'mom' ? 'MoM' : side === 'ytd' ? 'YtD' : 'YoY'} — nilai ${name} tidak berubah pada periode ini.`;
 
   const dir    = gap > 0 ? 'Kenaikan' : 'Penurunan';
   const dirLow = gap > 0 ? 'kenaikan' : 'penurunan';
@@ -1259,7 +1259,7 @@ const buildTemplateReason = (
   const prevAC    = amountCols[prevIdx];
   const currLabel = currAC ? (currAC.dateLabel || currAC.label) : 'Periode ini';
   const prevLabel = prevAC ? (prevAC.dateLabel || prevAC.label) : 'Periode sebelumnya';
-  const modeLabel = side === 'mom' ? 'MoM' : 'YoY';
+  const modeLabel = side === 'mom' ? 'MoM' : side === 'ytd' ? 'YtD' : 'YoY';
 
   // Header line: "Penurunan beban bunga pinjaman investasi senilai 3 M (MoM)"
   const header = `${dir} ${name} senilai ${fmtAmt(abs)} (${FMT_PCT.format(absPct)}%) ${modeLabel} atas:`;
@@ -3730,7 +3730,7 @@ export default function FluktuasiOIPage() {
             getBreakdown(acctCode, currPer, prevYoYPer))
         : '';
       const ytd = Math.abs(row.gapYtD) !== 0
-        ? buildTemplateReason(row.gapYtD, row.pctYtD, descVal, 'yoy', amountCols, row.values, effYtdC, effYtdP, undefined,
+        ? buildTemplateReason(row.gapYtD, row.pctYtD, descVal, 'ytd', amountCols, row.values, effYtdC, effYtdP, undefined,
             getBreakdown(acctCode, acToPeriode(effYtdC), prevYtDPer))
         : '';
       map.set(idx, { mom, yoy, ytd });
