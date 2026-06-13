@@ -621,38 +621,10 @@ export default function MonitoringAccrualPage() {
     return groups;
   }, [filteredData]);
 
-  // Pre-calculate totals untuk setiap item (cache untuk performa)
-  const itemTotalsCache = useMemo(() => {
-    const cache = new Map<number, { accrual: number; realisasi: number; saldoAwal: number }>();
-    filteredData.forEach(item => {
-      const accrual = calculateItemAccrual(item);
-      const realisasi = calculateActualRealisasi(item);
-      const saldoAwal = getSaldoAwal(item);
-      cache.set(item.id, {
-        accrual,
-        realisasi,
-        saldoAwal,
-      });
-    });
-    return cache;
-  }, [filteredData, calculateItemAccrual, calculateActualRealisasi]);
-
   const BULAN_NAMES = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
 
-  // Unique years across all accrual periodes, sorted asc
-  const availableYears = useMemo(() => {
-    const set = new Set<number>();
-    accrualData.forEach(item => item.periodes?.forEach(p => {
-      const yr = parseInt(p.bulan.split(' ')[1]);
-      if (!isNaN(yr)) set.add(yr);
-    }));
-    return [...set].sort((a, b) => a - b);
-  }, [accrualData]);
-
-  // Calculate total saldo for metric card – uses filteredData so it matches what's visible
-  const totalSaldo = useMemo(() => {
-    // When filterMonth only (no year): find the latest year in the data that has that month,
-    // then compute cumulative from period-1 up to that month-year chronologically.
+  // Pre-calculate totals untuk setiap item (cache untuk performa) dengan memperhatikan filter periode
+  const itemTotalsCache = useMemo(() => {
     let monthOnlyTargetYear: number | null = null;
     if (filterMonth && !filterYear) {
       filteredData.forEach(item => {
@@ -666,10 +638,14 @@ export default function MonitoringAccrualPage() {
       });
     }
 
-    return filteredData.reduce((sum, item) => {
+    const cache = new Map<number, { accrual: number; realisasi: number; saldoAwal: number }>();
+    filteredData.forEach(item => {
+      const saldoAwal = getSaldoAwal(item);
+      
+      let accrualAll = 0;
+      let realisasiAll = 0;
+
       if (filterMonth || filterYear) {
-        // Cumulative mode: saldo_awal + accrual(s.d. periode filter) - realisasi(s.d. periode filter)
-        const saldoAwal = getSaldoAwal(item);
         const upToPeriodes = item.periodes?.filter(p => {
           const [mon, yr] = p.bulan.split(' ');
           const pDate = new Date(parseInt(yr), BULAN_NAMES.indexOf(mon), 1);
@@ -678,29 +654,52 @@ export default function MonitoringAccrualPage() {
             return pDate <= targetDate;
           }
           if (filterMonth && monthOnlyTargetYear !== null) {
-            // Cumulative up to latest <filterMonth> in the dataset (incl. all preceding periods)
             const targetDate = new Date(monthOnlyTargetYear, BULAN_NAMES.indexOf(filterMonth), 1);
             return pDate <= targetDate;
           }
           if (filterYear) {
-            // Cumulative up to end of selected year
             const targetDate = new Date(parseInt(filterYear), 11, 1);
             return pDate <= targetDate;
           }
           return false;
         }) ?? [];
-        const accrualUpTo = upToPeriodes.reduce((s, p) => s + Math.abs(p.amountAccrual), 0);
-        const realisasiUpTo = upToPeriodes.reduce((s, p) => s + (p.totalRealisasi ?? 0), 0);
-        return sum + (saldoAwal + accrualUpTo - realisasiUpTo);
+        accrualAll = upToPeriodes.reduce((s, p) => s + Math.abs(p.amountAccrual), 0);
+        realisasiAll = upToPeriodes.reduce((s, p) => s + (p.totalRealisasi ?? 0), 0);
+      } else {
+        // No filter: use full calculation
+        accrualAll = calculateItemAccrual(item);
+        realisasiAll = calculateActualRealisasi(item);
       }
-      // No filter: simple sum over all periods (consistent with filter path)
-      const saldoAwal = getSaldoAwal(item);
-      const allPeriodes = item.periodes ?? [];
-      const accrualAll = allPeriodes.reduce((s, p) => s + Math.abs(p.amountAccrual), 0);
-      const realisasiAll = allPeriodes.reduce((s, p) => s + (p.totalRealisasi ?? 0), 0);
-      return sum + (saldoAwal + accrualAll - realisasiAll);
+
+      cache.set(item.id, {
+        accrual: accrualAll,
+        realisasi: realisasiAll,
+        saldoAwal,
+      });
+    });
+    return cache;
+  }, [filteredData, filterMonth, filterYear, calculateItemAccrual, calculateActualRealisasi]);
+
+  // Unique years across all accrual periodes, sorted asc
+  const availableYears = useMemo(() => {
+    const set = new Set<number>();
+    accrualData.forEach(item => item.periodes?.forEach(p => {
+      const yr = parseInt(p.bulan.split(' ')[1]);
+      if (!isNaN(yr)) set.add(yr);
+    }));
+    return [...set].sort((a, b) => a - b);
+  }, [accrualData]);
+
+  // Calculate total saldo for metric card – uses itemTotalsCache so it matches rows perfectly
+  const totalSaldo = useMemo(() => {
+    return filteredData.reduce((sum, item) => {
+      const cached = itemTotalsCache.get(item.id);
+      if (cached) {
+        return sum + (cached.saldoAwal + cached.accrual - cached.realisasi);
+      }
+      return sum + getSaldoAwal(item);
     }, 0);
-  }, [filteredData, filterMonth, filterYear]);
+  }, [filteredData, itemTotalsCache]);
 
   // -- Animated metric counters (placed here after useMemo) -------------
   useEffect(() => {
