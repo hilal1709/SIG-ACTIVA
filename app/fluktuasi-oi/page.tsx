@@ -1240,9 +1240,14 @@ const buildTemplateReason = (
 ): string => {
   const name = accountName || 'Akun ini';
   const absPct = Math.abs(pct);
+  const currAC    = amountCols[currIdx];
+  const ytdUpTo   = side === 'ytd' ? getAmountColMonthLabel(currAC) : '';
+  const modeLabel = side === 'mom' ? 'MoM' : side === 'ytd'
+    ? (ytdUpTo ? `YtD up to ${ytdUpTo}` : 'YtD')
+    : 'YoY';
 
   if (gap === 0)
-    return `Tidak ada fluktuasi ${side === 'mom' ? 'MoM' : side === 'ytd' ? 'YtD' : 'YoY'} — nilai ${name} tidak berubah pada periode ini.`;
+    return `Tidak ada fluktuasi ${modeLabel} — nilai ${name} tidak berubah pada periode ini.`;
 
   const dir    = gap > 0 ? 'Kenaikan' : 'Penurunan';
   const dirLow = gap > 0 ? 'kenaikan' : 'penurunan';
@@ -1255,11 +1260,9 @@ const buildTemplateReason = (
     return FMT_RP.format(a);
   };
 
-  const currAC    = amountCols[currIdx];
   const prevAC    = amountCols[prevIdx];
   const currLabel = currAC ? (currAC.dateLabel || currAC.label) : 'Periode ini';
   const prevLabel = prevAC ? (prevAC.dateLabel || prevAC.label) : 'Periode sebelumnya';
-  const modeLabel = side === 'mom' ? 'MoM' : side === 'ytd' ? 'YtD' : 'YoY';
 
   // Header line: "Penurunan beban bunga pinjaman investasi senilai 3 M (MoM)"
   const header = `${dir} ${name} senilai ${fmtAmt(abs)} (${FMT_PCT.format(absPct)}%) ${modeLabel} atas:`;
@@ -1280,6 +1283,79 @@ const buildTemplateReason = (
 
   // Fallback: no breakdown available
   return `${header}\n   - (Data klasifikasi tidak tersedia)`;
+};
+
+const YTD_MONTH_MAP: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6, jul: 7,
+  aug: 8, agu: 8, sep: 9, oct: 10, okt: 10, nov: 11, dec: 12, des: 12,
+};
+
+const getAmountColMonthNum = (ac: AmountCol): number => {
+  const db = ac.label.match(/^20\d{2}\.(\d{2})$/);
+  if (db) return parseInt(db[1], 10);
+  const txt = (ac.dateLabel + ' ' + ac.label).toLowerCase();
+  for (const [k, v] of Object.entries(YTD_MONTH_MAP)) {
+    if (new RegExp(`\\b${k}\\b`).test(txt)) return v;
+  }
+  return 0;
+};
+
+const MONTH_NAMES_EN = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const getAmountColMonthLabel = (ac: AmountCol | undefined): string => {
+  if (!ac) return '';
+  const mo = getAmountColMonthNum(ac);
+  if (mo >= 1 && mo <= 12) return MONTH_NAMES_EN[mo - 1];
+  const m = (ac.dateLabel || ac.label || '').match(/-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-/i);
+  if (m) {
+    const idx = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+      .indexOf(m[1].toLowerCase().slice(0, 3));
+    if (idx >= 0) return MONTH_NAMES_EN[idx];
+  }
+  return '';
+};
+
+const amountColIndexToPeriode = (amountCols: AmountCol[], idx: number): string => {
+  const ac = amountCols[idx];
+  if (!ac) return '';
+  if (/^\d{4}\.\d{2}$/.test(ac.label)) return ac.label;
+  const yr = ac.yearLabel?.match(/20\d{2}/)?.[0] ?? '';
+  const text = ((ac.dateLabel ?? '') + ' ' + (ac.label ?? '')).toLowerCase();
+  for (const [abbr, mo] of Object.entries(YTD_MONTH_MAP)) {
+    if (text.includes(abbr)) return `${yr}.${String(mo).padStart(2, '0')}`;
+  }
+  return '';
+};
+
+/** Period keys (YYYY.MM) from Jan through the target column's month — mirrors getYtdVal(). */
+const resolveYtdPeriodKeys = (amountCols: AmountCol[], targetIdx: number): string[] => {
+  const tAC = amountCols[targetIdx];
+  if (!tAC) return [];
+  const tMo = getAmountColMonthNum(tAC);
+  const tYr = tAC.yearLabel.match(/20\d{2}/)?.[0] ?? '';
+  if (!tMo || !tYr) {
+    const key = amountColIndexToPeriode(amountCols, targetIdx);
+    return key ? [key] : [];
+  }
+  const keys: string[] = [];
+  for (let i = 0; i < amountCols.length; i++) {
+    const a = amountCols[i];
+    if (a.isCumulative) continue;
+    if ((a.yearLabel.match(/20\d{2}/)?.[0] ?? '') !== tYr) continue;
+    const mo = getAmountColMonthNum(a);
+    if (mo >= 1 && mo <= tMo) {
+      const key = amountColIndexToPeriode(amountCols, i);
+      if (key) keys.push(key);
+    }
+  }
+  if (keys.length === 0) {
+    const key = amountColIndexToPeriode(amountCols, targetIdx);
+    if (key) keys.push(key);
+  }
+  return keys;
 };
 
 const classifyRow = (values: any[], accountColIdx: number): RekapSheetRow['type'] => {
@@ -3694,32 +3770,49 @@ export default function FluktuasiOIPage() {
       return result.sort((a, b) => Math.abs(b.currAmount) - Math.abs(a.currAmount));
     };
 
-    // Helper: convert amountCol index to periode key (YYYY.MM)
-    const acToPeriode = (idx: number): string => {
-      const ac = amountCols[idx];
-      if (!ac) return '';
-      if (/^\d{4}\.\d{2}$/.test(ac.label)) return ac.label;
-      const yr = ac.yearLabel?.match(/20\d{2}/)?.[0] ?? '';
-      const text = ((ac.dateLabel ?? '') + ' ' + (ac.label ?? '')).toLowerCase();
-      const MONTHS: [string, number][] = [
-        ['jan',1],['feb',2],['mar',3],['apr',4],['mei',5],['may',5],
-        ['jun',6],['jul',7],['aug',8],['agu',8],['sep',9],['oct',10],['okt',10],['nov',11],['dec',12],['des',12],
-      ];
-      for (const [abbr, mo] of MONTHS) {
-        if (text.includes(abbr)) return `${yr}.${String(mo).padStart(2, '0')}`;
+    // YtD: sum klasifikasi amounts across Jan?targetMo for each year (matches GAP YtD logic)
+    const getYtdBreakdown = (
+      acctCode: string,
+      currPeriodKeys: string[],
+      prevPeriodKeys: string[],
+    ): { klasifikasi: string; currAmount: number; prevAmount: number }[] => {
+      const klasMap = acctKlasPeriodeMap.get(acctCode);
+      const dbKlas  = dbBreakdown[acctCode];
+      const sumKeys = (src: Map<string, number> | Record<string, number>, keys: string[]) =>
+        keys.reduce((s, k) => s + ((src instanceof Map ? src.get(k) : src[k]) ?? 0), 0);
+
+      const allKlas = new Set<string>();
+      if (klasMap) for (const k of klasMap.keys()) allKlas.add(k);
+      if (dbKlas) for (const k of Object.keys(dbKlas)) allKlas.add(k);
+
+      const result: { klasifikasi: string; currAmount: number; prevAmount: number }[] = [];
+      for (const klas of allKlas) {
+        let curr = 0;
+        let prev = 0;
+        if (klasMap?.has(klas)) {
+          const perMap = klasMap.get(klas)!;
+          curr = sumKeys(perMap, currPeriodKeys);
+          prev = sumKeys(perMap, prevPeriodKeys);
+        } else if (dbKlas?.[klas]) {
+          curr = sumKeys(dbKlas[klas], currPeriodKeys);
+          prev = sumKeys(dbKlas[klas], prevPeriodKeys);
+        }
+        if (curr !== 0 || prev !== 0) result.push({ klasifikasi: klas, currAmount: curr, prevAmount: prev });
       }
-      return '';
+      return result.sort((a, b) => Math.abs(b.currAmount) - Math.abs(a.currAmount));
     };
+
+    const ytdCurrPeriodKeys = resolveYtdPeriodKeys(amountCols, effYtdC);
+    const ytdPrevPeriodKeys = resolveYtdPeriodKeys(amountCols, effYtdP);
 
     const map = new Map<number, { mom: string; yoy: string; ytd: string }>();
     rekapDisplayRowsLive.forEach((row, idx) => {
       if (row.type !== 'detail') return;
       const descVal    = descColIdx >= 0 ? String(row.values[descColIdx] ?? '') : '';
       const acctCode   = String(row.values[accountColIdx] ?? '').trim();
-      const currPer    = acToPeriode(effMC);
-      const prevMoMPer = acToPeriode(effMP);
-      const prevYoYPer = acToPeriode(effYP);
-      const prevYtDPer = acToPeriode(effYtdP);
+      const currPer    = amountColIndexToPeriode(amountCols, effMC);
+      const prevMoMPer = amountColIndexToPeriode(amountCols, effMP);
+      const prevYoYPer = amountColIndexToPeriode(amountCols, effYP);
 
       const mom = Math.abs(row.gapMoM) !== 0
         ? buildTemplateReason(row.gapMoM, row.pctMoM, descVal, 'mom', amountCols, row.values, effMC, effMP, undefined,
@@ -3727,11 +3820,11 @@ export default function FluktuasiOIPage() {
         : '';
       const yoy = Math.abs(row.gapYoY) !== 0
         ? buildTemplateReason(row.gapYoY, row.pctYoY, descVal, 'yoy', amountCols, row.values, effYC, effYP, undefined,
-            getBreakdown(acctCode, currPer, prevYoYPer))
+            getBreakdown(acctCode, amountColIndexToPeriode(amountCols, effYC), prevYoYPer))
         : '';
       const ytd = Math.abs(row.gapYtD) !== 0
         ? buildTemplateReason(row.gapYtD, row.pctYtD, descVal, 'ytd', amountCols, row.values, effYtdC, effYtdP, undefined,
-            getBreakdown(acctCode, acToPeriode(effYtdC), prevYtDPer))
+            getYtdBreakdown(acctCode, ytdCurrPeriodKeys, ytdPrevPeriodKeys))
         : '';
       map.set(idx, { mom, yoy, ytd });
     });
