@@ -28,8 +28,8 @@ function applySecurityHeaders(response: NextResponse): NextResponse {
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   const isProduction = process.env.NODE_ENV === 'production';
   const scriptSrc = isProduction
-    ? "script-src 'self';"
-    : "script-src 'self' 'unsafe-eval';";
+    ? "script-src 'self' 'unsafe-inline';"
+    : "script-src 'self' 'unsafe-inline' 'unsafe-eval';";
   response.headers.set(
     'Content-Security-Policy',
     `default-src 'self'; img-src 'self' data: blob:; ${scriptSrc} style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none';`
