@@ -1,16 +1,207 @@
 'use client';
-import {useCallback,useEffect,useState} from 'react';import Sidebar from '@/app/components/Sidebar';import Header from '@/app/components/Header';import {Card,CardContent,CardHeader,CardTitle} from '@/app/components/ui/card';
-type Item={logicalSourceCode:string;coaCodeRaw:string;description:string|null;rowCount:number;totalAmount:string;mappingStatus:string};type Group={id:number;code:string;natures:{id:number;code:string;name:string}[]};
-export default function PhaseDWorkspace({uploadId}:{uploadId:number}){const[mobile,setMobile]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');const[data,setData]=useState<Record<string,unknown>|null>(null),[rec,setRec]=useState<Record<string,unknown>|null>(null),[map,setMap]=useState<{items:Item[];groups:Group[]}|null>(null);
-// The asynchronous API callback is the external subscription for initial hydration.
-// eslint-disable-next-line react-hooks/set-state-in-effect
-const load=useCallback(async()=>{const[a,b,c]=await Promise.all([fetch(`/api/cost-structure/uploads/${uploadId}`),fetch(`/api/cost-structure/uploads/${uploadId}/reconciliation`),fetch(`/api/cost-structure/uploads/${uploadId}/mapping`)]);if(!a.ok)throw new Error('Upload tidak ditemukan.');setData(await a.json());setRec(await b.json());setMap(await c.json())},[uploadId]);useEffect(()=>{load().catch(e=>setError(e.message))},[load]);
-async function run(){setBusy(true);setError('');const response=await fetch(`/api/cost-structure/uploads/${uploadId}/reconciliation/run`,{method:'POST'});const value=await response.json();if(!response.ok)setError(value.error);await load();setBusy(false)}
-async function resolve(item:Item,action:string){const groupId=action==='EXCLUDE'?undefined:Number(prompt('Cost Group ID:'));const group=map?.groups.find(g=>g.id===groupId);const natureId=action==='EXCLUDE'?undefined:Number(prompt(`Nature ID (${group?.natures.map(n=>`${n.id}:${n.name}`).join(', ')}):`));const reason=action==='INCLUDE'?prompt('Catatan (opsional):')||'':prompt(`Alasan ${action} (wajib):`)||'';if(action!=='INCLUDE'&&!reason)return;setBusy(true);const response=await fetch(`/api/cost-structure/uploads/${uploadId}/mapping/resolve`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({logicalSourceCode:item.logicalSourceCode,coaCodeRaw:item.coaCodeRaw,mappingAction:action,costGroupId:groupId,natureId,reason,note:reason})});const value=await response.json();if(!response.ok)setError(value.error);await load();setBusy(false)}
-const upload=(data?.upload??{}) as Record<string,unknown>,period=(upload.period??{}) as Record<string,unknown>,company=(period.company??{}) as Record<string,unknown>,sources=(rec?.sources??[]) as Record<string,unknown>[],completeness=(rec?.completeness??{})as Record<string,unknown>,issues=(upload.validationIssues??[])as Record<string,unknown>[];
-return <div className="flex min-h-screen bg-background"><aside className="fixed inset-y-0 left-0 hidden lg:block"><Sidebar/></aside>{mobile&&<aside className="fixed inset-y-0 left-0 z-50"><Sidebar isOpen onClose={()=>setMobile(false)}/></aside>}<div className="flex min-w-0 flex-1 flex-col lg:pl-64"><Header title="Source Reconciliation & Mapping" subtitle="Cost Structure Phase D" onMenuClick={()=>setMobile(true)}/><main className="space-y-6 p-6"><div className="flex justify-between"><div><h1 className="text-2xl font-bold">Upload #{uploadId}</h1><p className="text-muted-foreground">{String(company.companyCode??'')} · {String(period.fiscalYear??'')}/{String(period.fiscalPeriod??'')} · v{String(upload.version??'')} · {String(upload.originalFileName??'')}</p><p className="text-sm">{upload.isActiveVersion?'Active':'Superseded'} · {String(upload.status??'')} · Period {String(rec?.periodStatus??'')}</p></div><button disabled={busy||!upload.isActiveVersion} onClick={run} className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">Run reconciliation</button></div>{error&&<p className="rounded bg-destructive/10 p-3 text-destructive">{error}</p>}
-<Card><CardHeader><CardTitle>Source reconciliation</CardTitle></CardHeader><CardContent><Table headers={['Source','Detail Rows','Detail Amount','Reported Amount','Difference','Status']} rows={sources.map(s=>[s.logicalSourceCode,s.detailRowCount,s.detailAmount,s.reportedAmount??'—',s.difference??'—',s.status])}/></CardContent></Card>
-<Card><CardHeader><CardTitle>Mapping completeness</CardTitle></CardHeader><CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-6">{['mappedAmount','excludedAmount','reclassifiedAmount','unmappedAmount','unmappedCoaCount','difference'].map(k=><Metric key={k} label={k} value={String(completeness[k]??'—')}/>)}</div></CardContent></Card>
-<Card><CardHeader><CardTitle>Unmapped COA work queue</CardTitle></CardHeader><CardContent><Table headers={['Source','COA','Description','Rows','Amount','Status','Action']} rows={(map?.items??[]).filter(i=>i.mappingStatus==='UNMAPPED').map(i=>[i.logicalSourceCode,i.coaCodeRaw,i.description??'—',i.rowCount,i.totalAmount,i.mappingStatus,<span className="flex gap-1" key={`${i.logicalSourceCode}:${i.coaCodeRaw}`}><button onClick={()=>resolve(i,'INCLUDE')} className="text-primary">Map</button><button onClick={()=>resolve(i,'EXCLUDE')} className="text-primary">Exclude</button><button onClick={()=>resolve(i,'RECLASS')} className="text-primary">Reclassify</button></span>])}/></CardContent></Card>
-<Card><CardHeader><CardTitle>Validation issues</CardTitle></CardHeader><CardContent><Table headers={['State','Severity','Code','Message']} rows={issues.map(i=>[i.resolved?'Resolved':'Open',i.severity,i.issueCode,i.message])}/></CardContent></Card><Card><CardHeader><CardTitle>Readiness</CardTitle></CardHeader><CardContent><p className="font-semibold">{rec?.ready?'SOURCE_RECONCILED':'SOURCE_VALIDATION'}</p><ul className="list-disc pl-5 text-sm">{((rec?.blockers??[])as string[]).map(x=><li key={x}>{x}</li>)}</ul></CardContent></Card></main></div></div>}
-function Table({headers,rows}:{headers:string[];rows:(unknown|React.ReactNode)[][]}){return <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b">{headers.map(h=><th className="p-2" key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr className="border-b" key={i}>{r.map((v,j)=><td className="p-2" key={j}>{v as React.ReactNode}</td>)}</tr>)}</tbody></table></div>}function Metric({label,value}:{label:string;value:string}){return <div className="rounded bg-muted p-3"><div className="text-xs text-muted-foreground">{label}</div><b>{value}</b></div>}
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Sidebar from '@/app/components/Sidebar';
+import Header from '@/app/components/Header';
+import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+
+type Item = {
+  logicalSourceCode: string;
+  coaCodeRaw: string;
+  description: string | null;
+  rowCount: number;
+  totalAmount: string;
+  mappingStatus: string;
+};
+
+type Group = {
+  id: number;
+  code: string;
+  natures: { id: number; code: string; name: string }[];
+};
+
+function isZeroAmount(value: string): boolean {
+  const normalized = value.trim().replace(/^[+-]/, '').replace(/[.,]/g, '');
+  return normalized.length > 0 && /^0+$/.test(normalized);
+}
+
+export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
+  const [mobile, setMobile] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [rec, setRec] = useState<Record<string, unknown> | null>(null);
+  const [map, setMap] = useState<{ items: Item[]; groups: Group[] } | null>(null);
+
+  const load = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      fetch(`/api/cost-structure/uploads/${uploadId}`),
+      fetch(`/api/cost-structure/uploads/${uploadId}/reconciliation`),
+      fetch(`/api/cost-structure/uploads/${uploadId}/mapping`),
+    ]);
+    if (!a.ok) throw new Error('Upload tidak ditemukan.');
+    setData(await a.json());
+    setRec(await b.json());
+    setMap(await c.json());
+  }, [uploadId]);
+
+  useEffect(() => {
+    load().catch((e) => setError(e.message));
+  }, [load]);
+
+  async function run() {
+    setBusy(true);
+    setError('');
+    const response = await fetch(`/api/cost-structure/uploads/${uploadId}/reconciliation/run`, { method: 'POST' });
+    const value = await response.json();
+    if (!response.ok) setError(value.error);
+    await load();
+    setBusy(false);
+  }
+
+  async function resolve(item: Item, action: string) {
+    const groupId = action === 'EXCLUDE' ? undefined : Number(prompt('Cost Group ID:'));
+    const group = map?.groups.find((g) => g.id === groupId);
+    const natureId = action === 'EXCLUDE'
+      ? undefined
+      : Number(prompt(`Nature ID (${group?.natures.map((n) => `${n.id}:${n.name}`).join(', ')}):`));
+    const reason = action === 'INCLUDE'
+      ? prompt('Catatan (opsional):') || ''
+      : prompt(`Alasan ${action} (wajib):`) || '';
+    if (action !== 'INCLUDE' && !reason) return;
+
+    setBusy(true);
+    const response = await fetch(`/api/cost-structure/uploads/${uploadId}/mapping/resolve`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        logicalSourceCode: item.logicalSourceCode,
+        coaCodeRaw: item.coaCodeRaw,
+        mappingAction: action,
+        costGroupId: groupId,
+        natureId,
+        reason,
+        note: reason,
+      }),
+    });
+    const value = await response.json();
+    if (!response.ok) setError(value.error);
+    await load();
+    setBusy(false);
+  }
+
+  const upload = (data?.upload ?? {}) as Record<string, unknown>;
+  const period = (upload.period ?? {}) as Record<string, unknown>;
+  const company = (period.company ?? {}) as Record<string, unknown>;
+  const sources = (rec?.sources ?? []) as Record<string, unknown>[];
+  const completeness = (rec?.completeness ?? {}) as Record<string, unknown>;
+  const issues = (upload.validationIssues ?? []) as Record<string, unknown>[];
+
+  const unmappedItems = useMemo(
+    () => (map?.items ?? []).filter((item) => item.mappingStatus === 'UNMAPPED'),
+    [map]
+  );
+  const blockingUnmapped = useMemo(
+    () => unmappedItems.filter((item) => !isZeroAmount(item.totalAmount)),
+    [unmappedItems]
+  );
+  const zeroUnmapped = useMemo(
+    () => unmappedItems.filter((item) => isZeroAmount(item.totalAmount)),
+    [unmappedItems]
+  );
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      <aside className="fixed inset-y-0 left-0 hidden lg:block"><Sidebar /></aside>
+      {mobile && <aside className="fixed inset-y-0 left-0 z-50"><Sidebar isOpen onClose={() => setMobile(false)} /></aside>}
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
+        <Header title="Source Reconciliation & Mapping" subtitle="Cost Structure Phase D" onMenuClick={() => setMobile(true)} />
+        <main className="space-y-6 p-6">
+          <div className="flex justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">Upload #{uploadId}</h1>
+              <p className="text-muted-foreground">{String(company.companyCode ?? '')} · {String(period.fiscalYear ?? '')}/{String(period.fiscalPeriod ?? '')} · v{String(upload.version ?? '')} · {String(upload.originalFileName ?? '')}</p>
+              <p className="text-sm">{upload.isActiveVersion ? 'Active' : 'Superseded'} · {String(upload.status ?? '')} · Period {String(rec?.periodStatus ?? '')}</p>
+            </div>
+            <button disabled={busy || !upload.isActiveVersion} onClick={run} className="rounded bg-primary px-4 py-2 text-primary-foreground disabled:opacity-50">Run reconciliation</button>
+          </div>
+
+          {error && <p className="rounded bg-destructive/10 p-3 text-destructive">{error}</p>}
+
+          <Card>
+            <CardHeader><CardTitle>Source reconciliation</CardTitle></CardHeader>
+            <CardContent>
+              <Table headers={['Source', 'Detail Rows', 'Detail Amount', 'Reported Amount', 'Difference', 'Status']} rows={sources.map((s) => [s.logicalSourceCode, s.detailRowCount, s.detailAmount, s.reportedAmount ?? '—', s.difference ?? '—', s.status])} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Mapping completeness</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+                {['mappedAmount', 'excludedAmount', 'reclassifiedAmount', 'unmappedAmount', 'unmappedCoaCount', 'difference'].map((key) => <Metric key={key} label={key} value={String(completeness[key] ?? '—')} />)}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Unmapped COA work queue</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              {blockingUnmapped.length === 0 && (
+                <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">
+                  Tidak ada COA non-zero yang membutuhkan mapping. Work queue bersih.
+                </div>
+              )}
+              {zeroUnmapped.length > 0 && (
+                <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+                  {zeroUnmapped.length} COA masih berstatus UNMAPPED dengan amount 0. Ini non-blocking dan tidak perlu dimapping sampai memiliki nilai.
+                </div>
+              )}
+              <Table headers={['Source', 'COA', 'Description', 'Rows', 'Amount', 'Status', 'Action']} rows={blockingUnmapped.map((item) => [
+                item.logicalSourceCode,
+                item.coaCodeRaw,
+                item.description ?? '—',
+                item.rowCount,
+                item.totalAmount,
+                item.mappingStatus,
+                <span className="flex gap-1" key={`${item.logicalSourceCode}:${item.coaCodeRaw}`}>
+                  <button onClick={() => resolve(item, 'INCLUDE')} className="text-primary">Map</button>
+                  <button onClick={() => resolve(item, 'EXCLUDE')} className="text-primary">Exclude</button>
+                  <button onClick={() => resolve(item, 'RECLASS')} className="text-primary">Reclassify</button>
+                </span>,
+              ])} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Validation issues</CardTitle></CardHeader>
+            <CardContent><Table headers={['State', 'Severity', 'Code', 'Message']} rows={issues.map((issue) => [issue.resolved ? 'Resolved' : 'Open', issue.severity, issue.issueCode, issue.message])} /></CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Readiness</CardTitle></CardHeader>
+            <CardContent>
+              <p className="font-semibold">{rec?.ready ? 'SOURCE_RECONCILED' : 'SOURCE_VALIDATION'}</p>
+              <ul className="list-disc pl-5 text-sm">{((rec?.blockers ?? []) as string[]).map((x) => <li key={x}>{x}</li>)}</ul>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function Table({ headers, rows }: { headers: string[]; rows: (unknown | React.ReactNode)[][] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead><tr className="border-b">{headers.map((header) => <th className="p-2" key={header}>{header}</th>)}</tr></thead>
+        <tbody>{rows.map((row, i) => <tr className="border-b" key={i}>{row.map((value, j) => <td className="p-2" key={j}>{value as React.ReactNode}</td>)}</tr>)}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded bg-muted p-3"><div className="text-xs text-muted-foreground">{label}</div><b>{value}</b></div>;
+}
