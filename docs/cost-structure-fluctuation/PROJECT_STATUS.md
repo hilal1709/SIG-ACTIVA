@@ -11,7 +11,7 @@ Phase C — Upload/parser/storage                    COMPLETE
 Phase D — Source reconciliation/mapping            COMPLETE
 Phase E — Engine 1 Company 2000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase F — Engine 1 Company 7000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
-Phase G — Finalization/dashboard/export            IMPLEMENTATION COMPLETE / production export UAT pending
+Phase G — Finalization/dashboard/export            IMPLEMENTATION VERIFIED / production UAT next
 Phase H — Engine 2 comparison                      NEXT
 Phase I — Materiality/commentary/review             NOT STARTED
 Phase J — Fluctuation dashboard/export              NOT STARTED
@@ -55,18 +55,14 @@ PASAR   17,900,551,142.00
 TOTAL  125,697,101,203.00
 ```
 
-Active run is `SUCCESS / ENGINE1_2000_V1`, period `CALCULATED`, and persisted reconciliation differences are `0.00`. Company 2000 remains the regression baseline.
+Active run is `SUCCESS / ENGINE1_2000_V1`; Company 2000 remains the regression baseline.
 
 ## Phase F — Company 7000 — COMPLETE
 
-The real private workbook `TB 7000 07-2026 (Derivatif).xlsx` has passed the deployed application flow:
+The real private workbook `TB 7000 07-2026 (Derivatif).xlsx` passed deployed application flow:
 
 ```text
-Upload
-→ Validation
-→ Source Reconciliation
-→ Mapping
-→ Calculation
+Upload → Validation → Source Reconciliation → Mapping → Calculation
 ```
 
 Production active run:
@@ -125,9 +121,9 @@ PASAR_NATURE_RECONCILIATION  RECONCILED / 0.00
 
 Twelve non-zero TB-derived HPP rows whose `Klasifikasi HPP` is blank in the real `rincian biaya` were traced to the final `GHoPO`/SI formula. They are intentionally outside direct H01–H15 SUMIF classification and therefore affect H16 only through the final HPP residual; this is an SI-traced rule, not a generic missing-mapping fallback.
 
-## Phase G — finalization/dashboard/export
+## Phase G — implementation verified
 
-Phase G is built around a strict persisted read path:
+Phase G uses strict persisted read path:
 
 ```text
 CostPeriod
@@ -142,12 +138,12 @@ Dashboard and export do not run Engine 1, mapping resolution, reconciliation, or
 Lifecycle:
 
 ```text
-CALCULATED
-→ COST_STRUCTURE_RECONCILED
-→ FINALIZED
+CALCULATED → COST_STRUCTURE_RECONCILED → FINALIZED
 ```
 
 Finalization revalidates the same active run and all required persisted controls/totals inside the finalization transaction. Reopen is reason-required and audited.
+
+Historical uploads created before audit-only persistence can use an ADMIN-only `Hydrate Audit Snapshot` action. It downloads the authoritative private workbook once, verifies SHA-256 against `CostUpload`, persists only `AUDIT_*` rows, and does not change Engine 1 values, mappings, active run, or period status. New uploads persist audit-only rows automatically.
 
 ### Official Company 7000 Excel contract
 
@@ -169,13 +165,15 @@ solar PP order
 Formula Audit
 ```
 
-`GHoPO`, `DERIV`, `rincian biaya`, `cc_drv`, and `SI2000_DRV` are persisted as audit-only source snapshots. Audit-only derivative data has zero Engine 1 contribution. `GHoPO` authoritative cells are rendered from persisted calculation results; `Formula Audit` is rendered from persisted lineage. Export is DB-only and does not download/reparse Storage XLSX at request time.
+`GHoPO`, `DERIV`, `rincian biaya`, `cc_drv`, and `SI2000_DRV` are audit-only source snapshots. Audit-only derivative data has zero Engine 1 contribution. `GHoPO` authoritative cells are rendered from persisted calculation results; `Formula Audit` is rendered from persisted lineage. Export is DB-only and does not download/reparse Storage XLSX at request time.
+
+Phase G candidate passed repository TypeScript validation and Vercel preview build. Production UAT consists of one-time historical audit hydration, DB-only export verification, and controlled Reconcile → Finalize flow.
 
 See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
 
 ## Next phase — Phase H
 
-Phase H is Engine 2 comparison/fluctuation. Its input is **only finalized Engine 1 history**; it never accepts a separate raw workbook upload.
+Phase H is Engine 2 comparison/fluctuation. Its input is **only FINALIZED Engine 1 history**; it never accepts a separate raw workbook upload.
 
 Initial locked scope:
 
