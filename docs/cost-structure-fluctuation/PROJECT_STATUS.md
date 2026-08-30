@@ -1,18 +1,18 @@
 # Project Status — Cost Structure & Fluktuasi Biaya
 
-Last updated: 2026-08-30
+Last updated: 2026-08-31
 
 ## Overall status
 
 ```text
-Phase A — Repository integration foundation       COMPLETE / merged to main
+Phase A — Repository integration foundation       COMPLETE
 Phase B — Core schema & master data               COMPLETE / production DDL applied
-Phase C — Upload/parser/storage                    COMPLETE / merged to main
-Phase D — Source reconciliation/mapping            COMPLETE / production DDL applied
+Phase C — Upload/parser/storage                    COMPLETE
+Phase D — Source reconciliation/mapping            COMPLETE
 Phase E — Engine 1 Company 2000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
-Phase F — Engine 1 Company 7000                    ENGINE CONTRACT READY / SOURCE ADAPTER + REAL E2E PENDING
-Phase G — Finalization/dashboard/export            NOT STARTED / EXPORT CONTRACT LOCKED
-Phase H — Engine 2 comparison                      NOT STARTED
+Phase F — Engine 1 Company 7000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
+Phase G — Finalization/dashboard/export            IMPLEMENTATION COMPLETE / production export UAT pending
+Phase H — Engine 2 comparison                      NEXT
 Phase I — Materiality/commentary/review             NOT STARTED
 Phase J — Fluctuation dashboard/export              NOT STARTED
 Phase K — Hardening/deployment                     NOT STARTED
@@ -30,143 +30,162 @@ Next.js / API
   → Supabase PostgreSQL
 ```
 
-Production DDL is controlled through reviewed Supabase migrations. Historical repository Prisma migrations are not an executable production migration chain.
+Production DDL is controlled through reviewed Supabase migrations. Never run production `prisma migrate deploy`, `prisma migrate reset`, or `prisma db push`. Private workbooks and secrets never enter GitHub.
 
-Never run against production:
+## Phases A–D — complete foundation
 
-```text
-prisma migrate deploy
-prisma migrate reset
-prisma db push
-```
+Production-proven capabilities:
 
-Private workbooks and secrets must never be committed.
-
-## Completed foundation — Phases A to D
-
-Implemented and production-proven:
-
-- Cost Structure navigation/routes/auth and legacy isolation;
-- private Supabase Storage upload with signed browser upload and SHA-256 lineage;
-- versioned source workbooks and normalized `CostSourceRow` staging;
-- validation issue register;
-- conservative source CC reconciliation;
+- Cost Structure navigation/auth and legacy isolation;
+- private Supabase Storage upload with SHA-256/version lineage;
+- SheetJS source parsing, normalized `CostSourceRow`, validation register;
+- source CC reconciliation;
 - effective-dated source-specific COA mapping;
 - INCLUDE / EXCLUDE / RECLASS;
-- non-zero unmapped blocking and zero-amount unmapped non-blocking behavior;
-- mapping completeness/readiness and `SOURCE_RECONCILED` transition.
+- non-zero unmapped blocking, zero unmapped non-blocking;
+- `SOURCE_RECONCILED` readiness gate.
 
-Relevant merged milestones include PR #3 (core), PR #4 (upload), PR #5 (reconciliation), PR #7 (Company 2000 source parity), and parser/UX hotfixes through PR #14.
+## Phase E — Company 2000 — COMPLETE
 
-## Phase E — Company 2000 Engine 1 — COMPLETE
-
-Company 2000 scope:
+Production July-2026 golden E2E:
 
 ```text
-ADUM
-PASAR
+ADUM   107,796,550,061.00
+PASAR   17,900,551,142.00
+TOTAL  125,697,101,203.00
 ```
 
-Locked July-2026 golden:
+Active run is `SUCCESS / ENGINE1_2000_V1`, period `CALCULATED`, and persisted reconciliation differences are `0.00`. Company 2000 remains the regression baseline.
+
+## Phase F — Company 7000 — COMPLETE
+
+The real private workbook `TB 7000 07-2026 (Derivatif).xlsx` has passed the deployed application flow:
 
 ```text
-ADUM   107,796,550,061
-PASAR   17,900,551,142
-TOTAL  125,697,101,203
+Upload
+→ Validation
+→ Source Reconciliation
+→ Mapping
+→ Calculation
 ```
 
-Production application E2E has completed:
+Production active run:
 
 ```text
-Upload               PASS
-Validation           PASS
-Source reconciliation PASS
-Mapping coverage     PASS
-Calculation          PASS
-Active run           SUCCESS / ENGINE1_2000_V1
-ADUM difference      0
-PASAR difference     0
-Period status        CALCULATED
+Run Number          7
+Run DB ID           8
+Status              SUCCESS
+Active              true
+Rule Set            ENGINE1_7000_V1
+Actual Lines        211
+Period Status       CALCULATED
+Bad Controls        0
 ```
 
-The real private workbook was used through the deployed application; it remains outside GitHub. Company 2000 is the regression baseline and must not change to accommodate Company 7000.
-
-## Phase F — Company 7000
-
-PR #15 implements the Company 7000 arithmetic/domain foundation:
-
-- scope `HPP`, `ADUM`, `PASAR`;
-- authoritative `Decimal(20,2)` values using `Prisma.Decimal`;
-- `HPP_TOTAL_7000`;
-- `COAL_7000_EXISTING`;
-- `COAL_INBOUND_7000_EXISTING`;
-- `OA_7000_EXISTING` inside PASAR;
-- `HPP_INVENTORY_DIFF_7000` as COA-less residual;
-- FORMULA/RESIDUAL protection from direct mapping and normal adjustment;
-- Derivatif zero effect;
-- formula source-row lineage;
-- Company 7000 Nature master bootstrap migration;
-- monthly UI support for future Company 7000 results.
-
-Code-level July-2026 golden contract:
+Exact production golden:
 
 ```text
-HPP              413,169,722,810.00
-ADUM              11,667,383,975.00
-PASAR regular      9,572,860,045.00
-OA                 72,068,727,025.00
-PASAR total        81,641,587,070.00
-TOTAL COMPANY     506,478,693,855.00
-Batubara           93,152,232,023.32
-Batubara Inbound   41,023,853,211.68
-Selisih Persediaan -21,153,010,152.00
-HPP difference                     0.00
+HPP                413,169,722,810.00
+ADUM                11,667,383,975.00
+PASAR regular        9,572,860,045.00
+OA                   72,068,727,025.00
+PASAR total          81,641,587,070.00
+TOTAL COMPANY       506,478,693,855.00
 ```
 
-The private Company 7000 source workbooks were not available in the Codex workspace. Exact selectors/adapters for account-group-5/COGS Mortar, COAL H10+H18, COAL Inbound I10+I18, and OA remain unresolved. The calculation endpoint therefore fails closed for Company 7000, and the UI must not offer an enabled Run Calculation action until that adapter is verified.
-
-Phase F is not production-E2E complete until the real Company 7000 workbook passes:
+All HPP Nature H01–H16 match the golden workbook exactly, including:
 
 ```text
-Upload → Validation → Source Reconciliation → Mapping → Calculation
+Batubara             93,152,232,023.32
+Batubara Inbound     41,023,853,211.68
+Pembelian Terak                       0.00
+Selisih Persediaan  -21,153,010,152.00
 ```
 
-and reproduces the locked golden values exactly.
+Controls:
 
-## Phase G — locked dashboard/export requirement
+```text
+HPP_NATURE_RECONCILIATION    RECONCILED / 0.00
+ADUM_NATURE_RECONCILIATION   RECONCILED / 0.00
+PASAR_NATURE_RECONCILIATION  RECONCILED / 0.00
+```
 
-The later Dashboard/Excel Export phase must consume the authoritative active/final Engine 1 run and must not recalculate accounting values during export.
+### Verified Company 7000 source rules
 
-Required workbook output includes at minimum:
+- Total HPP = TB account group 5 minus COGS Mortar COA `51300003`;
+- HPP base allocation follows validated TB/ADUM/final-PASAR/Derivative exclusion lineage;
+- OA uses controlled GL `68110001`, `68140005`, `68140006`, `68170002` and persisted OA_STAT transaction/summary lineage;
+- Derivative `68140005 / 368,191,098` has zero Cost Structure contribution;
+- Batubara = `Batu bara!H10 + H18`;
+- Batubara Inbound = `Batu bara!I10 + I18`;
+- WHRPG primary 6xxxxxxx is deterministically reclassified; 97xxxxxx is excluded;
+- Solar `112-200001 / 7702` is support lineage only, not double-counted;
+- Pembelian Terak follows `SUM(beli!F63:F69)` with seven required rows and Excel blank-as-zero cell semantics;
+- authoritative finance precision remains `Decimal(20,2)`.
 
-### Common output sheets
+Twelve non-zero TB-derived HPP rows whose `Klasifikasi HPP` is blank in the real `rincian biaya` were traced to the final `GHoPO`/SI formula. They are intentionally outside direct H01–H15 SUMIF classification and therefore affect H16 only through the final HPP residual; this is an SI-traced rule, not a generic missing-mapping fallback.
 
-- `SI` — Cost Structure output in the agreed existing format;
-- `Rincian Biaya` — Nature/COA/formula detail with lineage;
-- `cc prod` — raw/traceable production Cost Center source for manual audit;
-- `cc ADM` — raw/traceable ADUM Cost Center source for manual audit;
-- `cc pasar` — raw/traceable PASAR Cost Center source for manual audit.
+## Phase G — finalization/dashboard/export
 
-### Company 7000 supporting audit sheets
+Phase G is built around a strict persisted read path:
 
-Where required by the validated formula dependency, export must also retain sufficient audit material for:
+```text
+CostPeriod
+→ active successful CostCalculationRun
+→ CostCalculationResult
+→ CostActualLine / persisted lineage
+→ CostSourceRow / audit-only snapshots
+```
 
-- `TB` / account-group-5 and COGS Mortar control;
-- `cc WHRPG`;
-- `COAL` / Batubara calculation;
-- `OA_STAT` / OA calculation;
-- `CLINKER_PURCHASE`;
-- `SOLAR_PP_ORDER`;
-- other validated supporting source sheets used by the active run.
+Dashboard and export do not run Engine 1, mapping resolution, reconciliation, or source workbook formulas when opened.
 
-A dedicated `Formula Audit` sheet is recommended for Company 7000 to show rule code, source references, components, formula result and residual reconciliation for Batubara, Batubara Inbound, OA, Total HPP and Selisih Persediaan.
+Lifecycle:
 
-Source audit sheets should be generated from the validated active upload/source lineage, while exact source-sheet presentation may use the original private workbook in Storage where preserving the original manual-audit layout is required.
+```text
+CALCULATED
+→ COST_STRUCTURE_RECONCILED
+→ FINALIZED
+```
 
-## Next action
+Finalization revalidates the same active run and all required persisted controls/totals inside the finalization transaction. Reopen is reason-required and audited.
 
-1. Merge PR #15 only after review/build is green.
-2. Apply the reviewed Company 7000 Nature bootstrap migration to production.
-3. Inspect the real private Company 7000 workbooks and implement the verified source adapter without inventing selectors.
-4. Run Company 7000 upload → reconciliation → mapping → calculation golden E2E.
-5. Only after exact production parity, close Phase F and proceed to Phase G implementation.
+### Official Company 7000 Excel contract
+
+```text
+GHoPO
+DERIV
+rincian biaya
+tb
+cc_prod
+cc_adm
+cc pasar
+cc_drv
+SI2000_DRV
+WHRPG
+Batu bara
+statistical pasar
+beli
+solar PP order
+Formula Audit
+```
+
+`GHoPO`, `DERIV`, `rincian biaya`, `cc_drv`, and `SI2000_DRV` are persisted as audit-only source snapshots. Audit-only derivative data has zero Engine 1 contribution. `GHoPO` authoritative cells are rendered from persisted calculation results; `Formula Audit` is rendered from persisted lineage. Export is DB-only and does not download/reparse Storage XLSX at request time.
+
+See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
+
+## Next phase — Phase H
+
+Phase H is Engine 2 comparison/fluctuation. Its input is **only finalized Engine 1 history**; it never accepts a separate raw workbook upload.
+
+Initial locked scope:
+
+- period comparison from finalized Cost Structure history;
+- MoM;
+- YoY;
+- YTD;
+- variance amount and percentage;
+- contribution to total variance;
+- Company / Cost Group / Nature / COA drill-down;
+- deterministic persisted comparison results before later materiality/commentary logic.
+
+Phase I will add materiality, commentary and review workflow after Phase H arithmetic is golden-tested.

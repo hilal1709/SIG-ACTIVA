@@ -1,10 +1,12 @@
-import CostStructureShell from '@/app/components/CostStructureShell';
+import CostModuleFrame from '@/app/components/CostModuleFrame';
+import { listDashboardPeriods } from '@/lib/cost-structure/dashboard/service';
+import CostStructureDashboard from './cost-structure-dashboard';
 
-export default function CostStructureDashboardPage() {
+export default async function CostStructureDashboardPage() {
+  const periods = await listDashboardPeriods();
   return (
-    <CostStructureShell
-      title="Dashboard Cost Structure"
-      purpose="Dashboard struktur biaya bulanan dan status rekonsiliasi."
-    />
+    <CostModuleFrame title="Dashboard Cost Structure" contentClassName="p-4 sm:p-6 lg:p-8">
+      <CostStructureDashboard periods={periods.map((period) => ({ ...period, company: period.company }))} />
+    </CostModuleFrame>
   );
 }
