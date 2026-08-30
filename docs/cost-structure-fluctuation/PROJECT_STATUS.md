@@ -9,7 +9,7 @@ Phase A — Repository integration foundation       COMPLETE / merged to main
 Phase B — Core schema & master data               COMPLETE / merged / production DDL applied
 Phase C — Upload/parser/storage                    COMPLETE / merged to main
 Phase D — Source reconciliation/mapping            COMPLETE / merged / production DDL applied
-Phase E — Engine 1 Company 2000                    ENGINE MERGED / PRIVATE GOLDEN E2E PENDING
+Phase E — Engine 1 Company 2000                    ENGINE + GOLDEN SOURCE PARITY MERGED / APPLICATION E2E PENDING
 Phase F — Engine 1 Company 7000                    NOT STARTED — BLOCKED BY PHASE E GOLDEN E2E
 Phase G — Finalization/dashboard/export            NOT STARTED
 Phase H — Engine 2 comparison                      NOT STARTED
@@ -129,6 +129,12 @@ PR #6 was reviewed, corrected and squash-merged to `main` as:
 51e2ea8fe426c9061ce6d17874ce95421b2b2df9
 ```
 
+Golden-source parity correction PR #7 was reviewed and squash-merged as:
+
+```text
+808620663c00af3f122aa73bc9bff9f618667d32
+```
+
 Engine implementation is merged for Company 2000 only:
 
 ```text
@@ -155,10 +161,9 @@ Implemented:
 - period transition to `CALCULATED` only after successful calculation;
 - no finalization and no Company 7000 calculation.
 
-Phase E unit/arithmetic gate from Codex:
+Phase E unit/arithmetic gate:
 
 ```text
-42 Cost Structure tests passed
 GOLDEN ENGINE CONTRACT = IMPLEMENTED
 ```
 
@@ -182,23 +187,77 @@ Fluktuasi Biaya 2000 - 07.2026.xlsx
 TB 2000 07-2026 (Exc Derivatif)(1).xlsx
 ```
 
-The confidential workbook fixture is not stored in the repository.
+The confidential workbooks remain outside the repository.
+
+### Golden source structure verified
+
+The real July-2026 private workbook has now been inspected. Locked source facts include:
+
+- `tb` → `TB`;
+- `cc_adm` → `CC_ADUM`;
+- `cc pasar` → `CC_PASAR`;
+- `cc_prod` is structurally present but financially empty for the verified Company 2000 fixture;
+- SAP Cost Center total marker is `* Debit`;
+- `** Over/Underabsorption` is a duplicate/control row and is not double counted;
+- Company 2000 accounting contribution comes from `CC_ADUM` and `CC_PASAR` only;
+- `CC_PROD` and Derivatif have zero Company 2000 Cost Structure effect.
+
+Parser/reconciliation parity for those verified source facts is merged in PR #7.
+
+### Golden production master readiness
+
+Production has been bootstrapped from the private golden workbook without committing private COA lists to GitHub:
+
+```text
+Company 2000 active Nature masters     18  (9 ADUM + 9 PASAR)
+Effective non-zero source mappings    159
+  INCLUDE                             145
+  EXCLUDE                              14
+Invalid INCLUDE targets                 0
+Overlapping effective mapping keys      0
+```
+
+Mappings are source-specific and effective from 2026-07-01. Zero-amount source COAs are intentionally not forced into mapping solely for the golden gate because they do not change financial output or readiness.
 
 Current Phase E gate:
 
 ```text
-ENGINE IMPLEMENTATION     PASS / MERGED
-ARITHMETIC CONTRACT       PASS
-VERCEL PREVIEW            READY
-REAL GOLDEN WORKBOOK E2E  PENDING PRIVATE FIXTURE
+ENGINE IMPLEMENTATION          PASS / MERGED
+ARITHMETIC CONTRACT            PASS
+GOLDEN SOURCE STRUCTURE        PASS / VERIFIED
+PARSER/RECONCILIATION PARITY   PASS / MERGED
+PRODUCTION GOLDEN MASTER       READY
+REAL APPLICATION WORKBOOK E2E  PENDING USER-AUTHENTICATED UPLOAD
 ```
 
-**Phase E is not fully closed and Phase F must not begin until the real July-2026 workbook E2E reproduces the locked PASAR, ADUM and TOTAL values exactly.**
+**Phase E is not fully closed and Phase F must not begin until the real July-2026 workbook is processed through the deployed Phase C → D → E application pipeline and reproduces the locked PASAR, ADUM and TOTAL values exactly.**
 
 See `GOLDEN_DATASET.md` for the golden-data contract.
 
 ## Next action
 
-Provide/run the private Company 2000 July-2026 reference workbook through the Phase C → D → E pipeline, configure the verified Nature/mapping masters required by that workbook, and compare the resulting active calculation run against the locked golden amounts.
+Using an authenticated ADMIN_SYSTEM or STAFF_ACCOUNTING application session, upload:
 
-Only after that exact reconciliation passes may Phase F — Company 7000 Engine 1 start.
+```text
+TB 2000 07-2026 (Exc Derivatif)(1).xlsx
+```
+
+with:
+
+```text
+Company Code  2000
+Fiscal Year   2026
+Fiscal Period 7
+```
+
+The separate `Fluktuasi Biaya 2000 - 07.2026.xlsx` is the locked reference output/mapping source and is not the Phase C source upload.
+
+Then run Phase D reconciliation/readiness and Phase E calculation. Compare the active calculation run against:
+
+```text
+PASAR 17,900,551,142
+ADUM  107,796,550,061
+TOTAL 125,697,101,203
+```
+
+Only after exact application E2E reconciliation passes may Phase F — Company 7000 Engine 1 start.
