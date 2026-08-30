@@ -1,6 +1,5 @@
 import 'server-only';
 import { createHash } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { parseWorkbook } from '@/lib/cost-structure/parsers';
 import { costStructureStorage } from '@/lib/cost-structure/storage/supabase-storage';
@@ -31,16 +30,17 @@ export async function getAuditSnapshotReadiness(uploadId: number, companyCode: s
 export async function hydrateAuditSnapshot(periodId: number, userId: number) {
   const period = await prisma.costPeriod.findUnique({
     where: { id: periodId },
-    include: {
+    select: {
+      id: true,
       company: { select: { companyCode: true } },
-      activeCalculationRun: { select: { id: true, uploadId: true } },
-      uploads: { where: { isActiveVersion: true }, orderBy: { version: 'desc' }, take: 1 },
+      activeCalculationRun: { select: { uploadId: true } },
     },
   });
   if (!period) throw new Error('Periode tidak ditemukan.');
+
   const upload = period.activeCalculationRun
-    ? period.uploads.find((item) => item.id === period.activeCalculationRun!.uploadId) ?? await prisma.costUpload.findUnique({ where: { id: period.activeCalculationRun.uploadId } })
-    : period.uploads[0];
+    ? await prisma.costUpload.findUnique({ where: { id: period.activeCalculationRun.uploadId } })
+    : await prisma.costUpload.findFirst({ where: { periodId, isActiveVersion: true }, orderBy: { version: 'desc' } });
   if (!upload) throw new Error('Upload authoritative tidak ditemukan.');
 
   const bytes = await costStructureStorage.download(upload.storageKey);
@@ -68,7 +68,7 @@ export async function hydrateAuditSnapshot(periodId: number, userId: number) {
           descriptionRaw: null,
           sourceGroupRaw: null,
           mappingStatus: 'AUDIT_ONLY',
-          rawDataJson: row.rawDataJson as Prisma.InputJsonValue,
+          rawDataJson: row.rawDataJson,
         })),
       });
     }
