@@ -37,11 +37,13 @@ describe('parseWorkbook raw support-source lineage', () => {
     assert.equal(parsed.rows.find((row) => row.logicalSourceCode === 'TB')?.coaCodeRaw, '001000');
   });
 
-  it('prefers authoritative Cost Elements / Act. Costs over SAP helper columns', async () => {
+  it('prefers authoritative Cost Elements / Act. Costs and ignores SAP control/layout artifacts', async () => {
     const workbook = new ExcelJS.Workbook();
     const tb = workbook.addWorksheet('tb');
     tb.addRow(['', '', '', '', '', '', '', 'kode ', 'descr', 'amount']);
     tb.addRow(['', '', '', '', '', '', '', '61110002', 'Limestone', 5]);
+    // SAP metadata row: non-empty elsewhere, but authoritative kode/descr/amount fields are empty.
+    tb.addRow(['Company code currenc 10', 'Rupiah IDR', 'metadata only']);
 
     workbook.addWorksheet('cc_prod');
 
@@ -52,7 +54,8 @@ describe('parseWorkbook raw support-source lineage', () => {
       sheet.addRow(['', '', '   61110002  LIMEST. CONSUMPT.', 10, '', '', '', '', '', '', '', '', { formula: 'LEFT(C14,8)' }, { formula: 'D14' }, '6']);
       sheet.addRow(['', '', '*  Debit', 10, '', '', '', '', '', '', '', '', { formula: 'LEFT(C15,8)' }, { formula: 'D15' }, 'D']);
       sheet.addRow(['', '', '** Over/Underabsorption', 10, '', '', '', '', '', '', '', '', { formula: 'LEFT(C16,8)' }, { formula: 'D16' }, 'O']);
-      sheet.addRow(['', '', '', '', '', '', '', '', '', '', '', '', '', { formula: '0' }, '']);
+      // Helper/formula tail remains non-empty while authoritative Cost Elements / Act. Costs are empty.
+      sheet.addRow(['', '', '', '', '', '', '', '', '', '', '', '', '', 0, '']);
     }
 
     const bytes = await workbook.xlsx.writeBuffer();
@@ -60,6 +63,7 @@ describe('parseWorkbook raw support-source lineage', () => {
 
     assert.equal(parsed.issues.some((issue) => issue.issueCode === 'REQUIRED_SOURCE_MISSING'), false);
     assert.equal(parsed.issues.some((issue) => issue.issueCode === 'SOURCE_HEADER_NOT_FOUND' && issue.severity === 'ERROR'), false);
+    assert.equal(parsed.issues.some((issue) => issue.issueCode === 'SOURCE_ROW_MISSING_COA'), false);
     assert.equal(parsed.sources.find((source) => source.code === 'CC_ADUM')?.sheetName, 'cc_adm');
     assert.equal(parsed.sources.find((source) => source.code === 'CC_ADUM')?.rowCount, 3);
     assert.equal(parsed.sources.find((source) => source.code === 'CC_PROD')?.rowCount, 0);
@@ -80,5 +84,6 @@ describe('parseWorkbook raw support-source lineage', () => {
     const tbDetail = parsed.rows.find((row) => row.logicalSourceCode === 'TB' && row.coaCodeRaw === '61110002');
     assert.equal(tbDetail?.descriptionRaw, 'Limestone');
     assert.equal(tbDetail?.amount, '5');
+    assert.equal(parsed.rows.some((row) => row.logicalSourceCode === 'TB' && row.sourceRowNumber === 3), false);
   });
 });
