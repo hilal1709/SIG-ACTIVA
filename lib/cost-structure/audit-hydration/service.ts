@@ -37,7 +37,7 @@ export async function hydrateAuditSnapshot(periodId: number, userId: number) {
   const parsed = await parseWorkbook(bytes, period.company.companyCode);
   const auditRows = parsed.rows.filter((row) => row.logicalSourceCode.startsWith(AUDIT_PREFIX));
   const required = REQUIRED_AUDIT_CODES[period.company.companyCode] ?? [];
-  const present = new Set(auditRows.map((row) => row.logicalSourceCode));
+  const present = new Set<string>(auditRows.map((row) => row.logicalSourceCode));
   const missing = required.filter((code) => !present.has(code));
   if (missing.length) throw new Error(`Workbook authoritative tidak memuat audit snapshot wajib: ${missing.join(', ')}.`);
 
