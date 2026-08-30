@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutDashboard, FileText, TrendingUp, Clock, Users, ShieldCheck, X, ChevronRight, ChevronDown } from 'lucide-react';
+import { LayoutDashboard, FileText, TrendingUp, Clock, Users, ShieldCheck, X, ChevronRight, ChevronDown, Layers3 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -40,6 +40,20 @@ const menuItems: MenuItem[] = [
       { label: 'Detail Per Akun',    href: '/detail-akun-fluktuasi' },
     ],
   },
+  {
+    icon: Layers3,
+    label: 'Cost Structure & Fluktuasi Biaya',
+    href: '/cost-structure',
+    requireAdmin: false,
+    badge: null,
+    children: [
+      { label: 'Dashboard Cost Structure', href: '/cost-structure' },
+      { label: 'Upload & Proses', href: '/cost-structure/upload' },
+      { label: 'Cost Structure Bulanan', href: '/cost-structure/monthly' },
+      { label: 'Analisis Fluktuasi', href: '/cost-fluctuation' },
+      { label: 'Riwayat Periode', href: '/cost-structure/periods' },
+    ],
+  },
   { icon: TrendingUp,      label: 'Monitoring Prepaid', href: '/monitoring-prepaid', requireAdmin: false, badge: null },
   { icon: Clock,           label: 'Monitoring Accrual', href: '/monitoring-accrual', requireAdmin: false, badge: null },
   { icon: Users,           label: 'User Management',    href: '/user-management',    requireAdmin: true,  badge: 'Admin' },
@@ -60,20 +74,23 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const footerRef = useRef<HTMLDivElement>(null);
 
   // Track which parent menus are open (by href)
-  const fluktuasiSubPaths = ['/overview-fluktuasi', '/detail-akun-fluktuasi'];
+  const parentForPath = (path: string) => menuItems.find(
+    item => item.children?.some(child => child.href === path)
+  )?.href;
   const [openMenus, setOpenMenus] = useState<Set<string>>(() => {
     // Auto-open if current path is a child
     if (typeof window !== 'undefined') {
-      const p = window.location.pathname;
-      if (fluktuasiSubPaths.includes(p)) return new Set(['/fluktuasi-oi']);
+      const parentHref = parentForPath(window.location.pathname);
+      if (parentHref) return new Set([parentHref]);
     }
     return new Set();
   });
 
   // Also auto-open when pathname changes (e.g. direct navigation)
   useEffect(() => {
-    if (fluktuasiSubPaths.includes(pathname)) {
-      setOpenMenus(prev => new Set([...prev, '/fluktuasi-oi']));
+    const parentHref = parentForPath(pathname);
+    if (parentHref) {
+      setOpenMenus(prev => new Set([...prev, parentHref]));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
@@ -332,4 +349,3 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     </TooltipProvider>
   );
 }
-
