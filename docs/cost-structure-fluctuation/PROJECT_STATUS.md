@@ -55,7 +55,7 @@ PASAR   17,900,551,142.00
 TOTAL  125,697,101,203.00
 ```
 
-Active run is `SUCCESS / ENGINE1_2000_V1`; Company 2000 remains the regression baseline.
+Company 2000 remains the regression baseline.
 
 ## Phase F — Company 7000 — COMPLETE
 
@@ -143,7 +143,7 @@ CALCULATED → COST_STRUCTURE_RECONCILED → FINALIZED
 
 Finalization revalidates the same active run and all required persisted controls/totals inside the finalization transaction. Reopen is reason-required and audited.
 
-Historical uploads created before audit-only persistence can use an ADMIN-only `Hydrate Audit Snapshot` action. It downloads the authoritative private workbook once, verifies SHA-256 against `CostUpload`, persists only `AUDIT_*` rows, and does not change Engine 1 values, mappings, active run, or period status. New uploads persist audit-only rows automatically.
+Historical uploads created before audit-only persistence can use an ADMIN-only `Hydrate Audit Snapshot` action. It downloads the authoritative private workbook once, verifies SHA-256 against `CostUpload`, persists only `AUDIT_*` rows, and does not change Engine 1 values, mappings, active run, or period status. New uploads persist audit-only rows automatically with `mappingStatus=AUDIT_ONLY`.
 
 ### Official Company 7000 Excel contract
 
