@@ -7,7 +7,7 @@ Last updated: 2026-08-30
 ```text
 Phase A — Repository integration foundation       COMPLETE / merged to main
 Phase B — Core schema & master data               COMPLETE / merged to main / production DDL applied
-Phase C — Upload/parser/storage                    IMPLEMENTED / PR #4 OPEN
+Phase C — Upload/parser/storage                    COMPLETE / merged to main
 Phase D — Source reconciliation/mapping            NOT STARTED
 Phase E — Engine 1 Company 2000                    NOT STARTED
 Phase F — Engine 1 Company 7000                    NOT STARTED
@@ -109,7 +109,13 @@ Do not weaken the `DATABASE_URL` requirement to bypass deployment configuration.
 
 ## Phase C status
 
-Implemented and under review in PR #4.
+PR #4 was reviewed and squash-merged to `main` as commit:
+
+```text
+c59d4f2d3f8a1f0c552c8a8a44ce669ba4c0c067
+```
+
+Phase C implementation includes:
 
 - durable storage provider: Supabase Storage;
 - private bucket: `cost-structure-source`;
@@ -117,9 +123,11 @@ Implemented and under review in PR #4.
 - browser upload: temporary signed direct upload to the server-generated object path using the Supabase signed-upload multipart contract;
 - integrity authority: SHA-256 computed by the server from downloaded stored bytes;
 - upload context: short-lived HMAC signed with the existing application auth secret and bound to uploader/company/period/object key;
+- transactional upload versioning and previous-version preservation on failure;
 - business data runtime: Prisma Client remains the ORM over Supabase PostgreSQL;
 - output: normalized source rows, validation issues, upload versions, and source lineage;
 - support sources whose exact golden headers are not yet locked preserve raw lineage without inventing accounting semantics;
+- cross-platform Cost Structure test runner;
 - accounting calculation: not implemented in Phase C.
 
 Phase D and every later phase remain `NOT STARTED`.
@@ -128,10 +136,10 @@ Phase D and every later phase remain `NOT STARTED`.
 
 Phase C retained these constraints:
 
-1. verify `main` production deployment is `READY` on Vercel;
-2. verify production application can still query legacy modules through Prisma;
-3. verify Cost Structure master queries return company 2000/7000 and required groups;
-4. preserve Supabase migration history as production migration authority;
-5. keep Phase C limited to upload form, durable storage, parser framework, normalized staging, and validation — no accounting calculation.
+1. private durable workbook storage, not Vercel filesystem or PostgreSQL blobs;
+2. server-authoritative metadata, object key, SHA-256, uploader and period context;
+3. duplicate/replay/version controls preserve the last valid active upload;
+4. source rows remain `UNMAPPED` pending Phase D;
+5. no source reconciliation, mapping resolution, or financial calculation is introduced.
 
-No source reconciliation, mapping resolution, or financial calculation was introduced.
+Phase C is closed. The next implementation phase is Phase D — Source Reconciliation & Mapping Workflow.
