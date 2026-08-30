@@ -1,19 +1,24 @@
-import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 import { parseAmount } from './amount';
 import { detectSource, normalizeLabel, sourceDefinitions } from './source-registry';
 import type { LogicalSourceCode, ParsedWorkbook, ParsedSourceRow } from './types';
 
-// Prefer the authoritative raw SAP columns before helper/formula columns when both are present.
+// Prefer authoritative raw SAP columns before helper/formula columns when both are present.
 const COA = ['ACCOUNT', 'ACCOUNT CODE', 'G/L ACCOUNT', 'GL ACCOUNT', 'COST ELEMENTS', 'COST ELEMENT', 'COA', 'KODE AKUN', 'AKUN', 'KODE', 'CE'];
 const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL DESCRIPTION', 'NAMA AKUN', 'DESKRIPSI', 'DESCR'];
 const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'ACT COSTS', 'VALUE', 'NILAI', 'BALANCE', 'SALDO', 'ACT AMT'];
 const COA_REQUIRED = new Set<LogicalSourceCode>(['TB', 'CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']);
 const RAW_FALLBACK = new Set<LogicalSourceCode>(['COAL', 'CLINKER_PURCHASE', 'SOLAR_PP_ORDER', 'OA_STAT']);
 
+type SheetMatrix = unknown[][];
+type MatchedSheet = { name: string; rows: SheetMatrix };
+
 const text = (value: unknown): string | null => {
   if (value == null) return null;
-  if (typeof value === 'object' && value && 'result' in value) return text((value as { result: unknown }).result);
+  if (typeof value === 'object' && value) {
+    if ('result' in value) return text((value as { result: unknown }).result);
+    if ('v' in value) return text((value as { v: unknown }).v);
+  }
   return String(value).trim() || null;
 };
 
@@ -23,7 +28,6 @@ function extractCoa(value: unknown, header: string): string | null {
   const raw = text(value);
   if (!raw) return null;
   if (header === 'COST ELEMENTS' || header === 'COST ELEMENT') {
-    // SAP Cost Elements cells are authoritative and begin with the 8-digit account followed by text.
     const match = raw.match(/^\s*(\d{8})(?:\s|$)/);
     return match?.[1] ?? null;
   }
@@ -36,38 +40,45 @@ function descriptionFromCostElement(value: unknown): string | null {
   return raw.replace(/^\s*\d{8}\s*/, '').trim() || raw;
 }
 
-async function loadWorkbook(bytes: Uint8Array): Promise<ExcelJS.Workbook> {
-  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const workbook = new ExcelJS.Workbook();
-  try {
-    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
-    return workbook;
-  } catch (primaryError) {
-    // Some SAP-generated XLSX packages contain optional OOXML parts that Excel/SheetJS tolerate
-    // but ExcelJS rejects. Re-serializing with the already-installed SheetJS library strips only
-    // unsupported package metadata; source cell values/formulas remain input data, not calculations.
-    try {
-      const source = XLSX.read(buffer, { type: 'buffer', cellFormula: true, cellDates: false });
-      const normalized = XLSX.write(source, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
-      const fallback = new ExcelJS.Workbook();
-      await fallback.xlsx.load(normalized as unknown as Parameters<typeof fallback.xlsx.load>[0]);
-      return fallback;
-    } catch {
-      throw primaryError;
-    }
-  }
+function loadWorkbook(bytes: Uint8Array): XLSX.WorkBook {
+  // The verified SAP workbook contains many historical external-link cache parts. Excel opens
+  // those packages, but ExcelJS can reject them while building its full workbook model. Phase C
+  // only needs cell values from known logical sheets, so read the OOXML package directly with
+  // SheetJS and never materialize external workbook caches as application worksheets.
+  return XLSX.read(bytes, {
+    type: 'array',
+    cellFormula: true,
+    cellDates: false,
+    cellNF: false,
+    cellStyles: false,
+    bookVBA: false,
+  });
 }
 
-function preserveRawRows(sheet: ExcelJS.Worksheet, code: LogicalSourceCode): ParsedSourceRow[] {
+function sheetMatrix(workbook: XLSX.WorkBook, sheetName: string): SheetMatrix {
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet || !sheet['!ref']) return [];
+  return XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    raw: true,
+    defval: null,
+    blankrows: true,
+  }) as SheetMatrix;
+}
+
+function hasMeaningfulRows(rows: SheetMatrix): boolean {
+  return rows.some((row) => row.some((value) => text(value) !== null));
+}
+
+function preserveRawRows(sheet: MatchedSheet, code: LogicalSourceCode): ParsedSourceRow[] {
   const rows: ParsedSourceRow[] = [];
-  for (let rowNumber = 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
-    const values = (sheet.getRow(rowNumber).values as unknown[]).slice(1);
-    if (values.every((value) => text(value) === null)) continue;
-    const rawDataJson = Object.fromEntries(values.map((value, index) => [`COLUMN_${index + 1}`, text(value)]));
+  sheet.rows.forEach((values, index) => {
+    if (values.every((value) => text(value) === null)) return;
+    const rawDataJson = Object.fromEntries(values.map((value, columnIndex) => [`COLUMN_${columnIndex + 1}`, text(value)]));
     rows.push({
       logicalSourceCode: code,
       originalSheetName: sheet.name,
-      sourceRowNumber: rowNumber,
+      sourceRowNumber: index + 1,
       coaCodeRaw: null,
       descriptionRaw: null,
       amountRaw: null,
@@ -75,22 +86,24 @@ function preserveRawRows(sheet: ExcelJS.Worksheet, code: LogicalSourceCode): Par
       sourceGroupRaw: null,
       rawDataJson,
     });
-  }
+  });
   return rows;
 }
 
 export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Promise<ParsedWorkbook> {
-  const workbook = await loadWorkbook(bytes);
+  const workbook = loadWorkbook(bytes);
   const rows: ParsedSourceRow[] = [];
   const issues: ParsedWorkbook['issues'] = [];
   const sources: ParsedWorkbook['sources'] = [];
-  const matched = new Map<string, ExcelJS.Worksheet[]>();
+  const matched = new Map<string, MatchedSheet[]>();
 
-  workbook.eachSheet((sheet) => {
-    if (normalizeLabel(sheet.name) === 'META') return;
-    const definition = detectSource(sheet.name, companyCode);
-    if (definition) matched.set(definition.code, [...(matched.get(definition.code) || []), sheet]);
-  });
+  for (const sheetName of workbook.SheetNames) {
+    if (normalizeLabel(sheetName) === 'META') continue;
+    const definition = detectSource(sheetName, companyCode);
+    if (!definition) continue;
+    const sheet = { name: sheetName, rows: sheetMatrix(workbook, sheetName) };
+    matched.set(definition.code, [...(matched.get(definition.code) || []), sheet]);
+  }
 
   for (const definition of sourceDefinitions(companyCode)) {
     const sheets = matched.get(definition.code) || [];
@@ -104,9 +117,7 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
 
     const sheet = sheets[0];
 
-    // Verified July-2026 Company 2000 workbook contains a structurally present but empty cc_prod sheet.
-    // Company 2000 Cost Structure is ADUM/PASAR only, so presence of this empty structural source is valid.
-    if (companyCode === '2000' && definition.code === 'CC_PROD' && sheet.actualRowCount === 0) {
+    if (companyCode === '2000' && definition.code === 'CC_PROD' && !hasMeaningfulRows(sheet.rows)) {
       issues.push({ issueCode: 'SOURCE_EMPTY', severity: 'INFO', message: `Sumber ${definition.code} terdeteksi sebagai worksheet kosong dan tidak berkontribusi pada Company 2000.` });
       sources.push({ code: definition.code, sheetName: sheet.name, rowCount: 0 });
       continue;
@@ -117,13 +128,13 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
     let desc = -1;
     let amount = -1;
 
-    for (let rowNumber = 1; rowNumber <= Math.min(sheet.rowCount, 30); rowNumber += 1) {
-      const values = (sheet.getRow(rowNumber).values as unknown[]).slice(1).map((value) => text(value) || '');
+    for (let rowIndex = 0; rowIndex < Math.min(sheet.rows.length, 30); rowIndex += 1) {
+      const values = (sheet.rows[rowIndex] || []).map((value) => text(value) || '');
       const coaIndex = indexOf(values, COA);
       const descIndex = indexOf(values, DESC);
       const amountIndex = indexOf(values, AMOUNT);
       if (amountIndex >= 0 && (coaIndex >= 0 || descIndex >= 0)) {
-        headerRow = rowNumber;
+        headerRow = rowIndex + 1;
         coa = coaIndex;
         desc = descIndex;
         amount = amountIndex;
@@ -152,34 +163,33 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
       continue;
     }
 
-    const headers = (sheet.getRow(headerRow).values as unknown[]).slice(1).map((value, index) => text(value) || `COLUMN_${index + 1}`);
-    const coaHeader = coa >= 0 ? normalizeLabel(headers[coa]) : '';
+    const headerValues = sheet.rows[headerRow - 1] || [];
+    const headers = headerValues.map((value, index) => text(value) || `COLUMN_${index + 1}`);
+    const coaHeader = coa >= 0 ? normalizeLabel(headers[coa] || '') : '';
     let count = 0;
-    for (let rowNumber = headerRow + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
-      const values = (sheet.getRow(rowNumber).values as unknown[]).slice(1);
+
+    for (let rowIndex = headerRow; rowIndex < sheet.rows.length; rowIndex += 1) {
+      const values = sheet.rows[rowIndex] || [];
       if (values.every((value) => text(value) === null)) continue;
+
       const coaRaw = coa >= 0 ? extractCoa(values[coa], coaHeader) : null;
       const descriptionRaw = desc >= 0
         ? text(values[desc])
         : (coaHeader === 'COST ELEMENTS' || coaHeader === 'COST ELEMENT')
           ? descriptionFromCostElement(values[coa])
           : null;
-      const amountRaw = text(values[amount]);
-      const parsedAmount = parseAmount(
-        typeof values[amount] === 'object' && values[amount] && 'result' in (values[amount] as object)
-          ? (values[amount] as { result: unknown }).result
-          : values[amount],
-      );
+      const amountValue = values[amount];
+      const amountRaw = text(amountValue);
+      const parsedAmount = parseAmount(amountValue);
 
       // SAP exports may carry formula tails where only amount=0 remains below the actual report.
-      // With neither a source COA nor description these are layout artifacts, not accounting rows.
       if (COA_REQUIRED.has(definition.code) && !coaRaw && !descriptionRaw && parsedAmount === '0') continue;
 
       const rawDataJson = Object.fromEntries(headers.map((header, index) => [header, text(values[index])]));
       rows.push({
         logicalSourceCode: definition.code,
         originalSheetName: sheet.name,
-        sourceRowNumber: rowNumber,
+        sourceRowNumber: rowIndex + 1,
         coaCodeRaw: coaRaw,
         descriptionRaw,
         amountRaw,
@@ -190,10 +200,10 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
       count += 1;
 
       if (COA_REQUIRED.has(definition.code) && !coaRaw) {
-        issues.push({ issueCode: 'SOURCE_ROW_MISSING_COA', severity: 'ERROR', message: `COA kosong pada ${sheet.name} baris ${rowNumber}.`, rowIndex: rows.length - 1 });
+        issues.push({ issueCode: 'SOURCE_ROW_MISSING_COA', severity: 'ERROR', message: `COA kosong pada ${sheet.name} baris ${rowIndex + 1}.`, rowIndex: rows.length - 1 });
       }
       if (amountRaw !== null && parsedAmount === null) {
-        issues.push({ issueCode: 'SOURCE_ROW_INVALID_AMOUNT', severity: 'ERROR', message: `Amount tidak valid pada ${sheet.name} baris ${rowNumber}.`, rowIndex: rows.length - 1 });
+        issues.push({ issueCode: 'SOURCE_ROW_INVALID_AMOUNT', severity: 'ERROR', message: `Amount tidak valid pada ${sheet.name} baris ${rowIndex + 1}.`, rowIndex: rows.length - 1 });
       }
     }
     sources.push({ code: definition.code, sheetName: sheet.name, rowCount: count });
