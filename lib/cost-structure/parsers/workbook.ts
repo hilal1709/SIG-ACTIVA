@@ -9,6 +9,7 @@ const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL
 const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'ACT COSTS', 'VALUE', 'NILAI', 'BALANCE', 'SALDO', 'ACT AMT'];
 const COA_REQUIRED = new Set<LogicalSourceCode>(['TB', 'CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']);
 const RAW_FALLBACK = new Set<LogicalSourceCode>(['COAL', 'CLINKER_PURCHASE', 'SOLAR_PP_ORDER', 'OA_STAT']);
+const CONTROL_LABELS = new Set(['TOTAL', 'GRAND TOTAL', 'SUBTOTAL', 'DEBIT', 'OVER/UNDERABSORPTION', 'OVER/UND']);
 
 type SheetMatrix = unknown[][];
 type MatchedSheet = { name: string; rows: SheetMatrix };
@@ -23,6 +24,19 @@ const text = (value: unknown): string | null => {
 };
 
 const indexOf = (row: string[], aliases: string[]) => row.findIndex((value) => aliases.includes(normalizeLabel(value)));
+
+function normalizedControlLabel(value: string | null): string {
+  return (value || '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/^\*+\s*/, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
+
+function isKnownControlRow(description: string | null): boolean {
+  return CONTROL_LABELS.has(normalizedControlLabel(description));
+}
 
 function extractCoa(value: unknown, header: string): string | null {
   const raw = text(value);
@@ -182,9 +196,13 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
       const amountRaw = text(amountValue);
       const parsedAmount = parseAmount(amountValue);
 
-      // SAP exports may carry formula tails where only amount=0 remains below the actual report.
+      // SAP exports can retain helper-formula/cache cells far below the authoritative report.
+      // If the authoritative COA, description, and amount fields are all empty, this is layout
+      // metadata rather than an accounting row even when another helper column contains zero.
+      if (COA_REQUIRED.has(definition.code) && !coaRaw && !descriptionRaw && amountRaw === null) continue;
       if (COA_REQUIRED.has(definition.code) && !coaRaw && !descriptionRaw && parsedAmount === '0') continue;
 
+      const controlRow = !coaRaw && isKnownControlRow(descriptionRaw);
       const rawDataJson = Object.fromEntries(headers.map((header, index) => [header, text(values[index])]));
       rows.push({
         logicalSourceCode: definition.code,
@@ -199,7 +217,9 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
       });
       count += 1;
 
-      if (COA_REQUIRED.has(definition.code) && !coaRaw) {
+      // Report totals/subtotals are intentionally COA-less and must remain available for Phase D
+      // reconciliation. They are not malformed detail rows.
+      if (COA_REQUIRED.has(definition.code) && !coaRaw && !controlRow) {
         issues.push({ issueCode: 'SOURCE_ROW_MISSING_COA', severity: 'ERROR', message: `COA kosong pada ${sheet.name} baris ${rowIndex + 1}.`, rowIndex: rows.length - 1 });
       }
       if (amountRaw !== null && parsedAmount === null) {
