@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { parseWorkbook } from '@/lib/cost-structure/parsers';
 import { costStructureStorage } from '@/lib/cost-structure/storage/supabase-storage';
 import { COST_UPLOAD_STATUSES, MAX_WORKBOOK_BYTES, verifyPendingUpload } from '@/lib/cost-structure/uploads';
-import { completeStoredUpload, DuplicateUploadError } from '@/lib/cost-structure/completion-service';
+import { completeStoredUpload, DuplicateUploadError, UploadCompletionStageError } from '@/lib/cost-structure/completion-service';
 
 export async function POST(request: NextRequest) {
   const auth=await requireCostStructurePrepare(request); if('error' in auth) return auth.error;
@@ -28,5 +28,14 @@ export async function POST(request: NextRequest) {
     },{timeout:60_000})});
     const hasErrors=completed.parsed.issues.some(i=>i.severity==='ERROR');
     return NextResponse.json({success:true,upload:{id:completed.result.id,version:completed.result.version,status:hasErrors?COST_UPLOAD_STATUSES.VALIDATION_FAILED:COST_UPLOAD_STATUSES.VALIDATED,hash:completed.hash,rowCount:completed.parsed.rows.length,sources:completed.parsed.sources,issueCount:completed.parsed.issues.length,issues:completed.parsed.issues.slice(0,50)}});
-  } catch(error){if(error instanceof DuplicateUploadError){const existing=error.existingUpload as {storageKey?:string}&Record<string,unknown>;const {storageKey,...safe}=existing;void storageKey;return NextResponse.json({error:error.message,existingUpload:safe},{status:409});}console.error('Cost upload completion failed',error);return NextResponse.json({error:'Gagal memproses workbook; versi sebelumnya tetap aktif.'},{status:500});}
+  } catch(error){
+    if(error instanceof DuplicateUploadError){const existing=error.existingUpload as {storageKey?:string}&Record<string,unknown>;const {storageKey,...safe}=existing;void storageKey;return NextResponse.json({error:error.message,existingUpload:safe},{status:409});}
+    if(error instanceof UploadCompletionStageError){
+      console.error('Cost upload completion failed',{stage:error.stage,cause:error.causeError});
+      const status=error.stage==='SIZE_VERIFY'||error.stage==='PARSE'?422:500;
+      return NextResponse.json({error:error.message,errorCode:`UPLOAD_${error.stage}_FAILED`},{status});
+    }
+    console.error('Cost upload completion failed',error);
+    return NextResponse.json({error:'Gagal memproses workbook; versi sebelumnya tetap aktif.',errorCode:'UPLOAD_UNKNOWN_FAILED'},{status:500});
+  }
 }
