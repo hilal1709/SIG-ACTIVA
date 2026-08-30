@@ -6,7 +6,7 @@ Last updated: 2026-08-30
 
 ```text
 Phase A — Repository integration foundation       COMPLETE / merged to main
-Phase B — Core schema & master data               IMPLEMENTED / production DDL applied / PR #3 open
+Phase B — Core schema & master data               COMPLETE / merged to main / production DDL applied
 Phase C — Upload/parser/storage                    NOT STARTED
 Phase D — Source reconciliation/mapping            NOT STARTED
 Phase E — Engine 1 Company 2000                    NOT STARTED
@@ -30,13 +30,20 @@ Completed and merged to `main`:
 
 ## Phase B status
 
-PR #3 contains the repository-side Phase B implementation:
+PR #3 was reviewed and squash-merged to `main` as commit:
+
+```text
+5eebf045388475f156fe54cc4b0f83d5d926c39b
+```
+
+Repository-side Phase B implementation includes:
 
 - 14 new `Cost*` Prisma models;
 - 7 Cost Structure enums;
 - additive Cost Structure migration SQL;
 - idempotent master seed for company/group;
-- server-side master-data query service.
+- server-side master-data query service;
+- database runtime and migration authority documentation.
 
 ### Production database application
 
@@ -90,7 +97,7 @@ Verified before Phase B migration:
 Verified after Phase B migration:
 
 - Supabase migration history contains `add_cost_structure_core`;
-- Cost Structure core schema exists;
+- 14 Cost Structure core tables exist;
 - company/group master seed exists;
 - existing legacy business tables remain present.
 
@@ -100,14 +107,14 @@ Vercel deployment requires a valid production `DATABASE_URL` because many existi
 
 Do not weaken the `DATABASE_URL` requirement to bypass deployment configuration.
 
-## Next gate
+## Next gate — Phase C readiness
 
-Before Phase C begins:
+Before Phase C implementation begins:
 
-1. merge PR #3 after final repository review;
-2. verify `main` contains the exact Phase B Prisma schema/migration/seed plus the updated database-status documentation;
-3. verify production application can still query legacy modules through Prisma;
-4. verify Cost Structure master queries return company 2000/7000 and required groups;
-5. preserve Supabase migration history as production migration authority.
+1. verify `main` production deployment is `READY` on Vercel;
+2. verify production application can still query legacy modules through Prisma;
+3. verify Cost Structure master queries return company 2000/7000 and required groups;
+4. preserve Supabase migration history as production migration authority;
+5. keep Phase C limited to upload form, durable storage, parser framework, normalized staging, and validation — no accounting calculation.
 
-Only then begin Phase C upload/parser/storage implementation.
+After these checks, Phase C may begin.
