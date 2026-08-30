@@ -38,8 +38,9 @@ function uniqueTarget(input: Company7000Input, groupCode: Company7000GroupCode, 
 
 function sum(values: Prisma.Decimal[]) { return values.reduce((total, value) => total.add(value), zero()); }
 
-function assertDependency(dependency: FormulaDependency, expectedSource: string, label: string) {
-  if (dependency.logicalSourceCode !== expectedSource) throw new Error(`${label} must resolve from ${expectedSource}.`);
+function assertDependency(dependency: FormulaDependency, expectedSources: string | string[], label: string) {
+  const allowed = Array.isArray(expectedSources) ? expectedSources : [expectedSources];
+  if (!allowed.includes(dependency.logicalSourceCode)) throw new Error(`${label} must resolve from ${allowed.join(' or ')}.`);
   if (dependency.sourceRowIds.length === 0) throw new Error(`${label} requires source-row lineage.`);
 }
 
@@ -48,10 +49,11 @@ function assertFormulaDependencies(input: Company7000Input) {
   assertDependency(input.formulaDependencies.cogsMortar, 'TB', 'COGS Mortar');
   if (input.formulaDependencies.coalComponents.length !== 2) throw new Error('COAL_7000_EXISTING requires exactly two verified COAL components.');
   if (input.formulaDependencies.coalInboundComponents.length !== 2) throw new Error('COAL_INBOUND_7000_EXISTING requires exactly two verified COAL components.');
-  if (input.formulaDependencies.oaComponents.length === 0) throw new Error('OA_7000_EXISTING requires at least one verified OA_STAT component.');
+  if (input.formulaDependencies.oaComponents.length === 0) throw new Error('OA_7000_EXISTING requires verified OA components.');
   input.formulaDependencies.coalComponents.forEach((item, index) => assertDependency(item, 'COAL', `Batubara component ${index + 1}`));
   input.formulaDependencies.coalInboundComponents.forEach((item, index) => assertDependency(item, 'COAL', `Batubara Inbound component ${index + 1}`));
-  input.formulaDependencies.oaComponents.forEach((item, index) => assertDependency(item, 'OA_STAT', `OA component ${index + 1}`));
+  input.formulaDependencies.oaComponents.forEach((item, index) => assertDependency(item, ['OA_STAT', 'CC_PASAR'], `OA component ${index + 1}`));
+  if (!input.formulaDependencies.oaComponents.some((item) => item.logicalSourceCode === 'OA_STAT')) throw new Error('OA_7000_EXISTING requires OA_STAT lineage.');
 }
 
 export function calculateCompany7000(input: Company7000Input) {
@@ -63,7 +65,8 @@ export function calculateCompany7000(input: Company7000Input) {
   }
 
   for (const line of input.sourceLines) {
-    if (derivatives.has(line.logicalSourceCode) || !mappedSources.has(line.logicalSourceCode)) continue;
+    const controlledDerived = line.disposition === 'RECLASSIFIED' && Boolean(line.ruleCode);
+    if (derivatives.has(line.logicalSourceCode) || (!mappedSources.has(line.logicalSourceCode) && !controlledDerived)) continue;
     if (line.disposition === 'CONTROL_ROW' || line.disposition === 'SUPPORT_SOURCE' || line.disposition === 'EXCLUDED') continue;
     if (line.disposition === 'UNMAPPED' && line.amount.isZero()) continue;
     if (line.applicableMappingCount !== 1) throw new Error(line.applicableMappingCount === 0 ? 'Non-zero source row has no effective mapping.' : 'Source row has ambiguous effective mappings.');
@@ -71,7 +74,19 @@ export function calculateCompany7000(input: Company7000Input) {
     const target = input.natures.find((nature) => nature.costGroupId === line.costGroupId && nature.natureId === line.natureId);
     if (!target || !target.active || !line.targetActive) throw new Error('Mapping target is inactive.');
     if (target.calculationType !== 'MAPPED' || line.natureCalculationType !== 'MAPPED') throw new Error('FORMULA and RESIDUAL Nature cannot be a direct COA mapping target.');
-    actualLines.push({ costGroupId: target.costGroupId, natureId: target.natureId, coaId: line.coaId, lineType: 'COA', sourceAmount: money(line.amount), adjustmentAmount: zero(), finalAmount: money(line.amount), sourceRowId: line.sourceRowId, sourceReference: { uploadId: line.uploadId, uploadVersion: line.uploadVersion, logicalSourceCode: line.logicalSourceCode, sourceRowNumber: line.sourceRowNumber, mappingId: line.mappingId, mappingAction: line.mappingAction, coaCode: line.coaCode } });
+    const derivedLine = controlledDerived && line.coaId === null;
+    actualLines.push({
+      costGroupId: target.costGroupId,
+      natureId: target.natureId,
+      coaId: line.coaId,
+      lineType: derivedLine ? 'FORMULA' : 'COA',
+      sourceAmount: derivedLine ? null : money(line.amount),
+      adjustmentAmount: zero(),
+      finalAmount: money(line.amount),
+      sourceRowId: line.sourceRowId || null,
+      ruleCode: line.ruleCode,
+      sourceReference: line.sourceReference ?? { uploadId: line.uploadId, uploadVersion: line.uploadVersion, logicalSourceCode: line.logicalSourceCode, sourceRowNumber: line.sourceRowNumber, sourceRowIds: line.sourceRowIds ?? [line.sourceRowId], mappingId: line.mappingId, mappingAction: line.mappingAction, coaCode: line.coaCode },
+    });
   }
 
   for (const adjustment of input.adjustments ?? []) {
@@ -108,7 +123,10 @@ export function calculateCompany7000(input: Company7000Input) {
   groupTotals.ADUM = money(sum(natureTotals.filter((item) => item.groupCode === 'ADUM').map((item) => item.amount)));
   groupTotals.PASAR = money(sum(natureTotals.filter((item) => item.groupCode === 'PASAR').map((item) => item.amount)));
   const groupIds = new Map(natureTotals.map((item) => [item.groupCode, item.costGroupId]));
-  const controls = COMPANY_7000_GROUPS.map((code) => { const natureSum = sum(natureTotals.filter((item) => item.groupCode === code).map((item) => item.amount)); return { resultCode: `${code}_NATURE_RECONCILIATION`, costGroupId: groupIds.get(code) ?? 0, amount: groupTotals[code], difference: money(groupTotals[code].sub(natureSum)) }; });
+  const controls = COMPANY_7000_GROUPS.map((code) => {
+    const natureSum = sum(natureTotals.filter((item) => item.groupCode === code).map((item) => item.amount));
+    return { resultCode: `${code}_NATURE_RECONCILIATION`, costGroupId: groupIds.get(code) ?? 0, amount: groupTotals[code], difference: money(groupTotals[code].sub(natureSum)) };
+  });
   if (!controls.find((item) => item.resultCode === 'HPP_NATURE_RECONCILIATION')!.difference.isZero()) throw new Error('HPP Nature reconciliation must equal zero.');
   return { actualLines, natureTotals, groupTotals, companyTotal: money(groupTotals.HPP.add(groupTotals.ADUM).add(groupTotals.PASAR)), controls, formulaResults: { totalHpp, coal, coalInbound, oa, inventoryDifference, pasarRegular: money(groupTotals.PASAR.sub(oa)) } };
 }

@@ -6,11 +6,11 @@ const definitions: Definition[] = [
   { code:'CC_PROD', companies:['2000','7000'], required:true, aliases:['CC PROD','CC_PROD'] },
   { code:'CC_ADUM', companies:['2000','7000'], required:true, aliases:['CC ADUM','CC_ADUM','CC ADM','CC_ADM'] },
   { code:'CC_PASAR', companies:['2000','7000'], required:true, aliases:['CC PASAR','CC_PASAR'] },
-  { code:'CC_WHRPG', companies:['7000'], required:true, aliases:['CC WHRPG','CC_WHRPG'] },
-  { code:'COAL', companies:['7000'], required:true, aliases:['COAL'] },
-  { code:'CLINKER_PURCHASE', companies:['7000'], required:true, aliases:['CLINKER PURCHASE','CLINKER_PURCHASE'] },
+  { code:'CC_WHRPG', companies:['7000'], required:true, aliases:['CC WHRPG','CC_WHRPG','WHRPG'] },
+  { code:'COAL', companies:['7000'], required:true, aliases:['COAL','BATU BARA'] },
+  { code:'CLINKER_PURCHASE', companies:['7000'], required:true, aliases:['CLINKER PURCHASE','CLINKER_PURCHASE','BELI'] },
   { code:'SOLAR_PP_ORDER', companies:['7000'], required:true, aliases:['SOLAR PP ORDER','SOLAR_PP_ORDER'] },
-  { code:'OA_STAT', companies:['7000'], required:true, aliases:['OA STAT','OA_STAT'] },
+  { code:'OA_STAT', companies:['7000'], required:true, aliases:['OA STAT','OA_STAT','STATISTICAL PASAR'] },
   { code:'ADJUSTMENT', companies:['2000','7000'], required:false, aliases:['ADJUSTMENT'] },
 ];
 export const normalizeLabel = (v: string) => v.trim().toUpperCase().replace(/[\s_.-]+/g, ' ');

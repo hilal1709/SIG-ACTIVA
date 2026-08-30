@@ -2,8 +2,29 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import ExcelJS from 'exceljs';
 import { parseWorkbook } from './workbook';
+import { reconcileCcGroup } from '../reconciliation/reconcile-cc-group';
 
 describe('parseWorkbook raw support-source lineage', () => {
+  it('uses only the first Debit section for Company 7000 CC source controls', async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet('tb').addRows([['kode','descr','amount'],['50000001','x',1]]);
+    const totals: Record<string, number> = { cc_prod:323678831230, cc_adm:8559756291, 'cc pasar':10648498072, WHRPG:4589161539 };
+    for (const [name,total] of Object.entries(totals)) {
+      const sheet=workbook.addWorksheet(name); sheet.addRow(['Cost Elements','Act. Costs']);
+      sheet.addRow(['60000001 Primary',total]); sheet.addRow(['* Debit',total]);
+      sheet.addRow(['* Credit',999]); sheet.addRow(['60000002 post debit',999]);
+    }
+    for(const name of ['Batu bara','beli','solar PP order','statistical pasar']) workbook.addWorksheet(name).addRow(['support']);
+    const parsed=await parseWorkbook(new Uint8Array(await workbook.xlsx.writeBuffer() as ArrayBuffer),'7000');
+    for(const [name,total] of Object.entries(totals)) {
+      const source=name==='cc_prod'?'CC_PROD':name==='cc_adm'?'CC_ADUM':name==='cc pasar'?'CC_PASAR':'CC_WHRPG';
+      const sourceRows=parsed.rows.filter(row=>row.logicalSourceCode===source);
+      assert.equal(sourceRows.length,2); assert.equal(sourceRows[0].amount,String(total)); assert.equal(sourceRows[1].descriptionRaw,'* Debit');
+      assert.equal(sourceRows.some(row=>row.coaCodeRaw==='60000002'),false);
+      const control=reconcileCcGroup(sourceRows.map(row=>({coaCodeRaw:row.coaCodeRaw,descriptionRaw:row.descriptionRaw,amount:row.amount})));
+      assert.equal(control.status,'RECONCILED'); assert.equal(control.detailAmount,`${total}.00`); assert.equal(control.difference,'0.00');
+    }
+  });
   it('preserves unmatched special-source rows without inventing COA or amount semantics', async () => {
     const workbook = new ExcelJS.Workbook();
     const coal = workbook.addWorksheet('COAL');

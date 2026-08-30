@@ -9,7 +9,7 @@ export type ResolvedSourceLine = {
   uploadVersion: number;
   logicalSourceCode: string;
   sourceRowNumber: number;
-  coaId: number;
+  coaId: number | null;
   coaCode: string;
   amount: Prisma.Decimal;
   disposition: 'MAPPED' | 'RECLASSIFIED' | 'EXCLUDED' | 'CONTROL_ROW' | 'SUPPORT_SOURCE' | 'UNMAPPED';
@@ -22,6 +22,9 @@ export type ResolvedSourceLine = {
   targetActive?: boolean;
   natureCalculationType?: string;
   applicableMappingCount?: number;
+  sourceRowIds?: number[];
+  sourceReference?: Record<string, unknown>;
+  ruleCode?: string;
 };
 
 export type ResolvedAdjustment = {

@@ -44,7 +44,7 @@ export default async function MonthlyCostStructurePage() {
         const run = period.activeCalculationRun;
         const result = (code: string) => run?.results.find((item) => item.resultCode === code)?.amount;
         const periodReady = ['SOURCE_RECONCILED', 'CALCULATED'].includes(period.status);
-        const adapterReady = period.company.companyCode === '2000';
+        const adapterReady = ['2000', '7000'].includes(period.company.companyCode);
         const eligible = adapterReady && periodReady;
 
         return (
@@ -60,9 +60,6 @@ export default async function MonthlyCostStructurePage() {
                 <p className="text-sm text-muted-foreground">
                   Status {period.status} · Upload {period.uploads[0] ? `v${period.uploads[0].version} (${period.uploads[0].status})` : '—'} · Source reconciliation {periodReady ? 'RECONCILED' : 'PENDING'}
                 </p>
-                {period.company.companyCode === '7000' && periodReady && !adapterReady && (
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Engine 7000 sudah memiliki arithmetic contract, tetapi Run Calculation belum diaktifkan sampai adapter sumber workbook 7000 tervalidasi.</p>
-                )}
               </div>
               {eligible && <CalculationButton periodId={period.id} rerun={period.status === 'CALCULATED'} />}
             </div>
@@ -88,7 +85,7 @@ export default async function MonthlyCostStructurePage() {
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full text-sm">
                     <thead className="bg-muted/40"><tr className="border-b text-left"><th className="p-2">Group</th><th>Nature</th><th className="pr-2 text-right">Amount</th></tr></thead>
-                    <tbody>{run.results.filter((item) => item.resultType === 'NATURE').map((item) => <tr key={item.id} className="border-b transition-colors hover:bg-muted/30"><td className="p-2">{item.costGroup?.code}</td><td>{item.nature?.name}{item.nature?.calculationType === 'RESIDUAL' ? ' (Residual)' : ''}{item.nature?.code === 'OA' ? ' (di dalam PASAR)' : ''}</td><td className="pr-2 text-right tabular-nums">{money(item.amount)}</td></tr>)}</tbody>
+                    <tbody>{run.results.filter((item) => item.resultType === 'NATURE').map((item) => <tr key={item.id} className="border-b transition-colors hover:bg-muted/30"><td className="p-2">{item.costGroup?.code}</td><td>{item.nature?.name}{item.nature?.calculationType === 'RESIDUAL' ? ' (Residual)' : ''}{item.nature?.code === 'OA' ? ' (OA Formula · di dalam PASAR)' : ''}</td><td className="pr-2 text-right tabular-nums">{money(item.amount)}</td></tr>)}</tbody>
                   </table>
                 </div>
 

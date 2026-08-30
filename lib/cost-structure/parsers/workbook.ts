@@ -86,9 +86,38 @@ function hasMeaningfulRows(rows: SheetMatrix): boolean {
 
 function preserveRawRows(sheet: MatchedSheet, code: LogicalSourceCode): ParsedSourceRow[] {
   const rows: ParsedSourceRow[] = [];
+  let semanticHeaders: string[] = [];
+  let oaRole = 'SUMMARY';
   sheet.rows.forEach((values, index) => {
     if (values.every((value) => text(value) === null)) return;
     const rawDataJson = Object.fromEntries(values.map((value, columnIndex) => [`COLUMN_${columnIndex + 1}`, text(value)]));
+    const labels = values.map((value) => normalizeLabel(text(value) ?? ''));
+    if (code === 'OA_STAT') {
+      if (labels.some((label) => label === 'DER' || label.includes('DERIVATIF'))) oaRole = 'DERIVATIVE';
+      const hasCompany = labels.includes('COMPANY CODE');
+      const hasGl = labels.includes('G/L ACCOUNT') || labels.includes('GL ACCOUNT');
+      const hasAmount = labels.includes('AMOUNT IN LOCAL CURRENCY');
+      if (hasGl && hasAmount) { semanticHeaders = labels; if (hasCompany && oaRole !== 'DERIVATIVE') oaRole = 'TRANSACTION'; }
+      const glIndex = semanticHeaders.findIndex((label) => label === 'G/L ACCOUNT' || label === 'GL ACCOUNT');
+      const amountIndex = semanticHeaders.indexOf('AMOUNT IN LOCAL CURRENCY');
+      const companyIndex = semanticHeaders.indexOf('COMPANY CODE');
+      const periodIndex = semanticHeaders.findIndex((label) => label === 'POSTING PERIOD' || label === 'PERIOD');
+      if (glIndex >= 0 && amountIndex >= 0 && text(values[glIndex])) {
+        rawDataJson.ROLE_GL = text(values[glIndex]); rawDataJson.ROLE_AMOUNT = text(values[amountIndex]); rawDataJson.ROLE = oaRole;
+        rawDataJson.COMPANY_CODE = companyIndex >= 0 ? text(values[companyIndex]) : null;
+        rawDataJson.POSTING_PERIOD = periodIndex >= 0 ? text(values[periodIndex]) : null;
+      } else {
+        const gl = values.findIndex((value) => /^\d{8}$/.test(text(value) ?? ''));
+        if (gl >= 0) {
+          const candidate = values.slice(gl + 1).map(text).find((value) => value !== null && /^\(?-?[\d,.]+\)?-?$/.test(value));
+          if (candidate) { rawDataJson.ROLE_GL = text(values[gl]); rawDataJson.ROLE_AMOUNT = candidate; rawDataJson.ROLE = oaRole; }
+        }
+      }
+    }
+    if (code === 'SOLAR_PP_ORDER') {
+      if (labels.includes('MATERIAL') && labels.includes('PLANT')) semanticHeaders = labels;
+      semanticHeaders.forEach((header, columnIndex) => { if (header) rawDataJson[header] = text(values[columnIndex]); });
+    }
     rows.push({
       logicalSourceCode: code,
       originalSheetName: sheet.name,
@@ -216,6 +245,10 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
         rawDataJson,
       });
       count += 1;
+
+      // The production Company-7000 CC reports append a Credit section after the
+      // authoritative Debit population.  Phase D controls use the first Debit only.
+      if (companyCode === '7000' && definition.code.startsWith('CC_') && !coaRaw && normalizedControlLabel(descriptionRaw) === 'DEBIT') break;
 
       // Report totals/subtotals are intentionally COA-less and must remain available for Phase D
       // reconciliation. They are not malformed detail rows.

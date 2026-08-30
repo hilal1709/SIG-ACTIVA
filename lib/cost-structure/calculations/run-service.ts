@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { getPhaseDReport } from '@/lib/cost-structure/reconciliation/service';
 import { classifySourceRow } from '@/lib/cost-structure/reconciliation/source-control-registry';
 import { calculateCompany2000 } from './company-2000';
+import { calculateCompany7000, COMPANY_7000_GROUPS, COMPANY_7000_MAPPED_SOURCES, ENGINE1_7000_RULE_SET_VERSION } from './company-7000';
+import { buildCompany7000Input } from './company-7000-source-adapter';
 import { COMPANY_2000_GROUPS, COMPANY_2000_SOURCES, DERIVATIVE_SOURCE_CODES, ENGINE1_2000_RULE_SET_VERSION } from './constants';
 import { buildMappingSnapshot } from './snapshot';
 import type { ResolvedSourceLine } from './types';
@@ -18,10 +20,127 @@ export async function runCostStructureCalculation(periodId: number, startedById:
   const period = await prisma.costPeriod.findUnique({ where: { id: periodId }, select: { company: { select: { companyCode: true } } } });
   if (!period) throw new Error('Periode tidak ditemukan.');
   if (period.company.companyCode === '2000') return runCompany2000Calculation(periodId, startedById);
-  if (period.company.companyCode === '7000') {
-    throw new Error('Company 7000 source adapter belum tersedia: workbook golden privat tidak ditemukan, sehingga selector HPP/COAL/OA tidak boleh diinventarisasi tanpa bukti.');
-  }
+  if (period.company.companyCode === '7000') return runCompany7000Calculation(periodId, startedById);
   throw new Error(`Company ${period.company.companyCode} tidak didukung Engine 1.`);
+}
+
+export async function runCompany7000Calculation(periodId: number, startedById: number) {
+  const period = await prisma.costPeriod.findUnique({ where: { id: periodId }, include: { company: true, uploads: { where: { isActiveVersion: true }, orderBy: { version: 'desc' }, take: 1 } } });
+  if (!period) throw new Error('Periode tidak ditemukan.');
+  if (period.company.companyCode !== '7000') throw new Error('Company 7000 calculation requires Company 7000.');
+  if (period.status === 'FINALIZED') throw new Error('Periode FINALIZED tidak dapat dihitung ulang.');
+  if (!['SOURCE_RECONCILED', 'CALCULATED'].includes(period.status)) throw new Error('Periode belum SOURCE_RECONCILED.');
+  const upload = period.uploads[0];
+  if (!upload?.isActiveVersion) throw new Error('Upload aktif untuk periode tidak ditemukan.');
+  const readiness = await getPhaseDReport(upload.id);
+  if (!readiness?.ready) throw new Error(`Phase D readiness gagal: ${readiness?.blockers.join('; ') ?? 'upload tidak ditemukan'}`);
+
+  let run: { id: number; runNumber: number };
+  try {
+    run = await prisma.$transaction(async (tx) => {
+      if (await tx.costCalculationRun.findFirst({ where: { periodId, status: 'RUNNING' } })) throw new CalculationConflictError('Calculation lain sedang berjalan untuk periode ini.');
+      const latest = await tx.costCalculationRun.aggregate({ where: { periodId }, _max: { runNumber: true } });
+      return tx.costCalculationRun.create({
+        data: {
+          periodId, uploadId: upload.id, runNumber: (latest._max.runNumber ?? 0) + 1, status: 'RUNNING', isActive: false,
+          ruleSetVersion: ENGINE1_7000_RULE_SET_VERSION, startedById,
+          sourceSnapshotJson: { periodId, companyCode: '7000', fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, uploadId: upload.id, uploadVersion: upload.version, uploadHash: upload.fileHashSha256, sourceRowCount: readiness.upload.sourceRows.length, reconciliationReady: readiness.ready, sourceControls: readiness.sources.map((source) => ({ logicalSourceCode: source.logicalSourceCode, status: source.status, difference: source.difference })) },
+          mappingSnapshotJson: [],
+        },
+        select: { id: true, runNumber: true },
+      });
+    });
+  } catch (error) {
+    if (error instanceof CalculationConflictError || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw new CalculationConflictError('Calculation request bertabrakan; silakan coba lagi.');
+    throw error;
+  }
+
+  try {
+    const state = await prisma.costPeriod.findUniqueOrThrow({ where: { id: periodId }, include: {
+      company: { include: { groups: { where: { active: true, code: { in: [...COMPANY_7000_GROUPS] } }, include: { natures: { orderBy: { displayOrder: 'asc' } } } } } },
+      uploads: { where: { id: upload.id }, include: { sourceRows: { include: { coa: true }, orderBy: { id: 'asc' } } }, take: 1 },
+      adjustments: { include: { costGroup: true, nature: true }, orderBy: { id: 'asc' } },
+    } });
+    const currentUpload = state.uploads[0];
+    if (!currentUpload?.isActiveVersion) throw new Error('Upload menjadi superseded sebelum calculation selesai.');
+    const natures = state.company.groups.flatMap((group) => group.natures.map((nature) => ({ costGroupId: group.id, natureId: nature.id, groupCode: group.code as 'HPP' | 'ADUM' | 'PASAR', natureCode: nature.code, calculationType: nature.calculationType, ruleCode: nature.ruleCode, active: nature.active })));
+    for (const group of COMPANY_7000_GROUPS) if (!state.company.groups.some((item) => item.code === group)) throw new Error(`Cost Group ${group} aktif tidak ditemukan untuk Company 7000.`);
+
+    const sourceCoaCodes = [...new Set(currentUpload.sourceRows.flatMap((row) => {
+      const code = row.coa?.coaCode ?? row.coaCodeRaw;
+      return code && /^\d{8}$/.test(code) ? [code] : [];
+    }))];
+    const sourceCoas = sourceCoaCodes.length ? await prisma.costCoa.findMany({ where: { coaCode: { in: sourceCoaCodes } } }) : [];
+    const coaIdByCode = new Map(sourceCoas.map((coa) => [coa.coaCode, coa.id]));
+    const adapterRows = currentUpload.sourceRows.map((row) => {
+      const coaCode = row.coa?.coaCode ?? row.coaCodeRaw;
+      return {
+        id: row.id,
+        uploadId: currentUpload.id,
+        uploadVersion: currentUpload.version,
+        logicalSourceCode: row.logicalSourceCode,
+        sourceRowNumber: row.sourceRowNumber,
+        coaId: row.coaId ?? (coaCode ? coaIdByCode.get(coaCode) ?? null : null),
+        coaCode,
+        description: row.descriptionRaw,
+        amount: row.amount,
+        rawData: row.rawDataJson,
+      };
+    });
+    const coaIds = [...new Set(adapterRows.flatMap((row) => row.coaId ? [row.coaId] : []))];
+    const mappings = await prisma.costCoaMapping.findMany({ where: { companyId: state.companyId, sourceLogicalCode: { in: [...COMPANY_7000_MAPPED_SOURCES] }, coaId: { in: coaIds }, active: true, validFrom: { lte: state.periodStart }, OR: [{ validTo: null }, { validTo: { gte: state.periodStart } }] }, include: { costGroup: true, nature: true }, orderBy: { id: 'asc' } });
+    const adapted = buildCompany7000Input({
+      companyCode: '7000',
+      fiscalPeriod: state.fiscalPeriod,
+      natures,
+      rows: adapterRows,
+      mappings: mappings.map((mapping) => ({
+        id: mapping.id, sourceLogicalCode: mapping.sourceLogicalCode, coaId: mapping.coaId, mappingAction: mapping.mappingAction,
+        costGroupId: mapping.costGroupId, natureId: mapping.natureId, groupCode: mapping.costGroup?.code ?? null, natureCode: mapping.nature?.code ?? null,
+        targetActive: Boolean(mapping.costGroup?.active && mapping.nature?.active && mapping.costGroup.companyId === state.companyId && mapping.nature.costGroupId === mapping.costGroupId),
+        natureCalculationType: mapping.nature?.calculationType ?? null,
+      })),
+    });
+    adapted.adjustments = state.adjustments.map((item) => ({
+      adjustmentId: item.id,
+      costGroupId: item.costGroupId,
+      groupCode: item.costGroup.code,
+      natureId: item.natureId,
+      natureCode: item.nature.code,
+      coaId: item.coaId,
+      amount: item.amount,
+      reason: item.reason,
+      reference: item.reference,
+      targetActive: item.costGroup.active && item.nature.active && item.costGroup.companyId === state.companyId && item.nature.costGroupId === item.costGroupId,
+      natureCalculationType: item.nature.calculationType,
+    }));
+
+    const result = calculateCompany7000(adapted);
+    const snapshot = buildMappingSnapshot(mappings.map((mapping) => ({ mappingId: mapping.id, companyId: mapping.companyId, sourceLogicalCode: mapping.sourceLogicalCode, coaId: mapping.coaId, mappingAction: mapping.mappingAction, costGroupId: mapping.costGroupId, natureId: mapping.natureId, validFrom: mapping.validFrom, validTo: mapping.validTo, updatedAt: mapping.updatedAt })));
+    const groupIds = new Map(state.company.groups.map((group) => [group.code, group.id]));
+
+    await prisma.$transaction(async (tx) => {
+      const livePeriod = await tx.costPeriod.findUnique({ where: { id: periodId }, select: { status: true } });
+      if (!livePeriod || livePeriod.status === 'FINALIZED') throw new Error('Periode tidak lagi eligible untuk calculation.');
+      if (!(await tx.costUpload.findUnique({ where: { id: upload.id }, select: { isActiveVersion: true } }))?.isActiveVersion) throw new Error('Upload menjadi superseded sebelum aktivasi run.');
+      await tx.costCalculationRun.update({ where: { id: run.id }, data: { mappingSnapshotJson: snapshot } });
+      const lines = result.actualLines.map((line) => ({ calculationRunId: run.id, periodId, costGroupId: line.costGroupId, natureId: line.natureId, coaId: line.coaId, lineType: line.lineType, sourceAmount: line.sourceAmount, adjustmentAmount: line.adjustmentAmount, finalAmount: line.finalAmount, ruleCode: line.ruleCode, sourceRowId: line.sourceRowId, sourceReferenceJson: line.sourceReference as Prisma.InputJsonValue }));
+      for (let offset = 0; offset < lines.length; offset += PERSIST_CHUNK_SIZE) await tx.costActualLine.createMany({ data: lines.slice(offset, offset + PERSIST_CHUNK_SIZE) });
+      await tx.costCalculationResult.createMany({ data: [
+        ...result.natureTotals.map((item) => ({ calculationRunId: run.id, periodId, costGroupId: item.costGroupId, natureId: item.natureId, resultCode: 'NATURE_TOTAL', resultType: 'NATURE' as const, amount: item.amount, ruleCode: natures.find((nature) => nature.natureId === item.natureId)?.ruleCode, calculationDetailJson: { natureCode: item.natureCode } as Prisma.InputJsonValue })),
+        ...COMPANY_7000_GROUPS.map((code) => ({ calculationRunId: run.id, periodId, costGroupId: groupIds.get(code)!, natureId: null, resultCode: `TOTAL_${code}`, resultType: 'TOTAL' as const, amount: result.groupTotals[code], ruleCode: code === 'HPP' ? 'HPP_TOTAL_7000' : null, calculationDetailJson: (code === 'HPP' ? { accountGroup5: adapted.formulaDependencies.accountGroup5Total.sourceReference, cogsMortar: adapted.formulaDependencies.cogsMortar.sourceReference } : {}) as Prisma.InputJsonValue })),
+        { calculationRunId: run.id, periodId, costGroupId: null, natureId: null, resultCode: 'TOTAL_COMPANY', resultType: 'TOTAL' as const, amount: result.companyTotal },
+        ...result.controls.map((control) => ({ calculationRunId: run.id, periodId, costGroupId: control.costGroupId, natureId: null, resultCode: control.resultCode, resultType: 'CONTROL' as const, amount: control.amount, reconciliationDifference: control.difference, reconciliationStatus: control.difference.isZero() ? 'RECONCILED' : 'NOT_RECONCILED', calculationDetailJson: { natureSum: control.amount.sub(control.difference).toString() } as Prisma.InputJsonValue })),
+      ] });
+      await tx.costCalculationRun.updateMany({ where: { periodId, isActive: true }, data: { isActive: false } });
+      await tx.costCalculationRun.update({ where: { id: run.id }, data: { status: 'SUCCESS', isActive: true, completedAt: new Date() } });
+      await tx.costPeriod.update({ where: { id: periodId }, data: { activeCalculationRunId: run.id, status: 'CALCULATED' } });
+    });
+    return { runId: run.id, runNumber: run.runNumber, result };
+  } catch (error) {
+    await prisma.costCalculationRun.update({ where: { id: run.id }, data: { status: 'FAILED', isActive: false, completedAt: new Date(), errorMessage: error instanceof Error ? error.message.slice(0, 1000) : 'Calculation failed.' } }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function runCompany2000Calculation(periodId: number, startedById: number) {
@@ -80,7 +199,6 @@ export async function runCompany2000Calculation(periodId: number, startedById: n
       const disposition = !mapping ? 'UNMAPPED' : mapping.mappingAction === 'EXCLUDE' ? 'EXCLUDED' : mapping.mappingAction === 'RECLASS' ? 'RECLASSIFIED' : 'MAPPED';
       return { sourceRowId: row.id, uploadId: currentUpload.id, uploadVersion: currentUpload.version, logicalSourceCode: row.logicalSourceCode, sourceRowNumber: row.sourceRowNumber, coaId: row.coaId ?? 0, coaCode: row.coa?.coaCode ?? row.coaCodeRaw ?? '', amount, disposition, applicableMappingCount: applicable.length, mappingId: mapping?.id, mappingAction: mapping?.mappingAction, costGroupId: mapping?.costGroupId ?? undefined, groupCode: mapping?.costGroup?.code, natureId: mapping?.natureId ?? undefined, natureCode: mapping?.nature?.code, targetActive: Boolean(mapping?.costGroup?.active && mapping?.nature?.active && mapping.costGroup.companyId === state.companyId && mapping.nature.costGroupId === mapping.costGroupId), natureCalculationType: mapping?.nature?.calculationType };
     });
-    // Derivative/support rows are deliberately absent from candidates and therefore cannot contribute.
     void ignoredSources;
     const result = calculateCompany2000({ sourceLines: resolved, adjustments: state.adjustments.map((item) => ({ adjustmentId: item.id, costGroupId: item.costGroupId, groupCode: item.costGroup.code, natureId: item.natureId, natureCode: item.nature.code, coaId: item.coaId, amount: item.amount, reason: item.reason, reference: item.reference, targetActive: item.costGroup.active && item.nature.active && item.costGroup.companyId === state.companyId && item.nature.costGroupId === item.costGroupId, natureCalculationType: item.nature.calculationType })) });
     const relevantMappingIds = new Set(resolved.flatMap((line) => line.mappingId ? [line.mappingId] : []));
@@ -93,9 +211,7 @@ export async function runCompany2000Calculation(periodId: number, startedById: n
       if (!liveUpload?.isActiveVersion) throw new Error('Upload menjadi superseded sebelum aktivasi run.');
       await tx.costCalculationRun.update({ where: { id: run.id }, data: { mappingSnapshotJson: mappingSnapshot } });
       const actualLineData = result.actualLines.map((line) => ({ calculationRunId: run.id, periodId, costGroupId: line.costGroupId, natureId: line.natureId, coaId: line.coaId, lineType: line.lineType, sourceAmount: line.sourceAmount, adjustmentAmount: line.adjustmentAmount, finalAmount: line.finalAmount, sourceRowId: line.sourceRowId, sourceReferenceJson: line.sourceReference as Prisma.InputJsonValue }));
-      for (let offset = 0; offset < actualLineData.length; offset += PERSIST_CHUNK_SIZE) {
-        await tx.costActualLine.createMany({ data: actualLineData.slice(offset, offset + PERSIST_CHUNK_SIZE) });
-      }
+      for (let offset = 0; offset < actualLineData.length; offset += PERSIST_CHUNK_SIZE) await tx.costActualLine.createMany({ data: actualLineData.slice(offset, offset + PERSIST_CHUNK_SIZE) });
       await tx.costCalculationResult.createMany({ data: [
         ...result.natureTotals.map((item) => ({ calculationRunId: run.id, periodId, costGroupId: item.costGroupId, natureId: item.natureId, resultCode: 'NATURE_TOTAL', resultType: 'NATURE' as const, amount: item.amount })),
         ...COMPANY_2000_GROUPS.map((code) => ({ calculationRunId: run.id, periodId, costGroupId: groupIdByCode.get(code)!, natureId: null, resultCode: `TOTAL_${code}`, resultType: 'TOTAL' as const, amount: result.groupTotals[code] })),
@@ -119,12 +235,7 @@ export async function getCompany2000Calculation(periodId: number) {
     include: {
       company: true,
       uploads: { where: { isActiveVersion: true }, select: { id: true, version: true, status: true }, take: 1 },
-      activeCalculationRun: {
-        include: {
-          results: { include: { costGroup: true, nature: true }, orderBy: [{ resultType: 'asc' }, { resultCode: 'asc' }] },
-          _count: { select: { actualLines: true } },
-        },
-      },
+      activeCalculationRun: { include: { results: { include: { costGroup: true, nature: true }, orderBy: [{ resultType: 'asc' }, { resultCode: 'asc' }] }, _count: { select: { actualLines: true } } } },
     },
   });
   if (!period) return null;
