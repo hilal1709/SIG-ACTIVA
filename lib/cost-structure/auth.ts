@@ -58,13 +58,12 @@ export function requireCostStructureAdmin(request: NextRequest) {
   return requireCostStructureRole(request, COST_STRUCTURE_ADMIN_ROLES);
 }
 
-export async function verifyCostStructureReadSession(
-  token?: string | null
+async function verifyCostStructureSessionRole(
+  token: string | null | undefined,
+  allowedRoles: readonly string[]
 ): Promise<SessionUser | null> {
   const session = await verifySessionToken(token);
-  if (!session || !COST_STRUCTURE_READ_ROLES.includes(
-    session.role as (typeof COST_STRUCTURE_READ_ROLES)[number]
-  )) {
+  if (!session || !allowedRoles.includes(session.role)) {
     return null;
   }
 
@@ -73,4 +72,12 @@ export async function verifyCostStructureReadSession(
     role: session.role,
     name: session.name,
   };
+}
+
+export function verifyCostStructureReadSession(token?: string | null) {
+  return verifyCostStructureSessionRole(token, COST_STRUCTURE_READ_ROLES);
+}
+
+export function verifyCostStructurePrepareSession(token?: string | null) {
+  return verifyCostStructureSessionRole(token, COST_STRUCTURE_PREPARE_ROLES);
 }
