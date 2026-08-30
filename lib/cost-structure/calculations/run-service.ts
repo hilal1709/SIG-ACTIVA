@@ -14,6 +14,16 @@ const PERSIST_CHUNK_SIZE = 750;
 
 export class CalculationConflictError extends Error {}
 
+export async function runCostStructureCalculation(periodId: number, startedById: number) {
+  const period = await prisma.costPeriod.findUnique({ where: { id: periodId }, select: { company: { select: { companyCode: true } } } });
+  if (!period) throw new Error('Periode tidak ditemukan.');
+  if (period.company.companyCode === '2000') return runCompany2000Calculation(periodId, startedById);
+  if (period.company.companyCode === '7000') {
+    throw new Error('Company 7000 source adapter belum tersedia: workbook golden privat tidak ditemukan, sehingga selector HPP/COAL/OA tidak boleh diinventarisasi tanpa bukti.');
+  }
+  throw new Error(`Company ${period.company.companyCode} tidak didukung Engine 1.`);
+}
+
 export async function runCompany2000Calculation(periodId: number, startedById: number) {
   const period = await prisma.costPeriod.findUnique({
     where: { id: periodId },
@@ -120,5 +130,7 @@ export async function getCompany2000Calculation(periodId: number) {
   if (!period) return null;
   const run = period.activeCalculationRun;
   const total = (code: string) => run?.results.find((item) => item.resultCode === code)?.amount.toString() ?? null;
-  return { period: { id: period.id, companyCode: period.company.companyCode, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, status: period.status, activeUpload: period.uploads[0] ?? null }, activeRun: run ? { id: run.id, runNumber: run.runNumber, ruleSetVersion: run.ruleSetVersion, status: run.status, startedAt: run.startedAt, completedAt: run.completedAt, lineCount: run._count.actualLines, sourceSnapshot: run.sourceSnapshotJson, mappingSnapshot: run.mappingSnapshotJson } : null, totals: { ADUM: total('TOTAL_ADUM'), PASAR: total('TOTAL_PASAR'), company: total('TOTAL_COMPANY') }, natureTotals: run?.results.filter((item) => item.resultType === 'NATURE').map((item) => ({ group: item.costGroup?.code, natureId: item.natureId, natureCode: item.nature?.code, natureName: item.nature?.name, amount: item.amount.toString() })) ?? [], controls: run?.results.filter((item) => item.resultType === 'CONTROL').map((item) => ({ resultCode: item.resultCode, amount: item.amount.toString(), difference: item.reconciliationDifference?.toString(), status: item.reconciliationStatus })) ?? [] };
+  return { period: { id: period.id, companyCode: period.company.companyCode, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, status: period.status, activeUpload: period.uploads[0] ?? null }, activeRun: run ? { id: run.id, runNumber: run.runNumber, ruleSetVersion: run.ruleSetVersion, status: run.status, startedAt: run.startedAt, completedAt: run.completedAt, lineCount: run._count.actualLines, sourceSnapshot: run.sourceSnapshotJson, mappingSnapshot: run.mappingSnapshotJson } : null, totals: { HPP: total('TOTAL_HPP'), ADUM: total('TOTAL_ADUM'), PASAR: total('TOTAL_PASAR'), company: total('TOTAL_COMPANY') }, natureTotals: run?.results.filter((item) => item.resultType === 'NATURE').map((item) => ({ group: item.costGroup?.code, natureId: item.natureId, natureCode: item.nature?.code, natureName: item.nature?.name, calculationType: item.nature?.calculationType, ruleCode: item.nature?.ruleCode, amount: item.amount.toString() })) ?? [], controls: run?.results.filter((item) => item.resultType === 'CONTROL').map((item) => ({ resultCode: item.resultCode, amount: item.amount.toString(), difference: item.reconciliationDifference?.toString(), status: item.reconciliationStatus })) ?? [] };
 }
+
+export const getCostStructureCalculation = getCompany2000Calculation;

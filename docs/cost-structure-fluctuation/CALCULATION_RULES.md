@@ -1,5 +1,11 @@
 # Calculation Rules V2
 
+## Phase F — Company 7000 Engine 1 contract
+
+`ENGINE1_7000_V1` implements the deterministic Company 7000 scope `HPP`, `ADUM`, and `PASAR` (with OA inside PASAR). `HPP_TOTAL_7000` subtracts explicitly identified account-group-5 COGS Mortar from the account-group-5 total. `COAL_7000_EXISTING`, `COAL_INBOUND_7000_EXISTING`, and `OA_7000_EXISTING` consume server-resolved dependencies and retain their source-row lineage. `HPP_INVENTORY_DIFF_7000` is a COA-less residual equal to Total HPP less all preceding HPP Natures.
+
+Authoritative Cost Structure financial amounts remain NUMERIC/Decimal(20,2). Company 7000 source formulas may contain higher precision, but authoritative values are normalized to two decimal places before final Nature/residual reconciliation.
+
 ## 1. General rule
 
 All accounting calculations are deterministic server-side calculations.
