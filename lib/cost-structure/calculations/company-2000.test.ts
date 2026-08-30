@@ -33,9 +33,9 @@ test('zero unmapped is harmless and adjustment is exact', () => {
   assert.equal(result.actualLines.length, 1); assert.equal(result.actualLines[0].lineType, 'ADJUSTMENT'); assert.equal(result.companyTotal.toString(), '-0.01');
 });
 
-test('Derivatif injection has zero effect and rerun is deterministic', () => {
+test('CC_PROD and Derivatif injections have zero effect and rerun is deterministic', () => {
   const input = [line()]; const base = calculateCompany2000({ sourceLines: input });
-  for (const source of ['DERIVATIF', 'CC_DERIVATIF', 'CC_DRV']) {
+  for (const source of ['CC_PROD', 'DERIVATIF', 'CC_DERIVATIF', 'CC_DRV']) {
     const injected = calculateCompany2000({ sourceLines: [...input, line({ sourceRowId: 99, logicalSourceCode: source, amount: d('999999999999.99') })] });
     assert.equal(injected.companyTotal.toString(), base.companyTotal.toString());
   }

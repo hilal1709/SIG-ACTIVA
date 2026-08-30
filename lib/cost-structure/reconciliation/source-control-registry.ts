@@ -1,9 +1,16 @@
 import type { ClassifiedRow, SourceRow } from './types';
 
-// Intentionally narrow until golden workbooks lock source-specific markers.
-export const REPORTED_TOTAL_LABELS = new Set(['TOTAL', 'GRAND TOTAL']);
-export const SUBTOTAL_LABELS = new Set(['SUBTOTAL']);
-export function normalizedControlLabel(value: string | null) { return (value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toUpperCase(); }
+// Narrow labels verified against the July-2026 Company 2000 SAP CC workbook.
+export const REPORTED_TOTAL_LABELS = new Set(['TOTAL', 'GRAND TOTAL', 'DEBIT']);
+export const SUBTOTAL_LABELS = new Set(['SUBTOTAL', 'OVER/UNDERABSORPTION', 'OVER/UND']);
+export function normalizedControlLabel(value: string | null) {
+  return (value || '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/^\*+\s*/, '')
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
+}
 
 export function classifySourceRow(row: SourceRow): ClassifiedRow {
   const label = normalizedControlLabel(row.descriptionRaw || row.coaCodeRaw);

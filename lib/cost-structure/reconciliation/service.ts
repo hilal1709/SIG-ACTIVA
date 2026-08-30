@@ -7,7 +7,7 @@ import { calculateMappingCompleteness } from './mapping-completeness';
 
 const required = (company: string) => company === '7000'
   ? ['CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']
-  : ['CC_PROD', 'CC_ADUM', 'CC_PASAR'];
+  : ['CC_ADUM', 'CC_PASAR'];
 
 const sourceControlCodes = ['CC_GROUP_TOTAL_NOT_FOUND', 'CC_GROUP_TOTAL_AMBIGUOUS', 'CC_GROUP_NOT_RECONCILED'];
 const mappingIssueCodes = ['UNMAPPED_COA', 'MAPPING_AMBIGUOUS', 'MAPPING_OVERLAP', 'MAPPING_TARGET_INVALID'];

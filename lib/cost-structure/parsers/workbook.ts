@@ -3,9 +3,9 @@ import { parseAmount } from './amount';
 import { detectSource, normalizeLabel, sourceDefinitions } from './source-registry';
 import type { LogicalSourceCode, ParsedWorkbook, ParsedSourceRow } from './types';
 
-const COA = ['ACCOUNT', 'ACCOUNT CODE', 'G/L ACCOUNT', 'GL ACCOUNT', 'COST ELEMENT', 'COA', 'KODE AKUN', 'AKUN'];
-const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL DESCRIPTION', 'NAMA AKUN', 'DESKRIPSI'];
-const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'VALUE', 'NILAI', 'BALANCE', 'SALDO'];
+const COA = ['ACCOUNT', 'ACCOUNT CODE', 'G/L ACCOUNT', 'GL ACCOUNT', 'COST ELEMENT', 'COA', 'KODE AKUN', 'AKUN', 'KODE', 'CE'];
+const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL DESCRIPTION', 'NAMA AKUN', 'DESKRIPSI', 'DESCR', 'COST ELEMENTS'];
+const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'VALUE', 'NILAI', 'BALANCE', 'SALDO', 'ACT AMT'];
 const COA_REQUIRED = new Set<LogicalSourceCode>(['TB', 'CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']);
 const RAW_FALLBACK = new Set<LogicalSourceCode>(['COAL', 'CLINKER_PURCHASE', 'SOLAR_PP_ORDER', 'OA_STAT']);
 
@@ -63,6 +63,15 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
     if (sheets.length !== 1) continue;
 
     const sheet = sheets[0];
+
+    // Verified July-2026 Company 2000 workbook contains a structurally present but empty cc_prod sheet.
+    // Company 2000 Cost Structure is ADUM/PASAR only, so presence of this empty structural source is valid.
+    if (companyCode === '2000' && definition.code === 'CC_PROD' && sheet.actualRowCount === 0) {
+      issues.push({ issueCode: 'SOURCE_EMPTY', severity: 'INFO', message: `Sumber ${definition.code} terdeteksi sebagai worksheet kosong dan tidak berkontribusi pada Company 2000.` });
+      sources.push({ code: definition.code, sheetName: sheet.name, rowCount: 0 });
+      continue;
+    }
+
     let headerRow = 0;
     let coa = -1;
     let desc = -1;
@@ -108,8 +117,8 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
     for (let rowNumber = headerRow + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const values = (sheet.getRow(rowNumber).values as unknown[]).slice(1);
       if (values.every((value) => text(value) === null)) continue;
-      const rawDataJson = Object.fromEntries(headers.map((header, index) => [header, text(values[index])]));
       const coaRaw = coa >= 0 ? text(values[coa]) : null;
+      const descriptionRaw = desc >= 0 ? text(values[desc]) : null;
       const amountRaw = text(values[amount]);
       const parsedAmount = parseAmount(
         typeof values[amount] === 'object' && values[amount] && 'result' in (values[amount] as object)
@@ -117,12 +126,17 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
           : values[amount],
       );
 
+      // SAP exports may carry formula tails where only Act Amt=0 remains below the actual report.
+      // With neither a source COA nor description these are layout artifacts, not accounting rows.
+      if (COA_REQUIRED.has(definition.code) && !coaRaw && !descriptionRaw && parsedAmount === '0') continue;
+
+      const rawDataJson = Object.fromEntries(headers.map((header, index) => [header, text(values[index])]));
       rows.push({
         logicalSourceCode: definition.code,
         originalSheetName: sheet.name,
         sourceRowNumber: rowNumber,
         coaCodeRaw: coaRaw,
-        descriptionRaw: desc >= 0 ? text(values[desc]) : null,
+        descriptionRaw,
         amountRaw,
         amount: parsedAmount,
         sourceGroupRaw: null,

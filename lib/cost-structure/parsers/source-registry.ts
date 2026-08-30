@@ -4,7 +4,7 @@ type Definition = { code: LogicalSourceCode; companies: string[]; required: bool
 const definitions: Definition[] = [
   { code:'TB', companies:['2000','7000'], required:true, aliases:['TB'] },
   { code:'CC_PROD', companies:['2000','7000'], required:true, aliases:['CC PROD','CC_PROD'] },
-  { code:'CC_ADUM', companies:['2000','7000'], required:true, aliases:['CC ADUM','CC_ADUM'] },
+  { code:'CC_ADUM', companies:['2000','7000'], required:true, aliases:['CC ADUM','CC_ADUM','CC ADM','CC_ADM'] },
   { code:'CC_PASAR', companies:['2000','7000'], required:true, aliases:['CC PASAR','CC_PASAR'] },
   { code:'CC_WHRPG', companies:['7000'], required:true, aliases:['CC WHRPG','CC_WHRPG'] },
   { code:'COAL', companies:['7000'], required:true, aliases:['COAL'] },
