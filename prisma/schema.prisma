@@ -170,27 +170,29 @@ model CostCoa {
 }
 
 model CostCoaMapping {
-  id            Int               @id @default(autoincrement())
-  companyId     Int
-  costGroupId   Int
-  natureId      Int
-  coaId         Int
-  mappingAction CostMappingAction
-  validFrom     DateTime
-  validTo       DateTime?
-  note          String?
-  active        Boolean           @default(true)
-  createdById   Int
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  id                Int               @id @default(autoincrement())
+  companyId         Int
+  sourceLogicalCode String
+  costGroupId       Int?
+  natureId          Int?
+  coaId             Int
+  mappingAction     CostMappingAction
+  validFrom         DateTime
+  validTo           DateTime?
+  note              String?
+  active            Boolean           @default(true)
+  createdById       Int
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   company   CostCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  costGroup CostGroup   @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
-  nature    CostNature  @relation(fields: [natureId], references: [id], onDelete: Restrict)
+  costGroup CostGroup?  @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  nature    CostNature? @relation(fields: [natureId], references: [id], onDelete: Restrict)
   coa       CostCoa     @relation(fields: [coaId], references: [id], onDelete: Restrict)
   createdBy User        @relation("CostMappingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
   @@index([companyId, costGroupId, coaId])
+  @@index([companyId, sourceLogicalCode, coaId, validFrom, validTo])
   @@index([natureId])
   @@index([coaId])
   @@index([validFrom])

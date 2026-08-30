@@ -11,7 +11,7 @@ describe('parseWorkbook raw support-source lineage', () => {
     coal.addRow(['COAL-A', 2, 100]);
 
     const bytes = await workbook.xlsx.writeBuffer();
-    const parsed = await parseWorkbook(bytes as Uint8Array, '7000');
+    const parsed = await parseWorkbook(bytes as unknown as Uint8Array, '7000');
     const coalRows = parsed.rows.filter((row) => row.logicalSourceCode === 'COAL');
 
     assert.equal(coalRows.length, 2);
@@ -31,7 +31,7 @@ describe('parseWorkbook raw support-source lineage', () => {
     tb.addRow(['001000', 'Test', 10]);
 
     const bytes = await workbook.xlsx.writeBuffer();
-    const parsed = await parseWorkbook(bytes as Uint8Array, '2000');
+    const parsed = await parseWorkbook(bytes as unknown as Uint8Array, '2000');
 
     assert.equal(parsed.sources.some((source) => source.sheetName === 'META'), false);
     assert.equal(parsed.rows.find((row) => row.logicalSourceCode === 'TB')?.coaCodeRaw, '001000');

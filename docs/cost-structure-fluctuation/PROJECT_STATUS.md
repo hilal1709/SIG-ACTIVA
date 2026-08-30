@@ -8,7 +8,7 @@ Last updated: 2026-08-30
 Phase A — Repository integration foundation       COMPLETE / merged to main
 Phase B — Core schema & master data               COMPLETE / merged to main / production DDL applied
 Phase C — Upload/parser/storage                    COMPLETE / merged to main
-Phase D — Source reconciliation/mapping            NOT STARTED
+Phase D — Source reconciliation/mapping            COMPLETE / pending review
 Phase E — Engine 1 Company 2000                    NOT STARTED
 Phase F — Engine 1 Company 7000                    NOT STARTED
 Phase G — Finalization/dashboard/export            NOT STARTED
@@ -130,7 +130,7 @@ Phase C implementation includes:
 - cross-platform Cost Structure test runner;
 - accounting calculation: not implemented in Phase C.
 
-Phase D and every later phase remain `NOT STARTED`.
+Phase D is implemented on `feature/cost-structure-phase-d`; later phases remain `NOT STARTED`.
 
 ## Completed Phase C gate
 
@@ -143,3 +143,16 @@ Phase C retained these constraints:
 5. no source reconciliation, mapping resolution, or financial calculation is introduced.
 
 Phase C is closed. The next implementation phase is Phase D — Source Reconciliation & Mapping Workflow.
+
+## Phase D status
+
+Repository-side Phase D includes conservative CC Group control-row classification,
+exact Decimal reconciliation, effective-dated source-scoped mapping resolution,
+explicit INCLUDE/EXCLUDE/RECLASS dispositions, mapping completeness/readiness,
+validation issue lifecycle, audit entries, Nature administration, APIs, and the
+operational upload detail page. No Engine 1 calculation is included.
+
+The additive `add_cost_mapping_source_scope` migration is repository-authored only.
+It has not been applied to production; production application remains subject to
+review and controlled Supabase migration tooling. Exact source-specific total
+markers and final Nature masters remain gated on golden-workbook validation.
