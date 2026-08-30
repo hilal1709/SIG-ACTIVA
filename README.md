@@ -31,13 +31,19 @@ Build:
 pnpm build
 ```
 
-Prisma migration deployment:
-
-```bash
-pnpm migrate
-```
+Production database DDL is managed through the controlled Supabase migration workflow documented in `docs/cost-structure-fluctuation/DATABASE_RUNTIME.md`. Do not run the historical Prisma migration chain wholesale against production.
 
 Environment configuration must include the database/session variables required by the existing application. Do not commit secrets or local environment files.
+
+The Cost Structure upload workflow additionally requires these server-only variables:
+
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<server-only-service-role-key>
+COST_STRUCTURE_STORAGE_BUCKET=cost-structure-source
+```
+
+The bucket must remain private with a 50 MB file-size limit. Never prefix the service-role credential with `NEXT_PUBLIC_`.
 
 ## Cost Structure & Fluktuasi Biaya
 

@@ -1,10 +1,7 @@
-import CostStructureShell from '@/app/components/CostStructureShell';
+import { getActiveCostCompanies } from '@/lib/cost-structure/master-data';
+import UploadWorkspace from './upload-workspace';
 
-export default function CostStructureUploadPage() {
-  return (
-    <CostStructureShell
-      title="Upload & Proses"
-      purpose="Upload source workbook bulanan dan proses pembentukan Cost Structure."
-    />
-  );
+export default async function CostStructureUploadPage() {
+  const companies=await getActiveCostCompanies();
+  return <UploadWorkspace companies={companies.map(c=>({companyCode:c.companyCode,name:c.companyName}))}/>;
 }

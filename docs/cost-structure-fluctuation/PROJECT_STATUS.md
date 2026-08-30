@@ -7,7 +7,7 @@ Last updated: 2026-08-30
 ```text
 Phase A — Repository integration foundation       COMPLETE / merged to main
 Phase B — Core schema & master data               COMPLETE / merged to main / production DDL applied
-Phase C — Upload/parser/storage                    NOT STARTED
+Phase C — Upload/parser/storage                    IMPLEMENTED / PR #4 OPEN
 Phase D — Source reconciliation/mapping            NOT STARTED
 Phase E — Engine 1 Company 2000                    NOT STARTED
 Phase F — Engine 1 Company 7000                    NOT STARTED
@@ -107,9 +107,26 @@ Vercel deployment requires a valid production `DATABASE_URL` because many existi
 
 Do not weaken the `DATABASE_URL` requirement to bypass deployment configuration.
 
-## Next gate — Phase C readiness
+## Phase C status
 
-Before Phase C implementation begins:
+Implemented and under review in PR #4.
+
+- durable storage provider: Supabase Storage;
+- private bucket: `cost-structure-source`;
+- bucket/file limit: 50 MB;
+- browser upload: temporary signed direct upload to the server-generated object path using the Supabase signed-upload multipart contract;
+- integrity authority: SHA-256 computed by the server from downloaded stored bytes;
+- upload context: short-lived HMAC signed with the existing application auth secret and bound to uploader/company/period/object key;
+- business data runtime: Prisma Client remains the ORM over Supabase PostgreSQL;
+- output: normalized source rows, validation issues, upload versions, and source lineage;
+- support sources whose exact golden headers are not yet locked preserve raw lineage without inventing accounting semantics;
+- accounting calculation: not implemented in Phase C.
+
+Phase D and every later phase remain `NOT STARTED`.
+
+## Completed Phase C gate
+
+Phase C retained these constraints:
 
 1. verify `main` production deployment is `READY` on Vercel;
 2. verify production application can still query legacy modules through Prisma;
@@ -117,4 +134,4 @@ Before Phase C implementation begins:
 4. preserve Supabase migration history as production migration authority;
 5. keep Phase C limited to upload form, durable storage, parser framework, normalized staging, and validation — no accounting calculation.
 
-After these checks, Phase C may begin.
+No source reconciliation, mapping resolution, or financial calculation was introduced.

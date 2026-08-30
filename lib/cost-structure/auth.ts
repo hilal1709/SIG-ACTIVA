@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireSession, type SessionUser } from '@/lib/api-auth';
 import { verifySessionToken } from '@/lib/session';
+import { COST_STRUCTURE_PREPARE_ROLES } from './permissions';
+export { COST_STRUCTURE_PREPARE_ROLES, isCostStructurePrepareRole } from './permissions';
 
 type AuthorizationResult =
   | { user: SessionUser }
@@ -12,11 +14,6 @@ export const COST_STRUCTURE_READ_ROLES = [
   'SUPERVISOR_ACCOUNTING',
   'AUDITOR_INTERNAL',
   'STAFF_PRODUCTION',
-] as const;
-
-export const COST_STRUCTURE_PREPARE_ROLES = [
-  'ADMIN_SYSTEM',
-  'STAFF_ACCOUNTING',
 ] as const;
 
 export const COST_STRUCTURE_REVIEW_ROLES = [
