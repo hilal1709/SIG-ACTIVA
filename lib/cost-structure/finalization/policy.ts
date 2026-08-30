@@ -1,0 +1,66 @@
+import { Prisma } from '@prisma/client';
+
+const REQUIRED_TOTALS: Record<string, readonly string[]> = {
+  '2000': ['TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'],
+  '7000': ['TOTAL_HPP', 'TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'],
+};
+const REQUIRED_CONTROLS: Record<string, readonly string[]> = {
+  '2000': ['ADUM_NATURE_RECONCILIATION', 'PASAR_NATURE_RECONCILIATION'],
+  '7000': ['HPP_NATURE_RECONCILIATION', 'ADUM_NATURE_RECONCILIATION', 'PASAR_NATURE_RECONCILIATION'],
+};
+
+export class FinalizationError extends Error {}
+export type FinalizationSnapshot = {
+  companyCode: string;
+  periodStatus: string;
+  run: null | { id: number; status: string; isActive: boolean };
+  unresolvedErrors: number;
+  sourceReconciled: boolean;
+  mappingComplete: boolean;
+  results: Array<{
+    resultCode: string;
+    resultType: string;
+    reconciliationStatus: string | null;
+    reconciliationDifference: Prisma.Decimal | string | number | null;
+  }>;
+};
+
+const isZero = (value: FinalizationSnapshot['results'][number]['reconciliationDifference']) =>
+  value !== null && new Prisma.Decimal(value).equals(0);
+
+/** Validates persisted Engine-1 results only. No accounting formula is executed here. */
+export function assertPersistedControlsReady(snapshot: FinalizationSnapshot, allowedStatuses: readonly string[]) {
+  if (snapshot.periodStatus === 'FINALIZED') throw new FinalizationError('Periode FINALIZED bersifat immutable.');
+  if (!allowedStatuses.includes(snapshot.periodStatus)) throw new FinalizationError(`Status periode harus ${allowedStatuses.join(' atau ')}.`);
+  if (!snapshot.run || snapshot.run.status !== 'SUCCESS') throw new FinalizationError('Active calculation run harus SUCCESS.');
+  if (!snapshot.run.isActive) throw new FinalizationError('Calculation run tidak aktif.');
+  if (snapshot.unresolvedErrors > 0) throw new FinalizationError('Masih ada validation ERROR yang belum diselesaikan.');
+  if (!snapshot.sourceReconciled) throw new FinalizationError('Source reconciliation belum lulus.');
+  if (!snapshot.mappingComplete) throw new FinalizationError('Mapping completeness belum lulus.');
+
+  const byCode = new Map(snapshot.results.map((result) => [result.resultCode, result]));
+  for (const code of REQUIRED_TOTALS[snapshot.companyCode] ?? []) {
+    if (!byCode.has(code)) throw new FinalizationError(`Required result ${code} tidak tersedia.`);
+  }
+  for (const code of REQUIRED_CONTROLS[snapshot.companyCode] ?? []) {
+    const control = byCode.get(code);
+    if (!control) throw new FinalizationError(`Required control ${code} tidak tersedia.`);
+    if (control.resultType !== 'CONTROL' || control.reconciliationStatus !== 'RECONCILED' || !isZero(control.reconciliationDifference)) {
+      throw new FinalizationError(`Control ${code} harus RECONCILED dengan selisih 0.00.`);
+    }
+  }
+
+  const allControls = snapshot.results.filter((result) => result.resultType === 'CONTROL');
+  if (allControls.some((control) => control.reconciliationStatus !== 'RECONCILED' || !isZero(control.reconciliationDifference))) {
+    throw new FinalizationError('Semua persisted CONTROL harus RECONCILED dengan selisih 0.00.');
+  }
+  return snapshot.run.id;
+}
+
+export function assertReconciliationReady(snapshot: FinalizationSnapshot) {
+  return assertPersistedControlsReady(snapshot, ['CALCULATED']);
+}
+
+export function assertFinalizationReady(snapshot: FinalizationSnapshot) {
+  return assertPersistedControlsReady(snapshot, ['COST_STRUCTURE_RECONCILED']);
+}

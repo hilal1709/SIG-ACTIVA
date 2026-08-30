@@ -9,6 +9,7 @@ const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL
 const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'ACT COSTS', 'VALUE', 'NILAI', 'BALANCE', 'SALDO', 'ACT AMT'];
 const COA_REQUIRED = new Set<LogicalSourceCode>(['TB', 'CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']);
 const RAW_FALLBACK = new Set<LogicalSourceCode>(['COAL', 'CLINKER_PURCHASE', 'SOLAR_PP_ORDER', 'OA_STAT']);
+const AUDIT_ONLY = new Set<LogicalSourceCode>(['AUDIT_SI', 'AUDIT_GHOPO', 'AUDIT_DERIV', 'AUDIT_RINCIAN', 'AUDIT_CC_DRV', 'AUDIT_SI2000_DRV']);
 const CONTROL_LABELS = new Set(['TOTAL', 'GRAND TOTAL', 'SUBTOTAL', 'DEBIT', 'OVER/UNDERABSORPTION', 'OVER/UND']);
 
 type SheetMatrix = unknown[][];
@@ -87,36 +88,60 @@ function hasMeaningfulRows(rows: SheetMatrix): boolean {
 function preserveRawRows(sheet: MatchedSheet, code: LogicalSourceCode): ParsedSourceRow[] {
   const rows: ParsedSourceRow[] = [];
   let semanticHeaders: string[] = [];
-  let oaRole = 'SUMMARY';
+  let oaRole: 'SUMMARY' | 'DERIVATIVE' | 'TRANSACTION' = 'SUMMARY';
   sheet.rows.forEach((values, index) => {
     if (values.every((value) => text(value) === null)) return;
-    const rawDataJson = Object.fromEntries(values.map((value, columnIndex) => [`COLUMN_${columnIndex + 1}`, text(value)]));
+    const rawDataJson: Record<string, string | null> = Object.fromEntries(values.map((value, columnIndex) => [`COLUMN_${columnIndex + 1}`, text(value)]));
     const labels = values.map((value) => normalizeLabel(text(value) ?? ''));
     if (code === 'OA_STAT') {
-      if (labels.some((label) => label === 'DER' || label.includes('DERIVATIF'))) oaRole = 'DERIVATIVE';
+      if (labels.some((label) => label === 'DER' || label.includes('DERIVATIF'))) {
+        oaRole = 'DERIVATIVE';
+        semanticHeaders = [];
+      }
       const hasCompany = labels.includes('COMPANY CODE');
       const hasGl = labels.includes('G/L ACCOUNT') || labels.includes('GL ACCOUNT');
       const hasAmount = labels.includes('AMOUNT IN LOCAL CURRENCY');
-      if (hasGl && hasAmount) { semanticHeaders = labels; if (hasCompany && oaRole !== 'DERIVATIVE') oaRole = 'TRANSACTION'; }
+      // A semantic transaction header always starts a transaction section, even when a DER block
+      // appeared earlier in the worksheet. This fixes the verified July-2026 OA_STAT layout.
+      if (hasGl && hasAmount) {
+        semanticHeaders = labels;
+        if (hasCompany) oaRole = 'TRANSACTION';
+      }
       const glIndex = semanticHeaders.findIndex((label) => label === 'G/L ACCOUNT' || label === 'GL ACCOUNT');
       const amountIndex = semanticHeaders.indexOf('AMOUNT IN LOCAL CURRENCY');
       const companyIndex = semanticHeaders.indexOf('COMPANY CODE');
       const periodIndex = semanticHeaders.findIndex((label) => label === 'POSTING PERIOD' || label === 'PERIOD');
-      if (glIndex >= 0 && amountIndex >= 0 && text(values[glIndex])) {
-        rawDataJson.ROLE_GL = text(values[glIndex]); rawDataJson.ROLE_AMOUNT = text(values[amountIndex]); rawDataJson.ROLE = oaRole;
+      if (glIndex >= 0 && amountIndex >= 0 && /^\d{8}$/.test(text(values[glIndex]) ?? '')) {
+        rawDataJson.ROLE_GL = text(values[glIndex]);
+        rawDataJson.ROLE_AMOUNT = text(values[amountIndex]);
+        rawDataJson.ROLE = oaRole;
         rawDataJson.COMPANY_CODE = companyIndex >= 0 ? text(values[companyIndex]) : null;
         rawDataJson.POSTING_PERIOD = periodIndex >= 0 ? text(values[periodIndex]) : null;
       } else {
-        const gl = values.findIndex((value) => /^\d{8}$/.test(text(value) ?? ''));
+        const gl = values.findIndex((value) => /^\s*\d{8}(?:\s|$)/.test(text(value) ?? ''));
         if (gl >= 0) {
+          const glCode = (text(values[gl]) ?? '').trim().slice(0, 8);
           const candidate = values.slice(gl + 1).map(text).find((value) => value !== null && /^\(?-?[\d,.]+\)?-?$/.test(value));
-          if (candidate) { rawDataJson.ROLE_GL = text(values[gl]); rawDataJson.ROLE_AMOUNT = candidate; rawDataJson.ROLE = oaRole; }
+          if (candidate) {
+            rawDataJson.ROLE_GL = glCode;
+            rawDataJson.ROLE_AMOUNT = candidate;
+            rawDataJson.ROLE = oaRole;
+          }
         }
       }
     }
     if (code === 'SOLAR_PP_ORDER') {
       if (labels.includes('MATERIAL') && labels.includes('PLANT')) semanticHeaders = labels;
       semanticHeaders.forEach((header, columnIndex) => { if (header) rawDataJson[header] = text(values[columnIndex]); });
+      // The real SAP support sheet names this field `Cost Element`; expose the semantic alias used
+      // by the Company-7000 adapter without changing the original raw columns.
+      const costElement = rawDataJson['COST ELEMENT TEXT'] ?? rawDataJson['COST ELEMENT'];
+      if (costElement) rawDataJson['COST ELEMENT TEXT'] = costElement;
+    }
+    if (code === 'CLINKER_PURCHASE' && index + 1 >= 63 && index + 1 <= 69 && rawDataJson.COLUMN_6 === null) {
+      // The locked workbook rule is Excel SUM(F63:F69): the seven rows must exist, while blank
+      // cells inside that range have Excel's numeric-zero semantics.
+      rawDataJson.COLUMN_6 = '0';
     }
     rows.push({
       logicalSourceCode: code,
@@ -160,6 +185,13 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
 
     const sheet = sheets[0];
 
+    if (AUDIT_ONLY.has(definition.code)) {
+      const auditRows = preserveRawRows(sheet, definition.code);
+      rows.push(...auditRows);
+      sources.push({ code: definition.code, sheetName: sheet.name, rowCount: auditRows.length });
+      continue;
+    }
+
     if (companyCode === '2000' && definition.code === 'CC_PROD' && !hasMeaningfulRows(sheet.rows)) {
       issues.push({ issueCode: 'SOURCE_EMPTY', severity: 'INFO', message: `Sumber ${definition.code} terdeteksi sebagai worksheet kosong dan tidak berkontribusi pada Company 2000.` });
       sources.push({ code: definition.code, sheetName: sheet.name, rowCount: 0 });
@@ -189,11 +221,8 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
       if (RAW_FALLBACK.has(definition.code)) {
         const fallbackRows = preserveRawRows(sheet, definition.code);
         rows.push(...fallbackRows);
-        issues.push({
-          issueCode: 'SOURCE_HEADER_NOT_FOUND',
-          severity: 'WARNING',
-          message: `Header generik belum dikenali pada ${sheet.name}; raw lineage dipertahankan untuk parser golden-source berikutnya.`,
-        });
+        // These source types have verified source-specific adapters. Raw preservation is
+        // intentional and is no longer presented to users as a parser warning.
         sources.push({ code: definition.code, sheetName: sheet.name, rowCount: fallbackRows.length });
       } else {
         issues.push({
@@ -247,7 +276,7 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
       count += 1;
 
       // The production Company-7000 CC reports append a Credit section after the
-      // authoritative Debit population.  Phase D controls use the first Debit only.
+      // authoritative Debit population. Phase D controls use the first Debit only.
       if (companyCode === '7000' && definition.code.startsWith('CC_') && !coaRaw && normalizedControlLabel(descriptionRaw) === 'DEBIT') break;
 
       // Report totals/subtotals are intentionally COA-less and must remain available for Phase D
