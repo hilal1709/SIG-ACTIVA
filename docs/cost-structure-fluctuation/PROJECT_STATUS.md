@@ -9,7 +9,7 @@ Phase A — Repository integration foundation       COMPLETE / merged to main
 Phase B — Core schema & master data               COMPLETE / merged to main / production DDL applied
 Phase C — Upload/parser/storage                    COMPLETE / merged to main
 Phase D — Source reconciliation/mapping            COMPLETE / pending review
-Phase E — Engine 1 Company 2000                    NOT STARTED
+Phase E — Engine 1 Company 2000                    IMPLEMENTED / PRIVATE GOLDEN E2E PENDING
 Phase F — Engine 1 Company 7000                    NOT STARTED
 Phase G — Finalization/dashboard/export            NOT STARTED
 Phase H — Engine 2 comparison                      NOT STARTED
@@ -143,6 +143,17 @@ Phase C retained these constraints:
 5. no source reconciliation, mapping resolution, or financial calculation is introduced.
 
 Phase C is closed. The next implementation phase is Phase D — Source Reconciliation & Mapping Workflow.
+
+## Phase E status
+
+The Company 2000 Engine 1 contract is implemented for ADUM and PASAR with
+exact Decimal roll-ups, runtime effective-mapping validation, adjustment and
+source lineage, deterministic snapshots, versioned/atomic calculation runs,
+read APIs and the provisional monthly workspace. Derivatif is excluded.
+
+The authoritative July 2026 arithmetic contract is automated. The confidential
+golden workbook fixture is not stored in this repository, so the real workbook
+end-to-end gate remains pending. Phase F must not begin until that gate passes.
 
 ## Phase D status
 
