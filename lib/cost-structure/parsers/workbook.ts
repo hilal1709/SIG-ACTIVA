@@ -40,7 +40,7 @@ async function loadWorkbook(bytes: Uint8Array): Promise<ExcelJS.Workbook> {
   const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const workbook = new ExcelJS.Workbook();
   try {
-    await workbook.xlsx.load(buffer);
+    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
     return workbook;
   } catch (primaryError) {
     // Some SAP-generated XLSX packages contain optional OOXML parts that Excel/SheetJS tolerate
@@ -50,7 +50,7 @@ async function loadWorkbook(bytes: Uint8Array): Promise<ExcelJS.Workbook> {
       const source = XLSX.read(buffer, { type: 'buffer', cellFormula: true, cellDates: false });
       const normalized = XLSX.write(source, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
       const fallback = new ExcelJS.Workbook();
-      await fallback.xlsx.load(normalized);
+      await fallback.xlsx.load(normalized as unknown as Parameters<typeof fallback.xlsx.load>[0]);
       return fallback;
     } catch {
       throw primaryError;
