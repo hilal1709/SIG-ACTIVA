@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/service';
+import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/readiness';
 
 const money = (value: { toFixed(digits: number): string }) => value.toFixed(2);
 

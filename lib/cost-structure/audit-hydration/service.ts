@@ -1,26 +1,12 @@
 import 'server-only';
 import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { parseWorkbook } from '@/lib/cost-structure/parsers';
 import { costStructureStorage } from '@/lib/cost-structure/storage/supabase-storage';
+import { REQUIRED_AUDIT_CODES } from './readiness';
 
 const AUDIT_PREFIX = 'AUDIT_';
-const REQUIRED_AUDIT_CODES: Record<string, readonly string[]> = {
-  '2000': ['AUDIT_SI', 'AUDIT_RINCIAN'],
-  '7000': ['AUDIT_GHOPO', 'AUDIT_DERIV', 'AUDIT_RINCIAN', 'AUDIT_CC_DRV', 'AUDIT_SI2000_DRV'],
-};
-
-export async function getAuditSnapshotReadiness(uploadId: number, companyCode: string) {
-  const rows = await prisma.costSourceRow.findMany({
-    where: { uploadId, logicalSourceCode: { startsWith: AUDIT_PREFIX } },
-    select: { logicalSourceCode: true },
-    distinct: ['logicalSourceCode'],
-  });
-  const present = new Set(rows.map((row) => row.logicalSourceCode));
-  const required = [...(REQUIRED_AUDIT_CODES[companyCode] ?? [])];
-  const missing = required.filter((code) => !present.has(code));
-  return { ready: missing.length === 0, required, present: [...present].sort(), missing };
-}
 
 /**
  * One-time maintenance operation for uploads created before audit-only parser persistence existed.
@@ -30,17 +16,18 @@ export async function getAuditSnapshotReadiness(uploadId: number, companyCode: s
 export async function hydrateAuditSnapshot(periodId: number, userId: number) {
   const period = await prisma.costPeriod.findUnique({
     where: { id: periodId },
-    select: {
-      id: true,
+    include: {
       company: { select: { companyCode: true } },
       activeCalculationRun: { select: { uploadId: true } },
+      uploads: { where: { isActiveVersion: true }, orderBy: { version: 'desc' }, take: 1 },
     },
   });
   if (!period) throw new Error('Periode tidak ditemukan.');
 
-  const upload = period.activeCalculationRun
-    ? await prisma.costUpload.findUnique({ where: { id: period.activeCalculationRun.uploadId } })
-    : await prisma.costUpload.findFirst({ where: { periodId, isActiveVersion: true }, orderBy: { version: 'desc' } });
+  const activeUploadId = period.activeCalculationRun?.uploadId;
+  const upload = activeUploadId
+    ? (period.uploads.find((item) => item.id === activeUploadId) ?? await prisma.costUpload.findUnique({ where: { id: activeUploadId } }))
+    : period.uploads[0];
   if (!upload) throw new Error('Upload authoritative tidak ditemukan.');
 
   const bytes = await costStructureStorage.download(upload.storageKey);
@@ -56,22 +43,21 @@ export async function hydrateAuditSnapshot(periodId: number, userId: number) {
 
   await prisma.$transaction(async (tx) => {
     await tx.costSourceRow.deleteMany({ where: { uploadId: upload.id, logicalSourceCode: { startsWith: AUDIT_PREFIX } } });
-    for (let offset = 0; offset < auditRows.length; offset += 500) {
-      await tx.costSourceRow.createMany({
-        data: auditRows.slice(offset, offset + 500).map((row) => ({
-          ...row,
-          uploadId: upload.id,
-          amount: null,
-          coaId: null,
-          coaCodeRaw: null,
-          amountRaw: null,
-          descriptionRaw: null,
-          sourceGroupRaw: null,
-          mappingStatus: 'AUDIT_ONLY',
-          rawDataJson: row.rawDataJson,
-        })),
-      });
-    }
+    const data: Prisma.CostSourceRowCreateManyInput[] = auditRows.map((row) => ({
+      uploadId: upload.id,
+      logicalSourceCode: row.logicalSourceCode,
+      originalSheetName: row.originalSheetName,
+      sourceRowNumber: row.sourceRowNumber,
+      coaCodeRaw: null,
+      coaId: null,
+      descriptionRaw: null,
+      amountRaw: null,
+      amount: null,
+      sourceGroupRaw: null,
+      rawDataJson: row.rawDataJson,
+      mappingStatus: 'AUDIT_ONLY',
+    }));
+    for (let offset = 0; offset < data.length; offset += 500) await tx.costSourceRow.createMany({ data: data.slice(offset, offset + 500) });
     await tx.costAuditLog.create({
       data: {
         userId,
