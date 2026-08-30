@@ -1,5 +1,6 @@
 import 'server-only';
 import type { WorkbookStorage } from './types';
+import { resolveSupabaseStorageSignedUrl } from './signed-url';
 
 const bucket = process.env.COST_STRUCTURE_STORAGE_BUCKET || 'cost-structure-source';
 
@@ -19,8 +20,11 @@ export const costStructureStorage: WorkbookStorage = {
   async createSignedUpload(objectKey) {
     const response=await storageFetch(`/object/upload/sign/${bucket}/${encodeURI(objectKey)}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({upsert:false})});
     if(!response.ok) throw new Error(`Storage signed upload failed (${response.status})`);
-    const data=await response.json() as {url?:string;token?:string}; const token=data.token||new URL(data.url!,config().url).searchParams.get('token')||'';
-    return { signedUrl: new URL(data.url!, config().url).toString(), token };
+    const data=await response.json() as {url?:string;token?:string};
+    const signedUrl=resolveSupabaseStorageSignedUrl(config().url,data.url||'');
+    const token=data.token||new URL(signedUrl).searchParams.get('token')||'';
+    if(!token) throw new Error('Supabase Storage did not return a signed upload token');
+    return { signedUrl, token };
   },
   async download(objectKey) {
     const response=await storageFetch(`/object/${bucket}/${encodeURI(objectKey)}`); if(!response.ok) throw new Error(`Storage download failed (${response.status})`); return new Uint8Array(await response.arrayBuffer());
