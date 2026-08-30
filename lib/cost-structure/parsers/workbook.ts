@@ -1,11 +1,13 @@
 import ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
 import { parseAmount } from './amount';
 import { detectSource, normalizeLabel, sourceDefinitions } from './source-registry';
 import type { LogicalSourceCode, ParsedWorkbook, ParsedSourceRow } from './types';
 
-const COA = ['ACCOUNT', 'ACCOUNT CODE', 'G/L ACCOUNT', 'GL ACCOUNT', 'COST ELEMENT', 'COA', 'KODE AKUN', 'AKUN', 'KODE', 'CE'];
-const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL DESCRIPTION', 'NAMA AKUN', 'DESKRIPSI', 'DESCR', 'COST ELEMENTS'];
-const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'VALUE', 'NILAI', 'BALANCE', 'SALDO', 'ACT AMT'];
+// Prefer the authoritative raw SAP columns before helper/formula columns when both are present.
+const COA = ['ACCOUNT', 'ACCOUNT CODE', 'G/L ACCOUNT', 'GL ACCOUNT', 'COST ELEMENTS', 'COST ELEMENT', 'COA', 'KODE AKUN', 'AKUN', 'KODE', 'CE'];
+const DESC = ['ACCOUNT DESCRIPTION', 'DESCRIPTION', 'G/L ACCOUNT LONG TEXT', 'GL DESCRIPTION', 'NAMA AKUN', 'DESKRIPSI', 'DESCR'];
+const AMOUNT = ['AMOUNT', 'ACTUAL', 'ACTUAL AMOUNT', 'ACT COSTS', 'VALUE', 'NILAI', 'BALANCE', 'SALDO', 'ACT AMT'];
 const COA_REQUIRED = new Set<LogicalSourceCode>(['TB', 'CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']);
 const RAW_FALLBACK = new Set<LogicalSourceCode>(['COAL', 'CLINKER_PURCHASE', 'SOLAR_PP_ORDER', 'OA_STAT']);
 
@@ -16,6 +18,45 @@ const text = (value: unknown): string | null => {
 };
 
 const indexOf = (row: string[], aliases: string[]) => row.findIndex((value) => aliases.includes(normalizeLabel(value)));
+
+function extractCoa(value: unknown, header: string): string | null {
+  const raw = text(value);
+  if (!raw) return null;
+  if (header === 'COST ELEMENTS' || header === 'COST ELEMENT') {
+    // SAP Cost Elements cells are authoritative and begin with the 8-digit account followed by text.
+    const match = raw.match(/^\s*(\d{8})(?:\s|$)/);
+    return match?.[1] ?? null;
+  }
+  return raw;
+}
+
+function descriptionFromCostElement(value: unknown): string | null {
+  const raw = text(value);
+  if (!raw) return null;
+  return raw.replace(/^\s*\d{8}\s*/, '').trim() || raw;
+}
+
+async function loadWorkbook(bytes: Uint8Array): Promise<ExcelJS.Workbook> {
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+    return workbook;
+  } catch (primaryError) {
+    // Some SAP-generated XLSX packages contain optional OOXML parts that Excel/SheetJS tolerate
+    // but ExcelJS rejects. Re-serializing with the already-installed SheetJS library strips only
+    // unsupported package metadata; source cell values/formulas remain input data, not calculations.
+    try {
+      const source = XLSX.read(buffer, { type: 'buffer', cellFormula: true, cellDates: false });
+      const normalized = XLSX.write(source, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+      const fallback = new ExcelJS.Workbook();
+      await fallback.xlsx.load(normalized as unknown as Parameters<typeof fallback.xlsx.load>[0]);
+      return fallback;
+    } catch {
+      throw primaryError;
+    }
+  }
+}
 
 function preserveRawRows(sheet: ExcelJS.Worksheet, code: LogicalSourceCode): ParsedSourceRow[] {
   const rows: ParsedSourceRow[] = [];
@@ -39,8 +80,7 @@ function preserveRawRows(sheet: ExcelJS.Worksheet, code: LogicalSourceCode): Par
 }
 
 export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Promise<ParsedWorkbook> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(bytes as never);
+  const workbook = await loadWorkbook(bytes);
   const rows: ParsedSourceRow[] = [];
   const issues: ParsedWorkbook['issues'] = [];
   const sources: ParsedWorkbook['sources'] = [];
@@ -113,12 +153,17 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
     }
 
     const headers = (sheet.getRow(headerRow).values as unknown[]).slice(1).map((value, index) => text(value) || `COLUMN_${index + 1}`);
+    const coaHeader = coa >= 0 ? normalizeLabel(headers[coa]) : '';
     let count = 0;
     for (let rowNumber = headerRow + 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
       const values = (sheet.getRow(rowNumber).values as unknown[]).slice(1);
       if (values.every((value) => text(value) === null)) continue;
-      const coaRaw = coa >= 0 ? text(values[coa]) : null;
-      const descriptionRaw = desc >= 0 ? text(values[desc]) : null;
+      const coaRaw = coa >= 0 ? extractCoa(values[coa], coaHeader) : null;
+      const descriptionRaw = desc >= 0
+        ? text(values[desc])
+        : (coaHeader === 'COST ELEMENTS' || coaHeader === 'COST ELEMENT')
+          ? descriptionFromCostElement(values[coa])
+          : null;
       const amountRaw = text(values[amount]);
       const parsedAmount = parseAmount(
         typeof values[amount] === 'object' && values[amount] && 'result' in (values[amount] as object)
@@ -126,7 +171,7 @@ export async function parseWorkbook(bytes: Uint8Array, companyCode: string): Pro
           : values[amount],
       );
 
-      // SAP exports may carry formula tails where only Act Amt=0 remains below the actual report.
+      // SAP exports may carry formula tails where only amount=0 remains below the actual report.
       // With neither a source COA nor description these are layout artifacts, not accounting rows.
       if (COA_REQUIRED.has(definition.code) && !coaRaw && !descriptionRaw && parsedAmount === '0') continue;
 
