@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/service';
 
 const money = (value: { toFixed(digits: number): string }) => value.toFixed(2);
 
@@ -9,7 +10,7 @@ export async function getCostStructureDashboard(periodId: number) {
       company: { select: { companyCode: true, companyName: true } },
       activeCalculationRun: {
         include: {
-          upload: { select: { version: true, originalFileName: true, fileHashSha256: true } },
+          upload: { select: { id: true, version: true, originalFileName: true, fileHashSha256: true } },
           results: { include: { costGroup: true, nature: true }, orderBy: [{ costGroup: { displayOrder: 'asc' } }, { nature: { displayOrder: 'asc' } }] },
           actualLines: { include: { costGroup: true, nature: true, coa: true, sourceRow: { select: { logicalSourceCode: true, originalSheetName: true, sourceRowNumber: true } } }, orderBy: { id: 'asc' } },
         },
@@ -18,6 +19,7 @@ export async function getCostStructureDashboard(periodId: number) {
   });
   if (!period?.activeCalculationRun) return null;
   const run = period.activeCalculationRun;
+  const auditSnapshot = await getAuditSnapshotReadiness(run.upload.id, period.company.companyCode);
   const totalCodes = period.company.companyCode === '7000' ? ['TOTAL_HPP', 'TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'] : ['TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'];
   const totals = Object.fromEntries(run.results.filter((r) => totalCodes.includes(r.resultCode)).map((r) => [r.resultCode, money(r.amount)]));
   const controls = run.results.filter((r) => r.resultType === 'CONTROL').map((r) => ({ code: r.resultCode, status: r.reconciliationStatus, difference: r.reconciliationDifference ? money(r.reconciliationDifference) : null }));
@@ -40,7 +42,8 @@ export async function getCostStructureDashboard(periodId: number) {
   return {
     period: { id: period.id, companyCode: period.company.companyCode, companyName: period.company.companyName, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, status: period.status, finalizedAt: period.finalizedAt?.toISOString() ?? null },
     run: { id: run.id, runNumber: run.runNumber, status: run.status, isActive: run.isActive, ruleSetVersion: run.ruleSetVersion, calculatedAt: run.completedAt?.toISOString() ?? null },
-    upload: { version: run.upload.version, fileName: run.upload.originalFileName },
+    upload: { id: run.upload.id, version: run.upload.version, fileName: run.upload.originalFileName },
+    auditSnapshot,
     totals, controls, natures,
   };
 }
