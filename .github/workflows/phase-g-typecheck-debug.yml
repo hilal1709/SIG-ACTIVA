@@ -2,6 +2,8 @@ name: Phase G Typecheck Debug
 on:
   push:
     branches: [fix/phase-g-final-db-only]
+  pull_request:
+    branches: [main]
 jobs:
   typecheck:
     runs-on: ubuntu-latest
