@@ -312,9 +312,16 @@ export async function refreshPeriodReadiness(uploadId: number) {
   const report = await getPhaseDReport(uploadId);
   if (!report) throw new Error('Upload tidak ditemukan.');
   if (report.upload.period.status === 'FINALIZED') throw new Error('Periode FINALIZED tidak dapat diubah.');
+
+  const currentStatus = report.upload.period.status;
+  const preserveHigherReadyState = report.ready && ['CALCULATED', 'COST_STRUCTURE_RECONCILED'].includes(currentStatus);
+  const nextStatus = report.ready
+    ? preserveHigherReadyState ? currentStatus : 'SOURCE_RECONCILED'
+    : 'SOURCE_VALIDATION';
+
   await prisma.costPeriod.update({
     where: { id: report.upload.periodId },
-    data: { status: report.ready ? 'SOURCE_RECONCILED' : 'SOURCE_VALIDATION' },
+    data: { status: nextStatus },
   });
   return report;
 }
