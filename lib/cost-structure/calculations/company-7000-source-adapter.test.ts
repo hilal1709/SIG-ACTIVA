@@ -50,10 +50,15 @@ function fixture() {
   nextId = 1000; mappings.length = 0;
   const rows: AdapterSourceRow[] = [];
   rows.push(row('TB', '51100001', '1000', 3), row('TB', '51300003', '100', 4));
-  const tbFuel = row('TB', '62100001', '500', 5); const tbElec = row('TB', '62200001', '100', 6); const tbLaborA = row('TB', '62300001', '80', 7); const tbLaborB = row('TB', '62300002', '20', 8); const tbSolar = row('TB', '62140001', '10', 9); rows.push(tbFuel, tbElec, tbLaborA, tbLaborB, tbSolar);
+  const tbFuel = row('TB', '62100001', '500', 5); const tbElec = row('TB', '62200001', '100', 6); const tbLaborA = row('TB', '62300001', '80', 7); const tbLaborB = row('TB', '62300002', '20', 8); const tbSolar = row('TB', '62140001', '10', 9);
+  const tb6811 = row('TB', '68110001', '100', 31); const tb681405 = row('TB', '68140005', '20', 32); const tb681406 = row('TB', '68140006', '20', 33); const tb6817 = row('TB', '68170002', '30', 34);
+  rows.push(tbFuel, tbElec, tbLaborA, tbLaborB, tbSolar, tb6811, tb681405, tb681406, tb6817);
   addMap('CC_PROD', tbFuel, 6); addMap('CC_PROD', tbElec, 7); addMap('CC_PROD', tbLaborA, 8); addMap('CC_PROD', tbLaborB, 8); addMap('CC_PROD', tbSolar, 6);
+  addMap('CC_PROD', tb6811, 1); addMap('CC_PROD', tb681405, 1); addMap('CC_PROD', tb681406, 1); addMap('CC_PROD', tb6817, 1);
   rows.push(row('CC_ADUM', '61000001', '0', 10, {}, null));
-  const pasar6811 = row('CC_PASAR', '68110001', '10', 11); const pasar6817 = row('CC_PASAR', '68170002', '20', 12); rows.push(pasar6811, pasar6817); addMap('CC_PASAR', pasar6811, 201, 'EXCLUDE'); addMap('CC_PASAR', pasar6817, 201, 'EXCLUDE');
+  const pasar6811 = row('CC_PASAR', '68110001', '10', 11); const pasar681405 = row('CC_PASAR', '68140005', '0', 35); const pasar681406 = row('CC_PASAR', '68140006', '0', 36); const pasar6817 = row('CC_PASAR', '68170002', '20', 12);
+  rows.push(pasar6811, pasar681405, pasar681406, pasar6817);
+  addMap('CC_PASAR', pasar6811, 201, 'EXCLUDE'); addMap('CC_PASAR', pasar681405, 201, 'EXCLUDE'); addMap('CC_PASAR', pasar681406, 201, 'EXCLUDE'); addMap('CC_PASAR', pasar6817, 201, 'EXCLUDE');
   const whFuel = row('CC_WHRPG', '62110001', '10', 13); const whLabor = row('CC_WHRPG', '62310001', '30', 14); const whInternal = row('CC_WHRPG', '97110001', '5', 15); rows.push(whFuel, whLabor, whInternal); addMap('CC_WHRPG', whFuel, 6); addMap('CC_WHRPG', whLabor, 8); addMap('CC_WHRPG', whInternal, 8, 'EXCLUDE');
   rows.push(row('COAL', null, null, 10, { COLUMN_8: '100.111', COLUMN_9: '30.111' }, null), row('COAL', null, null, 18, { COLUMN_8: '0', COLUMN_9: '0' }, null));
   rows.push(
@@ -68,6 +73,28 @@ function fixture() {
   for (let sourceRowNumber = 63; sourceRowNumber <= 69; sourceRowNumber++) rows.push(row('CLINKER_PURCHASE', null, null, sourceRowNumber, { COLUMN_6: '0' }, null));
   return { companyCode: '7000' as const, fiscalPeriod: 8, rows, mappings, natures };
 }
+
+test('adapter applies final OA PASAR allocation to HPP by COA and preserves lineage', () => {
+  const input = buildCompany7000Input(fixture());
+  const expected = new Map([
+    ['68110001', '89.00'],
+    ['68140005', '9.00'],
+    ['68140006', '11.00'],
+    ['68170002', '10.00'],
+  ]);
+  for (const [coa, amount] of expected) {
+    const line = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === coa);
+    assert.ok(line, `missing HPP allocation line for ${coa}`);
+    assert.equal(line.amount.toFixed(2), amount);
+  }
+  const line6811 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68110001')!;
+  assert.equal(String(line6811.sourceReference?.pasarRaw), '10');
+  assert.equal(String(line6811.sourceReference?.pasarFinal), '11');
+  assert.equal(String(line6811.sourceReference?.pasarAllocationRuleCode), 'OA_7000_EXISTING');
+  const line681405 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68140005')!;
+  assert.equal(String(line681405.sourceReference?.pasarFinal), '5');
+  assert.equal(String(line681405.sourceReference?.derivativeExcluded), '6');
+});
 
 test('adapter applies WHRPG and coal corrections once per Nature and preserves current-period OA lineage', () => {
   const input = buildCompany7000Input(fixture());

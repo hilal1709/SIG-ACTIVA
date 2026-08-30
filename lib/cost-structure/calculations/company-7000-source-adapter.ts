@@ -8,6 +8,7 @@ const D = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
 const zero = () => D(0);
 const money = (value: Prisma.Decimal) => value.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 const sum = (values: Prisma.Decimal[]) => values.reduce((total, value) => total.add(value), zero());
+const uniqueRows = (rows: AdapterSourceRow[]) => [...new Map(rows.map((row) => [row.id, row])).values()];
 
 export type AdapterSourceRow = {
   id: number;
@@ -162,7 +163,13 @@ function buildOa(input: Company7000AdapterInput, pasar: Map<string, AggregatedCo
     dep(tx681406.amount, 'OA_STAT', tx681406.rows, { gl: '68140006', role: 'TRANSACTION' }),
     dep(cc6817.amount, 'CC_PASAR', cc6817.rows, { gl: '68170002', role: 'CC_PASAR_DIRECT' }),
   ];
-  return { components, derivative: { amount: derivative.amount, rows: derivative.rows } };
+  const pasarAllocations = new Map<string, { amount: Prisma.Decimal; rows: AdapterSourceRow[] }>([
+    ['68110001', { amount: money(cc6811.amount.add(summary6811.amount)), rows: uniqueRows([...cc6811.rows, ...summary6811.rows]) }],
+    ['68140005', { amount: money(summary681405.amount.add(tx681405.amount)), rows: uniqueRows([...summary681405.rows, ...tx681405.rows]) }],
+    ['68140006', { amount: money(summary681406.amount.add(tx681406.amount)), rows: uniqueRows([...summary681406.rows, ...tx681406.rows]) }],
+    ['68170002', { amount: money(cc6817.amount), rows: uniqueRows([...cc6817.rows]) }],
+  ]);
+  return { components, pasarAllocations, derivative: { amount: derivative.amount, rows: derivative.rows } };
 }
 
 export function buildCompany7000Input(input: Company7000AdapterInput): Company7000Input {
@@ -254,17 +261,27 @@ export function buildCompany7000Input(input: Company7000AdapterInput): Company70
   for (const coa of [...tb.keys()].filter((value) => value.startsWith('6'))) {
     const base = tb.get(coa)!;
     const adumAmount = adum.get(coa)?.amount ?? zero();
-    const pasarAmount = pasar.get(coa)?.amount ?? zero();
+    const rawPasarAmount = pasar.get(coa)?.amount ?? zero();
+    const oaPasarAllocation = oa.pasarAllocations.get(coa);
+    const pasarAmount = oaPasarAllocation?.amount ?? rawPasarAmount;
     const derivative = coa === '68140005' ? oa.derivative.amount : zero();
     const amount = money(base.amount.sub(adumAmount).sub(pasarAmount).sub(derivative));
     const classifier = { ...base.rows[0], coaId: base.coaId };
     const mapping = resolveMapping(input, 'CC_PROD', classifier, 'HPP', amount);
     if (!mapping || mapping.mappingAction === 'EXCLUDE' || amount.isZero()) continue;
-    const refs = [...base.rows, ...(adum.get(coa)?.rows ?? []), ...(pasar.get(coa)?.rows ?? []), ...(coa === '68140005' ? oa.derivative.rows : [])];
+    const refs = uniqueRows([
+      ...base.rows,
+      ...(adum.get(coa)?.rows ?? []),
+      ...(pasar.get(coa)?.rows ?? []),
+      ...(oaPasarAllocation?.rows ?? []),
+      ...(coa === '68140005' ? oa.derivative.rows : []),
+    ]);
     sourceLines.push(makeLine(classifier, mapping, amount, 'BASE_HPP_BY_COA_7000', refs, {
       tb: base.amount.toString(),
       adum: adumAmount.toString(),
-      pasar: pasarAmount.toString(),
+      pasarRaw: rawPasarAmount.toString(),
+      pasarFinal: pasarAmount.toString(),
+      ...(oaPasarAllocation ? { pasarAllocationRuleCode: 'OA_7000_EXISTING' } : {}),
       derivativeExcluded: derivative.toString(),
       ...(coa === '68140005' ? { derivativeRuleCode: 'DERIVATIVE_EXCLUDED_7000' } : {}),
     }));
