@@ -46,6 +46,8 @@ Dashboard reads only the active persisted run and presents:
 - Reconcile / Finalize / Reopen workflow actions protected by existing API roles;
 - official/draft Excel export.
 
+For historical uploads created before audit-only persistence existed, the dashboard shows an ADMIN-only `Hydrate Audit Snapshot` action. That maintenance operation reads the authoritative private workbook once, verifies its SHA-256 against `CostUpload`, persists only `AUDIT_*` rows, and does not alter accounting amounts, mappings, active calculation run, or period status. It is never called by normal dashboard reads or by Excel export.
+
 ## Audit-only source persistence
 
 Some workbook sheets are required for manual audit/export but intentionally have zero accounting contribution. They are persisted as optional audit-only `CostSourceRow` snapshots and never enter mapping/reconciliation/Engine 1:
@@ -64,7 +66,7 @@ Some workbook sheets are required for manual audit/export but intentionally have
 - `cc_drv` → `AUDIT_CC_DRV`
 - `SI2000_DRV` → `AUDIT_SI2000_DRV`
 
-Derivative/audit-only rows have no COA mapping amount semantics and zero effect on HPP/ADUM/PASAR/TOTAL.
+Derivative/audit-only rows have no COA mapping amount semantics and zero effect on HPP/ADUM/PASAR/TOTAL. New uploads are persisted with `mappingStatus=AUDIT_ONLY` for these rows.
 
 ## Company 7000 official export contract
 
