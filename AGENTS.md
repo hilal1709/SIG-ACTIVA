@@ -16,6 +16,29 @@ Before changing code for this module, read all documents under `docs/cost-struct
 
 Do not replace the existing auth stack with Supabase Auth or introduce direct browser-to-database access.
 
+## Database runtime and migration authority
+
+Read `docs/cost-structure-fluctuation/DATABASE_RUNTIME.md` before any database/schema task.
+
+The current production architecture is explicitly:
+
+```text
+Next.js/API → Prisma Client → pg/PrismaPg → Supabase PostgreSQL
+```
+
+Prisma Client is still the active runtime ORM and must not be removed or bypassed merely because the database is hosted in Supabase.
+
+Production did not have an active Prisma `_prisma_migrations` ledger for the legacy schema when audited on 2026-08-30. Starting with Cost Structure Phase B, approved production DDL is tracked/applied through controlled Supabase migration tooling.
+
+Critical rules:
+
+- do not run the entire historical `prisma migrate deploy` chain against production;
+- do not run `prisma migrate reset` against production;
+- do not run `prisma db push` against production;
+- do not fabricate legacy `_prisma_migrations` records without a separately approved baselining project;
+- repository Prisma schema/migration SQL must remain synchronized with the approved Supabase production DDL;
+- use the existing `lib/prisma.ts` server-side runtime pattern for application queries.
+
 ## Critical isolation rule
 
 The existing `Fluktuasi OI/EXP` module is a different business process and must remain functional.
