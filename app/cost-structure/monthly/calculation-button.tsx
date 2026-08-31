@@ -15,3 +15,4 @@ export default function CalculationButton({ periodId, rerun }: { periodId: numbe
   }
   return <div><button type="button" disabled={busy} onClick={calculate} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Menghitung…' : rerun ? 'Rerun' : 'Run Calculation'}</button>{error && <p className="mt-2 text-xs text-red-600">{error}</p>}</div>;
 }
+
