@@ -25,5 +25,5 @@ export const isBlocked = (period: MonthlyPeriod) => period.run?.status === 'FAIL
 export const displayGroupCodes = (companyCode: string) => companyCode === '7000' ? ['HPP', 'ADUM', 'PASAR', 'TOTAL'] : ['ADUM', 'PASAR', 'TOTAL'];
 export const initialExpandedPeriod = (periods: MonthlyPeriod[]) => periods.find(isBlocked)?.id ?? null;
 export const nextExpandedPeriod = (current: number | null, selected: number) => current === selected ? null : selected;
-export const canShowCalculationAction = (period: MonthlyPeriod) =>
-  ['2000', '7000'].includes(period.companyCode) && ['SOURCE_RECONCILED', 'CALCULATED'].includes(period.status);
+export const canOpenProcess = (period: MonthlyPeriod) =>
+  Boolean(period.upload) && period.status !== 'FINALIZED' && ['2000', '7000'].includes(period.companyCode);
