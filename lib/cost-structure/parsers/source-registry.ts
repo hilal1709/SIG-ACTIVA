@@ -13,13 +13,15 @@ const definitions: Definition[] = [
   { code:'OA_STAT', companies:['7000'], required:true, aliases:['OA STAT','OA_STAT','STATISTICAL PASAR'] },
   { code:'ADJUSTMENT', companies:['2000','7000'], required:false, aliases:['ADJUSTMENT'] },
 
-  // Audit-only worksheet snapshots. They are persisted for DB-only Excel export and never
-  // participate in source reconciliation, mapping completeness, or Engine 1 contribution.
+  // Raw worksheet snapshots remain DB-exportable. Company 2000 Engine 1 V2 additionally
+  // adapts persisted Rincian/CC_DRV cells into calculation-support lineage.
   { code:'AUDIT_SI', companies:['2000'], required:false, aliases:['SI'] },
   { code:'AUDIT_GHOPO', companies:['7000'], required:false, aliases:['GHOPO'] },
   { code:'AUDIT_DERIV', companies:['7000'], required:false, aliases:['DERIV'] },
-  { code:'AUDIT_RINCIAN', companies:['2000','7000'], required:false, aliases:['RINCIAN BIAYA'] },
-  { code:'AUDIT_CC_DRV', companies:['2000','7000'], required:false, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
+  { code:'AUDIT_RINCIAN', companies:['2000'], required:true, aliases:['RINCIAN BIAYA'] },
+  { code:'AUDIT_RINCIAN', companies:['7000'], required:false, aliases:['RINCIAN BIAYA'] },
+  { code:'AUDIT_CC_DRV', companies:['2000'], required:true, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
+  { code:'AUDIT_CC_DRV', companies:['7000'], required:false, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
   { code:'AUDIT_SI2000_DRV', companies:['7000'], required:false, aliases:['SI2000 DRV','SI2000_DRV'] },
 ];
 export const normalizeLabel = (v: string) => v.trim().toUpperCase().replace(/[\s_.-]+/g, ' ');

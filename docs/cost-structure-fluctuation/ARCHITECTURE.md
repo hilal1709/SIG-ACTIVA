@@ -317,3 +317,13 @@ Every phase must run regression checks for existing:
 - user/security pages.
 
 Do not rename/remove legacy routes or Prisma models as part of this module unless separately approved.
+
+## 19. Company 2000 Engine 1 SI adapter (V2)
+
+V2 reads only persisted `CostSourceRow` data. `AUDIT_RINCIAN` remains a raw DB-export snapshot and
+is adapted to COA-level ADM/PASAR deltas. `AUDIT_CC_DRV` is adapted from `COLUMN_29`/`COLUMN_30`
+into negative PASAR lines. Actual lines retain real COA/source-row lineage and rule codes for Rincian,
+derivative, and manual adjustments. Dashboard/export never reparses Storage.
+
+The Engine 2 direction is final SI for 2000 and persisted GHoPO + DERIV for 7000. Existing Phase H
+code is intentionally unchanged pending its dedicated source-basis refactor.

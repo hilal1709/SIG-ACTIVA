@@ -33,9 +33,17 @@ test('zero unmapped is harmless and adjustment is exact', () => {
   assert.equal(result.actualLines.length, 1); assert.equal(result.actualLines[0].lineType, 'ADJUSTMENT'); assert.equal(result.companyTotal.toString(), '-0.01');
 });
 
-test('CC_PROD and Derivatif injections have zero effect and rerun is deterministic', () => {
+test('source-specific 676 mapping keeps ADUM tax while PASAR rolls into UUA', () => {
+  const result = calculateCompany2000({ sourceLines: [
+    line({ coaCode:'67630009', groupCode:'ADUM', natureCode:'N09', amount:d(10) }),
+    line({ sourceRowId:2, coaCode:'67630009', logicalSourceCode:'CC_PASAR', groupCode:'PASAR', costGroupId:21, natureId:31, natureCode:'N07', amount:d(20) }),
+  ]});
+  assert.deepEqual(result.natureTotals.map((item)=>[item.groupCode,item.natureCode,item.amount.toString()]),[['ADUM','N09','10'],['PASAR','N07','20']]);
+});
+
+test('unrecognized sources have zero effect and rerun is deterministic', () => {
   const input = [line()]; const base = calculateCompany2000({ sourceLines: input });
-  for (const source of ['CC_PROD', 'DERIVATIF', 'CC_DERIVATIF', 'CC_DRV']) {
+  for (const source of ['CC_PROD', 'DERIVATIF', 'CC_DERIVATIF']) {
     const injected = calculateCompany2000({ sourceLines: [...input, line({ sourceRowId: 99, logicalSourceCode: source, amount: d('999999999999.99') })] });
     assert.equal(injected.companyTotal.toString(), base.companyTotal.toString());
   }
@@ -43,9 +51,22 @@ test('CC_PROD and Derivatif injections have zero effect and rerun is determinist
 });
 
 test('Company 2000 authoritative golden arithmetic contract', () => {
-  const result = calculateCompany2000({ sourceLines: [line({ amount: d('107796550061') }), line({ sourceRowId: 2, logicalSourceCode: 'CC_PASAR', groupCode: 'PASAR', costGroupId: 21, natureId: 31, natureCode: 'SELLING', amount: d('17900551142') })] });
-  assert.equal(result.groupTotals.PASAR.toFixed(0), '17900551142');
-  assert.equal(result.groupTotals.ADUM.toFixed(0), '107796550061');
-  assert.equal(result.companyTotal.toFixed(0), '125697101203');
+  let id = 0;
+  const nature = (groupCode: 'ADUM'|'PASAR', natureCode: string, amount: string, logicalSourceCode = groupCode === 'ADUM' ? 'CC_ADUM' : 'CC_PASAR', ruleCode?: string) => line({ sourceRowId: ++id, logicalSourceCode, groupCode, costGroupId: groupCode === 'ADUM' ? 20 : 21, natureId: ++id + 100, natureCode, amount: d(amount), ruleCode });
+  const result = calculateCompany2000({ derivativeControlTotal:d('1488906545'), sourceLines: [
+    nature('ADUM','N01','180971720'), nature('ADUM','N02','37590056'), nature('ADUM','N02','-388','AUDIT_RINCIAN','RINCIAN_DELTA_ADUM'), nature('ADUM','N03','700733597'),
+    nature('ADUM','N04','49865167866'), nature('ADUM','N04','40572754'), nature('ADUM','N04','7035484'), nature('ADUM','N05','1998787267'), nature('ADUM','N06','5514747437'), nature('ADUM','N07','44532279743'), nature('ADUM','N08','954509200'), nature('ADUM','N09','4011763175'),
+    nature('PASAR','N02','117483235'), nature('PASAR','N02','-12540370','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'), nature('PASAR','N03','220626'),
+    nature('PASAR','N04','8051373527'), nature('PASAR','N04','9500000'), nature('PASAR','N04','-1115041922','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
+    nature('PASAR','N06','1528950213'), nature('PASAR','N06','16270603'), nature('PASAR','N07','1938877955'), nature('PASAR','N07','65679295'), nature('PASAR','N07','-142428608','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
+    nature('PASAR','N08','6197966291'), nature('PASAR','N08','-168549750','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
+  ] });
+  assert.equal(result.groupTotals.ADUM.toFixed(0), '107844157911');
+  assert.equal(result.groupTotals.PASAR.toFixed(0), '16487761095');
+  assert.equal(result.companyTotal.toFixed(0), '124331919006');
+  assert.equal(result.controls.find((control)=>control.resultCode==='CC_DRV_DETAIL_RECONCILIATION')?.amount.toFixed(0),'1488906545');
+  const total = (group: string, code: string) => result.natureTotals.filter((item) => item.groupCode === group && item.natureCode === code).reduce((sum,item)=>sum.add(item.amount),d(0)).toFixed(0);
+  assert.equal(total('ADUM','N02'),'37589668'); assert.equal(total('ADUM','N04'),'49912776104');
+  assert.equal(total('PASAR','N02'),'104942865'); assert.equal(total('PASAR','N04'),'6945831605'); assert.equal(total('PASAR','N06'),'1545220816'); assert.equal(total('PASAR','N07'),'1862128642'); assert.equal(total('PASAR','N08'),'6029416541');
+  assert.ok(result.controls.filter((control)=>control.resultCode.endsWith('RECONCILIATION')).every((control)=>control.difference.isZero()));
 });
-

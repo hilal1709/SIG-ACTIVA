@@ -1,5 +1,11 @@
 # Golden Dataset — Engine 1
 
+## Company 2000 — July 2026 superseding SI golden
+
+The former CC-only result remains historical evidence but is superseded for V2 runs. Raw IDR:
+ADUM `107844157911`, PASAR `16487761095`, total `124331919006`. Rincian `125820825551` less
+reconciled CC derivative `1488906545` equals final SI.
+
 ## Company 7000 — July 2026 Phase F arithmetic fixture
 
 The code-level golden fixture asserts HPP `413,169,722,810.00`, ADUM `11,667,383,975.00`, PASAR regular `9,572,860,045.00`, OA `72,068,727,025.00`, total PASAR `81,641,587,070.00`, and total company `506,478,693,855.00`. Batubara normalizes to `93,152,232,023.32`, Batubara Inbound to `41,023,853,211.68`, and Selisih Persediaan to `-21,153,010,152.00`; HPP reconciliation is exactly zero.

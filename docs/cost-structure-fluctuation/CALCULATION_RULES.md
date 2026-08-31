@@ -1,5 +1,11 @@
 # Calculation Rules V2
 
+## Company 2000 Engine 1 V2 — superseding SI contract
+
+New runs persist final SI: mapped CC_ADUM/CC_PASAR plus dynamic persisted Rincian-by-COA deltas,
+then reconciled eight-digit CC_DRV details as negative PASAR contributions using PASAR mappings.
+No July-specific amount is production logic; every overlay retains COA/source-row lineage.
+
 ## Phase F — Company 7000 Engine 1 contract
 
 `ENGINE1_7000_V1` implements the deterministic Company 7000 scope `HPP`, `ADUM`, and `PASAR` (with OA inside PASAR). `HPP_TOTAL_7000` subtracts explicitly identified account-group-5 COGS Mortar from the account-group-5 total. `COAL_7000_EXISTING`, `COAL_INBOUND_7000_EXISTING`, and `OA_7000_EXISTING` consume server-resolved dependencies and retain their source-row lineage. `HPP_INVENTORY_DIFF_7000` is a COA-less residual equal to Total HPP less all preceding HPP Natures.

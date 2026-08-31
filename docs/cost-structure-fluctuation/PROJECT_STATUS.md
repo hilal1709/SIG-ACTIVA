@@ -2,6 +2,15 @@
 
 Last updated: 2026-08-31
 
+## Company 2000 SI V2 contract — 2026-08-31
+
+Company 2000 Engine 1 now targets SI reconstruction under `ENGINE1_2000_V2`. Rincian supplies
+corrected pre-derivative evidence and CC_DRV is a negative PASAR offset. The old CC-only golden is
+superseded, not erased. Mapping SQL is review-only and has not been applied; historical runs remain.
+
+Future fluctuation basis is locked as 2000 final SI and 7000 persisted GHoPO + DERIV. This supersedes
+the old derivative-exclusion decision, but Phase H implementation remains pending a dedicated PR.
+
 ## Overall status
 
 ```text
