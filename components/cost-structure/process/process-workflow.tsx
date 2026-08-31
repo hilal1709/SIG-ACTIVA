@@ -18,7 +18,11 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   const update = useCallback((value: CostStructureProcess) => { setProcess(value); onProcessChange?.(value); }, [onProcessChange]);
   const load = useCallback(async () => {
     try { update(await costStructureProcessApi.get(uploadId)); setError(null); networkAttempt.current = 0; }
-    catch (caught) { const e = caught as ProcessApiError; setError({ message: e.message, detail: e.technicalDetail }); }
+    catch (caught) {
+      const e = caught instanceof ProcessApiError ? caught : new ProcessApiError(caught instanceof Error ? caught.message : 'Koneksi proses gagal.');
+      if (e.process) update(e.process);
+      setError({ message: e.message, detail: e.technicalDetail });
+    }
   }, [uploadId, update]);
 
   const advance = useCallback(async () => {
@@ -29,9 +33,16 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
       update(await costStructureProcessApi.get(uploadId));
       setError(null); networkAttempt.current = 0;
     } catch (caught) {
-      const e = caught as ProcessApiError;
-      setError({ message: e.message, detail: e.technicalDetail });
-      networkAttempt.current = Math.min(networkAttempt.current + 1, NETWORK_BACKOFF_MS.length);
+      const e = caught instanceof ProcessApiError ? caught : new ProcessApiError(caught instanceof Error ? caught.message : 'Koneksi proses gagal.');
+      if (e.process) {
+        update(e.process);
+        setError(null);
+        networkAttempt.current = 0;
+      } else {
+        setError({ message: e.message, detail: e.technicalDetail });
+        if (e.retryable) networkAttempt.current = Math.min(networkAttempt.current + 1, NETWORK_BACKOFF_MS.length);
+        else networkAttempt.current = NETWORK_BACKOFF_MS.length;
+      }
     } finally { requestInFlight.current = false; setSubmitting(false); }
   }, [uploadId, update]);
 
