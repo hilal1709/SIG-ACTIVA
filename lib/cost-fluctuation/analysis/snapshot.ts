@@ -16,8 +16,13 @@ const aliases: Record<string, string> = {
   'ongkos angkut fg dan wip':'ongkos angkut fg dan wip', 'selisih persediaan':'selisih persediaan', oa:'oa',
 };
 const canonicalLabel = (value: unknown) => aliases[norm(value)] ?? norm(value);
-const sectionFor = (label: string) => label.includes('beban pokok penjualan') ? 'HPP' : label.includes('umum') && label.includes('administrasi') ? 'ADUM' : label === 'pemasaran' ? 'PASAR' : null;
-const totalFor = (label: string) => label === 'total hpp' ? 'HPP' : label === 'total adum' ? 'ADUM' : label === 'total perniagaan' ? 'PASAR_REGULAR' : null;
+const SECTION_MARKERS: Readonly<Record<string, string>> = {
+  'beban pokok penjualan': 'HPP',
+  'umum administrasi': 'ADUM',
+  pemasaran: 'PASAR',
+};
+const sectionFor = (label: string) => SECTION_MARKERS[label] ?? null;
+const totalFor = (label: string) => label === 'total hpp' ? 'HPP' : label === 'total adum' ? 'ADUM' : label === 'total perniagaan' ? 'PASAR_REGULAR' : label === 'total pasar' || label === 'total pemasaran' ? 'PASAR_TOTAL' : null;
 const amountFrom = (row: PersistedSourceRow) => {
   const raw = (row.rawDataJson && typeof row.rawDataJson === 'object' ? row.rawDataJson : {}) as Record<string, unknown>;
   const value = raw.COLUMN_2;
@@ -26,7 +31,7 @@ const amountFrom = (row: PersistedSourceRow) => {
   catch { throw new FluctuationIntegrityError(`${row.logicalSourceCode} row ${row.sourceRowNumber} has an invalid financial amount.`); }
 };
 
-interface ParsedAudit { values: Map<string, Prisma.Decimal>; totals: Map<string, Prisma.Decimal>; present: boolean }
+interface ParsedAudit { values: Map<string, Prisma.Decimal>; totals: Map<string, Prisma.Decimal> }
 function parseAudit(rows: PersistedSourceRow[], sourceCode: string, allowedLabels: Set<string>, strictUnknown: boolean): ParsedAudit {
   const source = rows.filter((row) => row.logicalSourceCode === sourceCode);
   if (!source.length) throw new FluctuationIntegrityError(`Required ${sourceCode} source is missing from the active calculation run upload.`);
@@ -35,16 +40,24 @@ function parseAudit(rows: PersistedSourceRow[], sourceCode: string, allowedLabel
     const raw = (row.rawDataJson && typeof row.rawDataJson === 'object' ? row.rawDataJson : {}) as Record<string, unknown>;
     const label = norm(raw.COLUMN_1); if (!label) continue;
     const nextSection = sectionFor(label); if (nextSection) { section = nextSection; continue; }
-    const total = totalFor(label); if (total) { totals.set(total, amountFrom(row)); continue; }
+    const total = totalFor(label); if (total) {
+      if (totals.has(total)) throw new FluctuationIntegrityError(`${sourceCode} contains duplicate ${label} controls.`);
+      totals.set(total, amountFrom(row)); continue;
+    }
     const semantic = canonicalLabel(label); const amount = amountFrom(row);
-    if (semantic === 'oa') { values.set('PASAR:oa', amount); continue; }
+    if (semantic === 'oa') {
+      if (values.has('PASAR:oa')) throw new FluctuationIntegrityError(`${sourceCode} contains duplicate OA rows.`);
+      values.set('PASAR:oa', amount); continue;
+    }
     if (!section || !allowedLabels.has(semantic)) {
       if (strictUnknown && !amount.isZero()) throw new FluctuationIntegrityError(`${sourceCode} contains unknown non-zero Nature label "${String(raw.COLUMN_1)}".`);
       continue;
     }
-    values.set(`${section}:${semantic}`, (values.get(`${section}:${semantic}`) ?? ZERO).add(amount));
+    const key = `${section}:${semantic}`;
+    if (values.has(key)) throw new FluctuationIntegrityError(`${sourceCode} contains duplicate Nature label "${String(raw.COLUMN_1)}" in ${section}.`);
+    values.set(key, amount);
   }
-  return { values, totals, present: true };
+  return { values, totals };
 }
 
 function engineGroups(period: PersistedPeriod, basisCode: AnalysisBasisCode): SnapshotGroup[] {
@@ -69,12 +82,26 @@ function engineGroups(period: PersistedPeriod, basisCode: AnalysisBasisCode): Sn
 const natureSemantic = (nature: SnapshotNature) => canonicalLabel(nature.label);
 function assertEngineParity(groups: SnapshotGroup[], audit: ParsedAudit, sourceCode: string) {
   for (const group of groups) for (const nature of group.natures) {
-    const expected = audit.values.get(`${group.code}:${natureSemantic(nature)}`);
-    if (expected !== undefined && !financial(nature.amount).equals(expected)) throw new FluctuationIntegrityError(`${sourceCode} parity failed for ${group.code}/${nature.code}.`);
+    const key = `${group.code}:${natureSemantic(nature)}`;
+    const expected = audit.values.get(key);
+    if (expected === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required Nature ${group.code}/${nature.code}.`);
+    if (!financial(nature.amount).equals(expected)) throw new FluctuationIntegrityError(`${sourceCode} parity failed for ${group.code}/${nature.code}.`);
   }
   for (const group of groups) {
-    const total = audit.totals.get(group.code) ?? (group.code === 'PASAR' ? audit.totals.get('PASAR_REGULAR')?.add(audit.values.get('PASAR:oa') ?? ZERO) : undefined);
-    if (total !== undefined && !financial(group.amount).equals(financial(total))) throw new FluctuationIntegrityError(`${sourceCode} parity failed for Total ${group.code}.`);
+    let total = audit.totals.get(group.code);
+    if (group.code === 'PASAR') {
+      const regular = audit.totals.get('PASAR_REGULAR');
+      if (regular === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required PASAR regular total.`);
+      if (sourceCode === 'AUDIT_GHOPO') {
+        const oa = audit.values.get('PASAR:oa');
+        if (oa === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required OA source.`);
+        total = regular.add(oa);
+        const persistedTotal = audit.totals.get('PASAR_TOTAL');
+        if (persistedTotal !== undefined && !financial(persistedTotal).equals(financial(total))) throw new FluctuationIntegrityError(`${sourceCode} PASAR total does not equal regular plus OA.`);
+      } else total = regular;
+    }
+    if (total === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required Total ${group.code}.`);
+    if (!financial(group.amount).equals(financial(total))) throw new FluctuationIntegrityError(`${sourceCode} parity failed for Total ${group.code}.`);
   }
 }
 
@@ -96,9 +123,12 @@ function derivBasis(template: SnapshotGroup[], audit: ParsedAudit): SnapshotBasi
 
 export function assertSnapshotReconciles(snapshot: AnalyticalSnapshot) {
   if (!snapshot.bases.reduce((s, b) => s.add(b.amount), ZERO).equals(snapshot.amount)) throw new FluctuationIntegrityError(`Company ${snapshot.companyCode} snapshot does not reconcile to its Analysis Bases.`);
-  for (const basis of snapshot.bases) for (const group of basis.groups) {
+  for (const basis of snapshot.bases) {
+    if (!basis.groups.reduce((s, g) => s.add(g.amount), ZERO).equals(basis.amount)) throw new FluctuationIntegrityError(`Analysis Basis ${basis.code} does not reconcile to its Cost Groups.`);
+    for (const group of basis.groups) {
     if (!group.natures.reduce((s, n) => s.add(n.amount), ZERO).equals(group.amount)) throw new FluctuationIntegrityError(`Cost Group ${basis.code}/${group.code} does not reconcile to its Natures.`);
-    for (const nature of group.natures) if (!nature.amount.isZero() && !nature.items.reduce((s, i) => s.add(i.amount), ZERO).equals(nature.amount)) throw new FluctuationIntegrityError(`Nature ${basis.code}/${group.code}/${nature.code} does not reconcile to its analytical items.`);
+      for (const nature of group.natures) if (!nature.items.reduce((s, i) => s.add(i.amount), ZERO).equals(nature.amount)) throw new FluctuationIntegrityError(`Nature ${basis.code}/${group.code}/${nature.code} does not reconcile to its analytical items.`);
+    }
   }
 }
 
@@ -109,9 +139,11 @@ export function buildFinalizedMonthlySnapshot(period: PersistedPeriod | null): A
   const totals = run.results.filter((r) => r.resultType === 'TOTAL' && r.resultCode === 'TOTAL_COMPANY'); if (totals.length !== 1) throw new FluctuationIntegrityError(`Finalized period ${period.id} must have exactly one TOTAL_COMPANY result.`);
   const basisCode: AnalysisBasisCode = period.companyCode === '2000' ? 'SI' : 'GHOPO'; const groups = engineGroups(period, basisCode);
   if (period.companyCode === '2000' && groups.some((g) => g.code === 'HPP')) throw new FluctuationIntegrityError('Company 2000 must not contain HPP.');
+  const engineTotal = groups.reduce((sum, group) => sum.add(group.amount), ZERO);
+  if (!financial(totals[0].amount).equals(financial(engineTotal))) throw new FluctuationIntegrityError(`TOTAL_COMPANY does not reconcile to canonical Cost Groups for Company ${period.companyCode}.`);
   const labels = new Set(groups.flatMap((g) => g.natures.map(natureSemantic)));
   const sourceRows = run.sourceRows.filter((row) => row.uploadId === run.uploadId);
-  const audit = parseAudit(sourceRows, basisCode === 'SI' ? 'AUDIT_SI' : 'AUDIT_GHOPO', labels, false); assertEngineParity(groups, audit, `AUDIT_${basisCode}`);
+  const audit = parseAudit(sourceRows, basisCode === 'SI' ? 'AUDIT_SI' : 'AUDIT_GHOPO', labels, true); assertEngineParity(groups, audit, `AUDIT_${basisCode}`);
   const bases: SnapshotBasis[] = [{ key: `basis:${basisCode}`, id: null, basisCode, code: basisCode, label: basisCode === 'GHOPO' ? 'GHoPO' : 'SI', amount: totals[0].amount, order: 1, groups }];
   if (basisCode === 'GHOPO') bases.push(derivBasis(groups, parseAudit(sourceRows, 'AUDIT_DERIV', labels, true)));
   const snapshot: AnalyticalSnapshot = { companyId: period.companyId, companyCode: period.companyCode, amount: bases.reduce((s, b) => s.add(b.amount), ZERO), bases, lineage: bases.map((b) => ({ periodId: period.id, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, runId: run.id, ruleSetVersion: run.ruleSetVersion, uploadId: run.uploadId, basisCode: b.basisCode })) };
