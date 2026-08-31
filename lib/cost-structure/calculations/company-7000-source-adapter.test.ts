@@ -16,9 +16,13 @@ test('Company 7000 TB selector derives verified Total HPP without an Excel row d
   assert.deepEqual(result.mortarRows.map((item) => item.id), [99]);
 });
 
-test('Company 7000 TB selector blocks missing or ambiguous COGS Mortar', () => {
-  assert.throws(() => deriveCompany7000TotalHpp([tbRow(1, '51100001', '1')]), /exactly one/);
-  assert.throws(() => deriveCompany7000TotalHpp([tbRow(1, '51300003', '1'), tbRow(2, '51300003', '2')]), /exactly one/);
+test('Company 7000 TB selector treats pre-Mortar historical periods as zero and still blocks ambiguity', () => {
+  const historical = deriveCompany7000TotalHpp([tbRow(1, '51100001', '123')]);
+  assert.equal(historical.accountGroup5Total.toFixed(2), '123.00');
+  assert.equal(historical.cogsMortar.toFixed(2), '0.00');
+  assert.equal(historical.totalHpp.toFixed(2), '123.00');
+  assert.deepEqual(historical.mortarRows, []);
+  assert.throws(() => deriveCompany7000TotalHpp([tbRow(1, '51300003', '1'), tbRow(2, '51300003', '2')]), /more than one/);
 });
 
 const nature = (natureId: number, groupCode: 'HPP' | 'ADUM' | 'PASAR', natureCode: string, calculationType: 'MAPPED' | 'FORMULA' | 'RESIDUAL' = 'MAPPED', ruleCode: string | null = null): Company7000NatureTarget => ({
@@ -109,7 +113,32 @@ test('adapter applies WHRPG and coal corrections once per Nature and preserves c
   assert.doesNotThrow(() => calculateCompany7000(input));
 });
 
-test('adapter blocks OA transaction rows from the wrong fiscal period', () => {
+test('adapter treats historical missing OA transaction and derivative components as zero', () => {
+  const value = fixture();
+  value.rows = value.rows.filter((item) => {
+    if (item.logicalSourceCode !== 'OA_STAT') return true;
+    const raw = item.rawData as Record<string, unknown>;
+    return !(raw.ROLE_GL === '68140005' && (raw.ROLE === 'TRANSACTION' || raw.ROLE === 'DERIVATIVE'));
+  });
+  const input = buildCompany7000Input(value);
+  const line681405 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68140005')!;
+  assert.equal(line681405.amount.toFixed(2), '18.00');
+  assert.equal(String(line681405.sourceReference?.pasarFinal), '2');
+  assert.equal(String(line681405.sourceReference?.derivativeExcluded), '0');
+  assert.equal(Boolean(line681405.sourceReference?.derivativeAbsentTreatedAsZero), true);
+});
+
+test('adapter treats absence of current-period OA transactions as zero instead of consuming another period', () => {
   const value = fixture(); value.fiscalPeriod = 7;
-  assert.throws(() => buildCompany7000Input(value), /TRANSACTION source component is missing/);
+  const input = buildCompany7000Input(value);
+  const line681405 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68140005')!;
+  const line681406 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68140006')!;
+  assert.equal(line681405.amount.toFixed(2), '12.00');
+  assert.equal(line681406.amount.toFixed(2), '16.00');
+});
+
+test('adapter still fails closed when required OA summary component is missing', () => {
+  const value = fixture();
+  value.rows = value.rows.filter((item) => !(item.logicalSourceCode === 'OA_STAT' && (item.rawData as Record<string, unknown>).ROLE_GL === '68140005' && (item.rawData as Record<string, unknown>).ROLE === 'SUMMARY'));
+  assert.throws(() => buildCompany7000Input(value), /68140005 SUMMARY source component is missing/);
 });
