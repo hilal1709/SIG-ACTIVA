@@ -17,7 +17,7 @@ export type MonthlyPeriod = {
   fiscalYear: number;
   fiscalPeriod: number;
   status: string;
-  upload: { version: number; status: string } | null;
+  upload: { id: number; version: number; status: string } | null;
   run: {
     runNumber: number;
     status: string;
