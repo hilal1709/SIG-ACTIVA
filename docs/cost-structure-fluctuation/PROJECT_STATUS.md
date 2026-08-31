@@ -11,8 +11,8 @@ Phase C — Upload/parser/storage                    COMPLETE
 Phase D — Source reconciliation/mapping            COMPLETE
 Phase E — Engine 1 Company 2000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase F — Engine 1 Company 7000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
-Phase G — Finalization/dashboard/export            IMPLEMENTATION VERIFIED / production UAT next
-Phase H — Engine 2 comparison                      NEXT
+Phase G — Finalization/dashboard/export            COMPLETE / PRODUCTION UAT PASS
+Phase H — Engine 2 comparison                      READY / NEXT
 Phase I — Materiality/commentary/review             NOT STARTED
 Phase J — Fluctuation dashboard/export              NOT STARTED
 Phase K — Hardening/deployment                     NOT STARTED
@@ -59,7 +59,7 @@ Company 2000 remains the regression baseline.
 
 ## Phase F — Company 7000 — COMPLETE
 
-The real private workbook `TB 7000 07-2026 (Derivatif).xlsx` passed deployed application flow:
+The real private workbook `TB 7000 07-2026 (Derivatif).xlsx` passed the deployed application flow:
 
 ```text
 Upload → Validation → Source Reconciliation → Mapping → Calculation
@@ -74,7 +74,7 @@ Status              SUCCESS
 Active              true
 Rule Set            ENGINE1_7000_V1
 Actual Lines        211
-Period Status       CALCULATED
+Period Status       FINALIZED
 Bad Controls        0
 ```
 
@@ -121,9 +121,9 @@ PASAR_NATURE_RECONCILIATION  RECONCILED / 0.00
 
 Twelve non-zero TB-derived HPP rows whose `Klasifikasi HPP` is blank in the real `rincian biaya` were traced to the final `GHoPO`/SI formula. They are intentionally outside direct H01–H15 SUMIF classification and therefore affect H16 only through the final HPP residual; this is an SI-traced rule, not a generic missing-mapping fallback.
 
-## Phase G — implementation verified
+## Phase G — COMPLETE / PRODUCTION UAT PASS
 
-Phase G uses strict persisted read path:
+Phase G uses the strict persisted read path:
 
 ```text
 CostPeriod
@@ -143,7 +143,41 @@ CALCULATED → COST_STRUCTURE_RECONCILED → FINALIZED
 
 Finalization revalidates the same active run and all required persisted controls/totals inside the finalization transaction. Reopen is reason-required and audited.
 
-Historical uploads created before audit-only persistence can use an ADMIN-only `Hydrate Audit Snapshot` action. It downloads the authoritative private workbook once, verifies SHA-256 against `CostUpload`, persists only `AUDIT_*` rows, and does not change Engine 1 values, mappings, active run, or period status. New uploads persist audit-only rows automatically with `mappingStatus=AUDIT_ONLY`.
+### Production UAT evidence — July 2026
+
+Company 2000:
+
+```text
+Period ID           1
+Status              FINALIZED
+Active Run          1 / ENGINE1_2000_V1 / SUCCESS
+Audit Snapshot      READY
+Audit Rows          501
+Audit Sources       AUDIT_SI, AUDIT_RINCIAN, AUDIT_CC_DRV
+```
+
+Company 7000:
+
+```text
+Period ID           2
+Status              FINALIZED
+Active Run          8 / Run #7 / ENGINE1_7000_V1 / SUCCESS
+Audit Snapshot      READY
+Audit Rows          572
+Audit Sources       AUDIT_GHOPO, AUDIT_DERIV, AUDIT_RINCIAN,
+                    AUDIT_CC_DRV, AUDIT_SI2000_DRV
+```
+
+Production audit log confirms, for both golden periods:
+
+```text
+HYDRATE_AUDIT_SOURCE
+EXPORT_COST_STRUCTURE
+RECONCILE_COST_STRUCTURE
+FINALIZE_COST_STRUCTURE
+```
+
+The export audit entry explicitly records that workbook rendering uses persisted calculation/source lineage with no accounting recalculation or Storage read at export time.
 
 ### Official Company 7000 Excel contract
 
@@ -167,7 +201,9 @@ Formula Audit
 
 `GHoPO`, `DERIV`, `rincian biaya`, `cc_drv`, and `SI2000_DRV` are audit-only source snapshots. Audit-only derivative data has zero Engine 1 contribution. `GHoPO` authoritative cells are rendered from persisted calculation results; `Formula Audit` is rendered from persisted lineage. Export is DB-only and does not download/reparse Storage XLSX at request time.
 
-Phase G candidate passed repository TypeScript validation and Vercel preview build. Production UAT consists of one-time historical audit hydration, DB-only export verification, and controlled Reconcile → Finalize flow.
+### Deferred presentation polish
+
+The financial data/content of the production export has been accepted for Phase G. Further improvement of workbook formatting/style is intentionally deferred and is **not a blocker for Phase H**. Visual polish may be completed later as a dedicated export/UI refinement, preferably alongside Phase J or final hardening, without changing authoritative accounting values or formulas.
 
 See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
 
@@ -175,15 +211,17 @@ See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
 
 Phase H is Engine 2 comparison/fluctuation. Its input is **only FINALIZED Engine 1 history**; it never accepts a separate raw workbook upload.
 
-Initial locked scope:
+Locked scope:
 
 - period comparison from finalized Cost Structure history;
 - MoM;
 - YoY;
 - YTD;
 - variance amount and percentage;
-- contribution to total variance;
-- Company / Cost Group / Nature / COA drill-down;
-- deterministic persisted comparison results before later materiality/commentary logic.
+- contribution to parent/total variance;
+- Company / Cost Group / Nature / COA or calculated-item drill-down;
+- deterministic server-side comparison service using finalized active Engine 1 runs only.
 
-Phase I will add materiality, commentary and review workflow after Phase H arithmetic is golden-tested.
+Initial Phase H implementation should not create a transactional comparison-result table merely to persist derivable MoM/YoY/YTD values. Materiality/commentary/review persistence remains Phase I unless a separately reviewed performance requirement justifies snapshots later.
+
+Phase I will add materiality, commentary and review workflow after Phase H arithmetic and finalized-history controls are tested.
