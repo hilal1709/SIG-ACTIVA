@@ -15,6 +15,7 @@ export function resolveComparisonMonths(current: MonthRef, type: ComparisonType)
 }
 
 export function comparisonLabel(type: ComparisonType, current: MonthRef, comparison: MonthRef) {
-  const month = (value: MonthRef) => `${String(value.fiscalPeriod).padStart(2, '0')}-${value.fiscalYear}`;
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = (value: MonthRef) => `${names[value.fiscalPeriod - 1]}-${value.fiscalYear}`;
   return type === 'YTD' ? `YTD: Jan-${month(current)} vs Jan-${month(comparison)}` : `${type === 'MOM' ? 'MoM' : 'YoY'}: ${month(current)} vs ${month(comparison)}`;
 }

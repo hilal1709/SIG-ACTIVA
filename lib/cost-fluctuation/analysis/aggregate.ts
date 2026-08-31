@@ -4,7 +4,7 @@ import type { AnalyticalSnapshot, SnapshotGroup, SnapshotItem, SnapshotNature } 
 function mergeItems<T extends SnapshotItem>(collections: T[][], children: (value: T) => SnapshotItem[] | undefined, attach: (base: T, values: SnapshotItem[]) => T): T[] {
   const all = new Map<string, T[]>();
   for (const collection of collections) for (const item of collection) all.set(item.key, [...(all.get(item.key) ?? []), item]);
-  return [...all.values()].map((values) => attach({ ...values[0], amount: values.reduce((sum, item) => sum.add(item.amount), ZERO) }, mergeItems(values.map((value) => children(value) ?? []), () => undefined, (item) => item)));
+  return [...all.values()].map((values) => attach({ ...values[0], amount: values.reduce((sum, item) => sum.add(item.amount), ZERO) }, mergeItems(values.map((value) => children(value) ?? []), () => undefined, (item) => item))).sort((a, b) => a.order - b.order || a.code.localeCompare(b.code) || a.key.localeCompare(b.key));
 }
 
 export function aggregateSnapshots(snapshots: AnalyticalSnapshot[]): AnalyticalSnapshot {

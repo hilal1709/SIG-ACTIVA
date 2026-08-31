@@ -1,24 +1,39 @@
 # Phase H — Engine 2 Comparison Engine
 
-## Scope and boundary
+## Scope and authoritative boundary
 
-Phase H provides a read-only, server-side MoM, YoY, and complete-period YTD comparison service. It reads only `FINALIZED` Cost Periods through their active, successful, active Engine 1 calculation run. It does not read workbooks, source rows, uploads, audit rows, or the legacy Fluktuasi OI/EXP module. No schema or migration is introduced.
+Phase H provides read-only, server-side MoM, YoY, and complete-period YTD comparison. It reads only `FINALIZED` Cost Periods through the period's referenced active calculation run, and verifies that run is `SUCCESS`, `isActive=true`, and belongs to the same period. Failed, inactive, superseded, or corrupt lineage fails closed. It never reads workbooks, Storage, `CostSourceRow`, upload/audit rows, or the legacy Fluktuasi OI/EXP module, and it never reruns Engine 1. No schema or migration is introduced.
 
-## API
+## Canonical hierarchy and ordering
+
+Only these authoritative `CostCalculationResult` totals become Cost Group nodes:
+
+* Company 2000: `TOTAL_ADUM`, `TOTAL_PASAR`;
+* Company 7000: `TOTAL_HPP`, `TOTAL_ADUM`, `TOTAL_PASAR`.
+
+Other future `TOTAL_*` subtotals are not promoted and cannot double count the company. Canonical totals must have unique stable `costGroupId` identities and reconcile exactly to persisted `TOTAL_COMPANY`. Nature totals and analytical items must likewise reconcile to their persisted parent.
+
+Cost Groups follow `CostGroup.displayOrder`; Natures follow `CostNature.displayOrder`. COAs are deterministically ordered by persisted COA code and stable identity, followed by calculated items ordered by their deterministic identity. Thus master business order—not generated-key lexical order—controls the hierarchy.
+
+## API and availability
 
 `GET /api/cost-fluctuation/analysis?periodId=<positive integer>&comparison=MOM|YOY|YTD`
 
-The route uses existing Cost Structure read authorization. A non-finalized current period returns HTTP 409. Missing/non-finalized comparison history returns HTTP 200 with `status: "UNAVAILABLE"` and `missingPeriods`; it is never substituted with zero. Invalid finalized active-run lineage is a data-integrity error.
+The route reuses Cost Structure read authorization. A non-finalized current period returns HTTP 409. A missing or non-finalized comparison month returns HTTP 200 with `status: "UNAVAILABLE"` and exact `missingPeriods`; it is never substituted with zero. YTD is available only when every January-through-current month is finalized on both sides.
 
-Available responses include current and comparison run/rule-set lineage and a Company → Cost Group → Nature → COA/Calculated Item hierarchy. Monetary values are fixed two-decimal strings. Percentages and contributions are deterministic six-decimal percentage strings.
+Available responses expose `comparisonType`, a human label such as `MoM: Jul-2026 vs Jun-2026`, `status`, every current/comparison period and run/rule-set lineage entry, and Company → Cost Group → Nature → COA/Calculated Item hierarchy. YTD lineage includes every constituent month. Storage keys, workbook data, and source rows are never returned.
 
 ## Financial semantics
 
 * Variance is current minus comparison, with its sign preserved.
 * Percentage is variance divided by the absolute comparison amount. A zero comparison with non-zero current is `NM`; two zero amounts produce zero percent.
 * Contribution is child variance divided by signed parent variance. A zero parent uses `PARENT_ZERO`; values are neither made absolute nor clamped.
-* The union of analytical keys is compared, so an item absent from one complete finalized snapshot is zero. Missing periods remain unavailable.
-* COAs use stable `coaId` identity. Non-COA lines use `natureId + lineType + ruleCode`, remain explicit calculated items, and never receive fake COAs.
-* YTD requires every month from January through the requested month in both years, then aggregates exact Decimal snapshots in memory.
+* An item missing inside an otherwise complete finalized period is zero. A missing period is `UNAVAILABLE`.
+* COAs use stable `coaId`. A non-COA line uses `natureId + lineType + ruleCode`, remains a `CALCULATED_ITEM`, and never receives a fake COA.
+* All authoritative aggregation uses exact `Prisma.Decimal`. Amounts are two-decimal strings; percentage values are deterministic six-decimal strings.
 
-Phase I materiality/commentary/review and Phase J dashboard/export remain out of scope.
+## Automated coverage
+
+Phase H tests cover E2-001 through E2-006 period resolution/availability, month labels, current/comparison finalized gates, active-run integrity, canonical Company 2000/7000 structures, extra subtotal and Derivatif exclusion, business display ordering, missing-item union semantics, calculated-item identity, exact math, signed contribution statuses, hierarchy reconciliation, identical snapshots, repeated-call determinism, and complete YTD lineage. The repository test runner scans both Cost Structure and Cost Fluctuation tests without requiring a production database for Phase H fixtures.
+
+Phase I materiality/commentary/review and Phase J dashboard/export remain explicitly out of scope.
