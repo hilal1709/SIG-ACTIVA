@@ -34,6 +34,17 @@ function repository(periods: PersistedPeriod[]): AnalysisRepository {
   return { async findPeriodById(id) { return periods.find((item) => item.id === id) ?? null; }, async findPeriod(companyId, month) { return periods.find((item) => item.companyId === companyId && item.fiscalYear === month.fiscalYear && item.fiscalPeriod === month.fiscalPeriod) ?? null; } };
 }
 
+function setGroupAmount(raw: PersistedPeriod, code: GroupCode, amount: number) {
+  const group = GROUPS[code]; const run = raw.activeRun!;
+  run.results.find((item) => item.resultCode === `TOTAL_${code}`)!.amount = d(amount);
+  run.results.find((item) => item.resultType === 'NATURE' && item.costGroupId === group.id)!.amount = d(amount);
+  run.actualLines.find((item) => item.costGroupId === group.id)!.finalAmount = d(amount);
+}
+
+function setCompanyAmount(raw: PersistedPeriod, amount: number) {
+  raw.activeRun!.results.find((item) => item.resultCode === 'TOTAL_COMPANY')!.amount = d(amount);
+}
+
 test('E2-001..004 resolve normal MoM, January rollover, YoY, and complete YTD with human labels', () => {
   assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'MOM').comparison, [{ fiscalYear: 2026, fiscalPeriod: 6 }]);
   assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 1 }, 'MOM').comparison, [{ fiscalYear: 2025, fiscalPeriod: 12 }]);
@@ -47,6 +58,44 @@ test('E2-001..004 resolve normal MoM, January rollover, YoY, and complete YTD wi
 test('variance preserves exact signed arithmetic and zero-denominator statuses', () => {
   assert.equal(variance(d('-80'), d('-100')).percent, '20.000000');
   assert.deepEqual(variance(d('100'), d('0')).status, 'NM'); assert.equal(variance(d('0'), d('0')).percent, '0.000000');
+});
+
+test('CONT-001 uses signed parent variance and preserves negative and over-100% contributions', () => {
+  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6);
+  setGroupAmount(currentRaw, 'ADUM', 0); setGroupAmount(currentRaw, 'PASAR', 120); setCompanyAmount(currentRaw, 120);
+  setGroupAmount(priorRaw, 'ADUM', 100); setGroupAmount(priorRaw, 'PASAR', 0); setCompanyAmount(priorRaw, 100);
+  const result = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
+  assert.equal(result.varianceAmount, '20.00');
+  const adum = result.children!.find((node) => node.code === 'ADUM')!; const pasar = result.children!.find((node) => node.code === 'PASAR')!;
+  assert.equal(adum.varianceAmount, '-100.00'); assert.equal(adum.contribution, '-500.000000');
+  assert.equal(pasar.varianceAmount, '120.00'); assert.equal(pasar.contribution, '600.000000');
+
+  setCompanyAmount(currentRaw, 80); setGroupAmount(currentRaw, 'PASAR', 80);
+  const negativeParent = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
+  assert.equal(negativeParent.varianceAmount, '-20.00');
+  assert.equal(negativeParent.children!.find((node) => node.code === 'PASAR')!.contribution, '-400.000000');
+});
+
+test('CONT-002 returns PARENT_ZERO instead of dividing by zero', () => {
+  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6);
+  setGroupAmount(currentRaw, 'ADUM', 0); setGroupAmount(currentRaw, 'PASAR', 30); setCompanyAmount(currentRaw, 30);
+  setGroupAmount(priorRaw, 'ADUM', 10); setGroupAmount(priorRaw, 'PASAR', 20); setCompanyAmount(priorRaw, 30);
+  const result = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
+  const adum = result.children!.find((node) => node.code === 'ADUM')!;
+  assert.equal(result.varianceAmount, '0.00'); assert.equal(adum.varianceAmount, '-10.00');
+  assert.equal(adum.contribution, null); assert.equal(adum.contributionStatus, 'PARENT_ZERO');
+});
+
+test('CONT-003 exposes each explicit analytical contribution basis and Company is not applicable', () => {
+  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6); const natureId = GROUPS.ADUM.id + 100;
+  currentRaw.activeRun!.actualLines.find((line) => line.natureId === natureId)!.finalAmount = d(5);
+  currentRaw.activeRun!.actualLines.push({ costGroupId: GROUPS.ADUM.id, natureId, coaId: null, lineType: 'RESIDUAL', finalAmount: d(5), ruleCode: 'RESIDUAL_RULE', coa: null });
+  const result = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
+  const group = result.children!.find((node) => node.code === 'ADUM')!; const nature = group.children![0];
+  const coa = nature.children!.find((node) => node.nodeType === 'COA')!; const calculated = nature.children!.find((node) => node.nodeType === 'CALCULATED_ITEM')!;
+  assert.equal(result.contribution, null); assert.equal(result.contributionStatus, 'NOT_APPLICABLE'); assert.equal(result.contributionBasis, null);
+  assert.equal(group.contributionBasis, 'COST_GROUP_TO_COMPANY'); assert.equal(nature.contributionBasis, 'NATURE_TO_COST_GROUP');
+  assert.equal(coa.contributionBasis, 'COA_TO_NATURE'); assert.equal(calculated.contributionBasis, 'CALCULATED_ITEM_TO_NATURE');
 });
 
 test('canonical structures exclude future subtotal and preserve CostGroup displayOrder', () => {

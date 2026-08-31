@@ -207,7 +207,7 @@ The financial data/content of the production export has been accepted for Phase 
 
 See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
 
-## Phase H — COMPLETE / REVIEW
+## Phase H — IMPLEMENTED / REVIEW
 
 Phase H implements Engine 2 comparison/fluctuation. Its input is **only FINALIZED Engine 1 history**; it never accepts a separate raw workbook upload.
 
