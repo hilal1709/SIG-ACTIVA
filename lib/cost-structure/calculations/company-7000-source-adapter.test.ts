@@ -113,19 +113,33 @@ test('adapter applies WHRPG and coal corrections once per Nature and preserves c
   assert.doesNotThrow(() => calculateCompany7000(input));
 });
 
-test('adapter treats historical missing OA transaction and derivative components as zero', () => {
+test('adapter and engine treat historical missing Mortar/OA optional components as explicit zero', () => {
   const value = fixture();
   value.rows = value.rows.filter((item) => {
+    if (item.logicalSourceCode === 'TB' && item.coaCode === '51300003') return false;
     if (item.logicalSourceCode !== 'OA_STAT') return true;
     const raw = item.rawData as Record<string, unknown>;
     return !(raw.ROLE_GL === '68140005' && (raw.ROLE === 'TRANSACTION' || raw.ROLE === 'DERIVATIVE'));
   });
   const input = buildCompany7000Input(value);
   const line681405 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68140005')!;
+  assert.equal(input.formulaDependencies.cogsMortar.amount.toFixed(2), '0.00');
+  assert.deepEqual(input.formulaDependencies.cogsMortar.sourceRowIds, []);
+  assert.equal(input.formulaDependencies.cogsMortar.sourceReference?.absentTreatedAsZero, true);
   assert.equal(line681405.amount.toFixed(2), '18.00');
   assert.equal(String(line681405.sourceReference?.pasarFinal), '2');
   assert.equal(String(line681405.sourceReference?.derivativeExcluded), '0');
   assert.equal(Boolean(line681405.sourceReference?.derivativeAbsentTreatedAsZero), true);
+  const result = calculateCompany7000(input);
+  assert.equal(result.formulaResults.totalHpp.toFixed(2), '1000.00');
+});
+
+test('engine does not accept empty dependency lineage unless it is explicitly zero-optional', () => {
+  const value = fixture();
+  value.rows = value.rows.filter((item) => !(item.logicalSourceCode === 'TB' && item.coaCode === '51300003'));
+  const input = buildCompany7000Input(value);
+  delete input.formulaDependencies.cogsMortar.sourceReference.absentTreatedAsZero;
+  assert.throws(() => calculateCompany7000(input), /COGS Mortar requires source-row lineage/);
 });
 
 test('adapter treats absence of current-period OA transactions as zero instead of consuming another period', () => {
@@ -135,6 +149,7 @@ test('adapter treats absence of current-period OA transactions as zero instead o
   const line681406 = input.sourceLines.find((item) => item.ruleCode === 'BASE_HPP_BY_COA_7000' && item.coaCode === '68140006')!;
   assert.equal(line681405.amount.toFixed(2), '12.00');
   assert.equal(line681406.amount.toFixed(2), '16.00');
+  assert.doesNotThrow(() => calculateCompany7000(input));
 });
 
 test('adapter still fails closed when required OA summary component is missing', () => {
