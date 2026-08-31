@@ -12,8 +12,8 @@ Phase D — Source reconciliation/mapping            COMPLETE
 Phase E — Engine 1 Company 2000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase F — Engine 1 Company 7000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase G — Finalization/dashboard/export            COMPLETE / PRODUCTION UAT PASS
-Phase H — Engine 2 comparison                      IMPLEMENTED / REVIEW
-Phase I — Materiality/commentary/review             NOT STARTED
+Phase H — Engine 2 comparison                      COMPLETE / PRODUCTION DEPLOYED
+Phase I — Materiality/commentary/review             READY / NEXT
 Phase J — Fluctuation dashboard/export              NOT STARTED
 Phase K — Hardening/deployment                     NOT STARTED
 ```
@@ -41,7 +41,7 @@ Production-proven capabilities:
 - SheetJS source parsing, normalized `CostSourceRow`, validation register;
 - source CC reconciliation;
 - effective-dated source-specific COA mapping;
-- INCLUDE / EXCLUDE / RECLASS;
+- explicit INCLUDE / EXCLUDE / RECLASS;
 - non-zero unmapped blocking, zero unmapped non-blocking;
 - `SOURCE_RECONCILED` readiness gate.
 
@@ -203,25 +203,63 @@ Formula Audit
 
 ### Deferred presentation polish
 
-The financial data/content of the production export has been accepted for Phase G. Further improvement of workbook formatting/style is intentionally deferred and is **not a blocker for Phase H**. Visual polish may be completed later as a dedicated export/UI refinement, preferably alongside Phase J or final hardening, without changing authoritative accounting values or formulas.
+The financial data/content of the production export has been accepted for Phase G. Further improvement of workbook formatting/style is intentionally deferred and is **not a blocker for later phases**. Visual polish may be completed later as a dedicated export/UI refinement, preferably alongside Phase J or final hardening, without changing authoritative accounting values or formulas.
 
 See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
 
-## Phase H — IMPLEMENTED / REVIEW
+## Phase H — COMPLETE / PRODUCTION DEPLOYED
 
 Phase H implements Engine 2 comparison/fluctuation. Its input is **only FINALIZED Engine 1 history**; it never accepts a separate raw workbook upload.
 
-Locked scope:
+Implemented scope:
 
-- period comparison from finalized Cost Structure history;
-- MoM;
+- MoM with January rollover;
 - YoY;
-- YTD;
-- variance amount and percentage;
-- contribution to parent/total variance;
+- complete-history YTD;
+- variance amount and variance percentage;
+- zero-denominator `NM` semantics;
+- signed contribution with explicit Group→Company, Nature→Group, and Item→Nature basis;
 - Company / Cost Group / Nature / COA or calculated-item drill-down;
-- deterministic server-side comparison service using finalized active Engine 1 runs only.
+- canonical Company 2000 and Company 7000 group structures;
+- deterministic master display ordering;
+- stable calculated-item identity without fake COA;
+- missing finalized period = `UNAVAILABLE`, distinct from a missing item inside a complete finalized period;
+- finalized active-run/rule-set lineage for every constituent comparison month;
+- read-only API at `GET /api/cost-fluctuation/analysis`;
+- no comparison-result transaction table and no Phase H Prisma migration.
 
-The Phase H implementation uses deterministic read-service aggregation and creates no comparison transaction table. See `PHASE_H_COMPARISON_ENGINE.md` for its API, precision, availability, identity, and contribution contracts.
+### Phase H validation and production evidence
 
-Phase I will add materiality, commentary and review workflow after Phase H arithmetic and finalized-history controls are tested.
+PR #21 was merged to `main` at:
+
+```text
+Merge Commit        bda33573b4a8c11fc454e40b42b2fa2471fe4a2a
+```
+
+Production deployment:
+
+```text
+Vercel Deployment   dpl_FKgCi5HAWpMLWyk9Tju5FxG8FVNZ
+Target              production
+Branch              main
+Commit              bda33573b4a8c11fc454e40b42b2fa2471fe4a2a
+Status              READY
+Region              sin1
+```
+
+The production build completed successfully with the Phase H route included. An unauthenticated request to `/api/cost-fluctuation/analysis` returned `401 Unauthorized`, confirming the production route is live and existing read authorization is enforced server-side.
+
+Production history currently contains only the July-2026 finalized golden periods:
+
+```text
+Company 2000        Period ID 1 / Jul-2026 / FINALIZED / Run 1 SUCCESS ACTIVE
+Company 7000        Period ID 2 / Jul-2026 / FINALIZED / Run 8 SUCCESS ACTIVE
+```
+
+Therefore no real production comparison history yet exists for Jun-2026, Jul-2025, or Jan-Jun YTD months. A real production MoM/YoY/YTD request for July-2026 is expected to be `UNAVAILABLE`; missing history must never be treated as zero. Available-comparison arithmetic is covered by the deterministic Phase H automated test suite until additional finalized historical months exist.
+
+See `PHASE_H_COMPARISON_ENGINE.md` for the detailed Engine 2 contract.
+
+## Next phase — Phase I
+
+Phase I is **READY / NEXT** and will add materiality, commentary, and review workflow on top of immutable Engine 2 financial outputs. Phase I must not alter Engine 1 or Engine 2 authoritative amounts.
