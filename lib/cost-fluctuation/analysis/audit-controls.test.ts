@@ -9,6 +9,7 @@ const d = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
 function sourceRows(uploadId: number): PersistedSourceRow[] {
   const data: Array<[string, string]> = [
     ['UMUM & ADMINISTRASI', ''],
+    ['Ctrl', '999'],
     ['Bahan Penolong', '0.01'],
     ['Total Adum', '0.01'],
     ['PEMASARAN', ''],

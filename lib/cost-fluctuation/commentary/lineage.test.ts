@@ -32,5 +32,6 @@ test('reopen, run replacement, upload replacement, and stale digest are rejected
   await assert.rejects(assertCurrentLineage(tx([{ ...row2000, status: 'CALCULATED' }]) as never, 'MOM', [si], [], lineageKey('MOM', [si], [])), /stale/);
   await assert.rejects(assertCurrentLineage(tx([{ ...row2000, activeCalculationRunId: 11, runId: 11 }]) as never, 'MOM', [si], [], lineageKey('MOM', [si], [])), /stale/);
   await assert.rejects(assertCurrentLineage(tx([{ ...row2000, uploadId: 9 }]) as never, 'MOM', [si], [], lineageKey('MOM', [si], [])), /stale/);
+  await assert.rejects(assertCurrentLineage(tx([{ ...row2000, ruleSetVersion: 'ENGINE1_2000_V3' }]) as never, 'MOM', [si], [], lineageKey('MOM', [si], [])), /stale/);
   await assert.rejects(assertCurrentLineage(tx([row2000]) as never, 'MOM', [si], [], 'old-lineage'), /stale/);
 });
