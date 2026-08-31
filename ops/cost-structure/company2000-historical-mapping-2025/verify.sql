@@ -2,8 +2,15 @@
 -- Expected result:
 --   mapping_status = PASS
 --   target_status = PASS
---   all Nature/TOTAL difference values = 0.00
+--   all analytical Nature/TOTAL difference values = 0.00
+--
+-- Company 2000 Engine 1 V2 uses AUDIT_RINCIAN ADM/Pasar as the analytical
+-- base, with the raw CC values serving as the source before the Rincian
+-- correction overlay. Therefore the parity section below intentionally uses
+-- AUDIT_RINCIAN COLUMN_5 (ADM) / COLUMN_6 (Pasar), matching
+-- parseCompany2000Rincian(), rather than summing raw CC amounts directly.
 
+-- 1) Mapping cardinality / interval / audit marker.
 WITH company AS (
   SELECT id FROM cost_companies WHERE "companyCode" = '2000'
 ), historical_upload AS (
@@ -21,10 +28,7 @@ WITH company AS (
     AND sr."coaCodeRaw" IS NOT NULL
     AND COALESCE(sr.amount,0) <> 0
 ), effective_counts AS (
-  SELECT
-    nz.source_code,
-    nz.coa,
-    COUNT(m.id)::int AS mapping_count
+  SELECT nz.source_code, nz.coa, COUNT(m.id)::int AS mapping_count
   FROM nonzero_pairs nz
   LEFT JOIN cost_coas coa ON coa."coaCode" = nz.coa
   LEFT JOIN cost_coa_mappings m
@@ -39,9 +43,7 @@ WITH company AS (
   SELECT COUNT(*)::int AS cnt
   FROM cost_coa_mappings m
   JOIN cost_coas coa ON coa.id = m."coaId"
-  JOIN nonzero_pairs nz
-    ON nz.source_code = m."sourceLogicalCode"
-   AND nz.coa = coa."coaCode"
+  JOIN nonzero_pairs nz ON nz.source_code = m."sourceLogicalCode" AND nz.coa = coa."coaCode"
   WHERE m."companyId" = (SELECT id FROM company)
     AND m.active = TRUE
     AND m."validFrom" = TIMESTAMP '2025-01-01 00:00:00'
@@ -90,7 +92,7 @@ SELECT
     ELSE 'PASS'
   END AS mapping_status;
 
--- Verify the individual expected action/group/nature target for all 140 pairs.
+-- 2) Exact individual action / Cost Group / Nature identity for all 140 pairs.
 WITH company AS (
   SELECT id FROM cost_companies WHERE "companyCode" = '2000'
 ), historical_upload AS (
@@ -116,16 +118,12 @@ WITH company AS (
     AND m."validFrom" = TIMESTAMP '2026-07-01 00:00:00'
     AND m."validTo" IS NULL
 ), inherited_expected AS (
-  SELECT
-    nz.source_code,
-    nz.coa,
-    b."mappingAction"::text AS expected_action,
-    b."costGroupId" AS expected_group_id,
-    b."natureId" AS expected_nature_id
+  SELECT nz.source_code, nz.coa,
+         b."mappingAction"::text AS expected_action,
+         b."costGroupId" AS expected_group_id,
+         b."natureId" AS expected_nature_id
   FROM nonzero_pairs nz
-  JOIN baseline b
-    ON b."sourceLogicalCode" = nz.source_code
-   AND b.coa = nz.coa
+  JOIN baseline b ON b."sourceLogicalCode" = nz.source_code AND b.coa = nz.coa
 ), explicit(source_code, coa, action, group_code, nature_code) AS (
   VALUES
     ('CC_ADUM','63130007','INCLUDE','ADUM','N04'),
@@ -148,30 +146,23 @@ WITH company AS (
     ('CC_PASAR','68320001','INCLUDE','PASAR','N08'),
     ('CC_PASAR','71560001','EXCLUDE',NULL,NULL)
 ), explicit_expected AS (
-  SELECT
-    e.source_code,
-    e.coa,
-    e.action AS expected_action,
-    CASE WHEN e.action='EXCLUDE' THEN NULL ELSE g.id END AS expected_group_id,
-    CASE WHEN e.action='EXCLUDE' THEN NULL ELSE n.id END AS expected_nature_id
+  SELECT e.source_code, e.coa, e.action AS expected_action,
+         CASE WHEN e.action='EXCLUDE' THEN NULL ELSE g.id END AS expected_group_id,
+         CASE WHEN e.action='EXCLUDE' THEN NULL ELSE n.id END AS expected_nature_id
   FROM explicit e
   LEFT JOIN cost_groups g
-    ON g."companyId"=(SELECT id FROM company)
-   AND g.code=e.group_code
+    ON g."companyId"=(SELECT id FROM company) AND g.code=e.group_code
   LEFT JOIN cost_natures n
-    ON n."costGroupId"=g.id
-   AND n.code=e.nature_code
+    ON n."costGroupId"=g.id AND n.code=e.nature_code
 ), expected AS (
   SELECT * FROM inherited_expected
   UNION ALL
   SELECT * FROM explicit_expected
 ), actual AS (
-  SELECT
-    m."sourceLogicalCode" AS source_code,
-    coa."coaCode" AS coa,
-    m."mappingAction"::text AS actual_action,
-    m."costGroupId" AS actual_group_id,
-    m."natureId" AS actual_nature_id
+  SELECT m."sourceLogicalCode" AS source_code, coa."coaCode" AS coa,
+         m."mappingAction"::text AS actual_action,
+         m."costGroupId" AS actual_group_id,
+         m."natureId" AS actual_nature_id
   FROM cost_coa_mappings m
   JOIN cost_coas coa ON coa.id=m."coaId"
   WHERE m."companyId"=(SELECT id FROM company)
@@ -179,20 +170,12 @@ WITH company AS (
     AND m."validFrom"=TIMESTAMP '2025-01-01 00:00:00'
     AND m."validTo"=TIMESTAMP '2026-06-30 00:00:00'
 ), comparison AS (
-  SELECT
-    e.*,
-    a.actual_action,
-    a.actual_group_id,
-    a.actual_nature_id,
-    (
-      a.actual_action = e.expected_action
-      AND a.actual_group_id IS NOT DISTINCT FROM e.expected_group_id
-      AND a.actual_nature_id IS NOT DISTINCT FROM e.expected_nature_id
-    ) AS exact_match
+  SELECT e.*, a.actual_action, a.actual_group_id, a.actual_nature_id,
+         (a.actual_action = e.expected_action
+          AND a.actual_group_id IS NOT DISTINCT FROM e.expected_group_id
+          AND a.actual_nature_id IS NOT DISTINCT FROM e.expected_nature_id) AS exact_match
   FROM expected e
-  LEFT JOIN actual a
-    ON a.source_code=e.source_code
-   AND a.coa=e.coa
+  LEFT JOIN actual a ON a.source_code=e.source_code AND a.coa=e.coa
 )
 SELECT
   COUNT(*)::int AS expected_target_count,
@@ -205,7 +188,9 @@ SELECT
   END AS target_status
 FROM comparison;
 
--- Exact Jan-2025 Nature parity against persisted AUDIT_SI.
+-- 3) Exact Jan-2025 analytical Nature parity against AUDIT_SI.
+-- AUDIT_RINCIAN semantic layout for this persisted source:
+--   COLUMN_2 = G/L Acc, COLUMN_5 = ADM, COLUMN_6 = Pasar.
 WITH company AS (
   SELECT id FROM cost_companies WHERE "companyCode" = '2000'
 ), historical_upload AS (
@@ -215,26 +200,35 @@ WITH company AS (
   WHERE cp."companyId" = (SELECT id FROM company)
     AND cp."fiscalYear" = 2025
     AND cp."fiscalPeriod" = 1
-), mapped_detail AS (
-  SELECT
-    sr."logicalSourceCode" AS source_code,
-    n.code AS nature_code,
-    SUM(sr.amount)::numeric AS predicted
+), rincian_long AS (
+  SELECT 'CC_ADUM'::text AS source_code,
+         sr."rawDataJson"->>'COLUMN_2' AS coa,
+         NULLIF(sr."rawDataJson"->>'COLUMN_5','')::numeric AS amount
   FROM cost_source_rows sr
-  JOIN cost_coas coa ON coa."coaCode" = sr."coaCodeRaw"
+  WHERE sr."uploadId"=(SELECT upload_id FROM historical_upload)
+    AND sr."logicalSourceCode"='AUDIT_RINCIAN'
+  UNION ALL
+  SELECT 'CC_PASAR'::text AS source_code,
+         sr."rawDataJson"->>'COLUMN_2' AS coa,
+         NULLIF(sr."rawDataJson"->>'COLUMN_6','')::numeric AS amount
+  FROM cost_source_rows sr
+  WHERE sr."uploadId"=(SELECT upload_id FROM historical_upload)
+    AND sr."logicalSourceCode"='AUDIT_RINCIAN'
+), analytical_by_nature AS (
+  SELECT rl.source_code, n.code AS nature_code, SUM(COALESCE(rl.amount,0))::numeric AS predicted
+  FROM rincian_long rl
+  JOIN cost_coas coa ON coa."coaCode" = rl.coa
   JOIN cost_coa_mappings m
-    ON m."companyId" = (SELECT id FROM company)
-   AND m."sourceLogicalCode" = sr."logicalSourceCode"
-   AND m."coaId" = coa.id
-   AND m.active = TRUE
+    ON m."companyId"=(SELECT id FROM company)
+   AND m."sourceLogicalCode"=rl.source_code
+   AND m."coaId"=coa.id
+   AND m.active=TRUE
    AND m."validFrom" <= TIMESTAMP '2025-01-01 00:00:00'
    AND (m."validTo" IS NULL OR m."validTo" >= TIMESTAMP '2025-01-01 00:00:00')
-  LEFT JOIN cost_natures n ON n.id = m."natureId"
-  WHERE sr."uploadId" = (SELECT upload_id FROM historical_upload)
-    AND sr."logicalSourceCode" IN ('CC_ADUM','CC_PASAR')
-    AND sr."coaCodeRaw" IS NOT NULL
+  LEFT JOIN cost_natures n ON n.id=m."natureId"
+  WHERE rl.coa ~ '^\d{8}$'
     AND m."mappingAction" <> 'EXCLUDE'::"CostMappingAction"
-  GROUP BY sr."logicalSourceCode", n.code
+  GROUP BY rl.source_code,n.code
 ), expected_rows(source_code, nature_code, audit_row) AS (
   VALUES
     ('CC_ADUM','N01',20),('CC_ADUM','N02',21),('CC_ADUM','N03',22),
@@ -244,37 +238,33 @@ WITH company AS (
     ('CC_PASAR','N04',35),('CC_PASAR','N05',36),('CC_PASAR','N06',37),
     ('CC_PASAR','N07',38),('CC_PASAR','N08',39),('CC_PASAR','N09',40)
 ), expected AS (
-  SELECT
-    er.source_code,
-    er.nature_code,
-    COALESCE(NULLIF(sr."rawDataJson"->>'COLUMN_2','')::numeric,0) * 1000 AS expected
+  SELECT er.source_code,er.nature_code,
+         COALESCE(NULLIF(sr."rawDataJson"->>'COLUMN_2','')::numeric,0) * 1000 AS expected
   FROM expected_rows er
   JOIN cost_source_rows sr
-    ON sr."uploadId" = (SELECT upload_id FROM historical_upload)
-   AND sr."logicalSourceCode" = 'AUDIT_SI'
-   AND sr."sourceRowNumber" = er.audit_row
+    ON sr."uploadId"=(SELECT upload_id FROM historical_upload)
+   AND sr."logicalSourceCode"='AUDIT_SI'
+   AND sr."sourceRowNumber"=er.audit_row
 ), detail_result AS (
-  SELECT
-    e.source_code,
-    e.nature_code,
-    COALESCE(md.predicted,0)::numeric(20,2) AS predicted,
-    e.expected::numeric(20,2) AS expected,
-    (COALESCE(md.predicted,0) - e.expected)::numeric(20,2) AS difference
+  SELECT e.source_code,e.nature_code,
+         COALESCE(a.predicted,0)::numeric(20,2) AS predicted,
+         e.expected::numeric(20,2) AS expected,
+         (COALESCE(a.predicted,0)-e.expected)::numeric(20,2) AS difference
   FROM expected e
-  LEFT JOIN mapped_detail md
-    ON md.source_code = e.source_code
-   AND md.nature_code = e.nature_code
+  LEFT JOIN analytical_by_nature a
+    ON a.source_code=e.source_code AND a.nature_code=e.nature_code
 ), totals AS (
-  SELECT
-    source_code,
-    'TOTAL'::text AS nature_code,
-    SUM(predicted)::numeric(20,2) AS predicted,
-    SUM(expected)::numeric(20,2) AS expected,
-    SUM(difference)::numeric(20,2) AS difference
+  SELECT source_code,'TOTAL'::text AS nature_code,
+         SUM(predicted)::numeric(20,2) AS predicted,
+         SUM(expected)::numeric(20,2) AS expected,
+         SUM(difference)::numeric(20,2) AS difference
   FROM detail_result
   GROUP BY source_code
+), all_rows AS (
+  SELECT * FROM detail_result
+  UNION ALL
+  SELECT * FROM totals
 )
-SELECT * FROM detail_result
-UNION ALL
-SELECT * FROM totals
-ORDER BY source_code, CASE WHEN nature_code = 'TOTAL' THEN 'ZZZ' ELSE nature_code END;
+SELECT *, CASE WHEN difference = 0 THEN 'PASS' ELSE 'FAIL' END AS parity_status
+FROM all_rows
+ORDER BY source_code, CASE WHEN nature_code='TOTAL' THEN 'ZZZ' ELSE nature_code END;
