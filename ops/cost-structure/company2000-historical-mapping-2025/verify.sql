@@ -1,6 +1,7 @@
 -- READ ONLY post-apply verification.
 -- Expected result:
 --   mapping_status = PASS
+--   target_status = PASS
 --   all Nature/TOTAL difference values = 0.00
 
 WITH company AS (
@@ -88,6 +89,121 @@ SELECT
     WHEN (SELECT cnt FROM audit_marker) <> 1 THEN 'FAIL_AUDIT_MARKER'
     ELSE 'PASS'
   END AS mapping_status;
+
+-- Verify the individual expected action/group/nature target for all 140 pairs.
+WITH company AS (
+  SELECT id FROM cost_companies WHERE "companyCode" = '2000'
+), historical_upload AS (
+  SELECT cu.id AS upload_id
+  FROM cost_periods cp
+  JOIN cost_uploads cu ON cu."periodId" = cp.id AND cu."isActiveVersion" = TRUE
+  WHERE cp."companyId" = (SELECT id FROM company)
+    AND cp."fiscalYear" = 2025
+    AND cp."fiscalPeriod" = 1
+), nonzero_pairs AS (
+  SELECT DISTINCT sr."logicalSourceCode" AS source_code, sr."coaCodeRaw" AS coa
+  FROM cost_source_rows sr
+  WHERE sr."uploadId" = (SELECT upload_id FROM historical_upload)
+    AND sr."logicalSourceCode" IN ('CC_ADUM','CC_PASAR')
+    AND sr."coaCodeRaw" IS NOT NULL
+    AND COALESCE(sr.amount,0) <> 0
+), baseline AS (
+  SELECT m.*, coa."coaCode" AS coa
+  FROM cost_coa_mappings m
+  JOIN cost_coas coa ON coa.id = m."coaId"
+  WHERE m."companyId" = (SELECT id FROM company)
+    AND m.active = TRUE
+    AND m."validFrom" = TIMESTAMP '2026-07-01 00:00:00'
+    AND m."validTo" IS NULL
+), inherited_expected AS (
+  SELECT
+    nz.source_code,
+    nz.coa,
+    b."mappingAction"::text AS expected_action,
+    b."costGroupId" AS expected_group_id,
+    b."natureId" AS expected_nature_id
+  FROM nonzero_pairs nz
+  JOIN baseline b
+    ON b."sourceLogicalCode" = nz.source_code
+   AND b.coa = nz.coa
+), explicit(source_code, coa, action, group_code, nature_code) AS (
+  VALUES
+    ('CC_ADUM','63130007','INCLUDE','ADUM','N04'),
+    ('CC_ADUM','63150002','INCLUDE','ADUM','N04'),
+    ('CC_ADUM','63220009','INCLUDE','ADUM','N04'),
+    ('CC_ADUM','64220002','INCLUDE','ADUM','N07'),
+    ('CC_ADUM','64320009','INCLUDE','ADUM','N07'),
+    ('CC_ADUM','65810001','INCLUDE','ADUM','N05'),
+    ('CC_ADUM','67110002','INCLUDE','ADUM','N07'),
+    ('CC_ADUM','67120002','INCLUDE','ADUM','N07'),
+    ('CC_ADUM','67610004','INCLUDE','ADUM','N09'),
+    ('CC_ADUM','71610001','EXCLUDE',NULL,NULL),
+    ('CC_PASAR','63130007','INCLUDE','PASAR','N04'),
+    ('CC_PASAR','63150002','INCLUDE','PASAR','N04'),
+    ('CC_PASAR','64220009','INCLUDE','PASAR','N07'),
+    ('CC_PASAR','65210002','INCLUDE','PASAR','N05'),
+    ('CC_PASAR','65410009','INCLUDE','PASAR','N05'),
+    ('CC_PASAR','67410001','INCLUDE','PASAR','N07'),
+    ('CC_PASAR','67710002','INCLUDE','PASAR','N07'),
+    ('CC_PASAR','68320001','INCLUDE','PASAR','N08'),
+    ('CC_PASAR','71560001','EXCLUDE',NULL,NULL)
+), explicit_expected AS (
+  SELECT
+    e.source_code,
+    e.coa,
+    e.action AS expected_action,
+    CASE WHEN e.action='EXCLUDE' THEN NULL ELSE g.id END AS expected_group_id,
+    CASE WHEN e.action='EXCLUDE' THEN NULL ELSE n.id END AS expected_nature_id
+  FROM explicit e
+  LEFT JOIN cost_groups g
+    ON g."companyId"=(SELECT id FROM company)
+   AND g.code=e.group_code
+  LEFT JOIN cost_natures n
+    ON n."costGroupId"=g.id
+   AND n.code=e.nature_code
+), expected AS (
+  SELECT * FROM inherited_expected
+  UNION ALL
+  SELECT * FROM explicit_expected
+), actual AS (
+  SELECT
+    m."sourceLogicalCode" AS source_code,
+    coa."coaCode" AS coa,
+    m."mappingAction"::text AS actual_action,
+    m."costGroupId" AS actual_group_id,
+    m."natureId" AS actual_nature_id
+  FROM cost_coa_mappings m
+  JOIN cost_coas coa ON coa.id=m."coaId"
+  WHERE m."companyId"=(SELECT id FROM company)
+    AND m.active=TRUE
+    AND m."validFrom"=TIMESTAMP '2025-01-01 00:00:00'
+    AND m."validTo"=TIMESTAMP '2026-06-30 00:00:00'
+), comparison AS (
+  SELECT
+    e.*,
+    a.actual_action,
+    a.actual_group_id,
+    a.actual_nature_id,
+    (
+      a.actual_action = e.expected_action
+      AND a.actual_group_id IS NOT DISTINCT FROM e.expected_group_id
+      AND a.actual_nature_id IS NOT DISTINCT FROM e.expected_nature_id
+    ) AS exact_match
+  FROM expected e
+  LEFT JOIN actual a
+    ON a.source_code=e.source_code
+   AND a.coa=e.coa
+)
+SELECT
+  COUNT(*)::int AS expected_target_count,
+  COUNT(*) FILTER (WHERE exact_match)::int AS exact_target_match_count,
+  COUNT(*) FILTER (WHERE NOT COALESCE(exact_match,FALSE))::int AS target_mismatch_count,
+  CASE
+    WHEN COUNT(*) <> 140 THEN 'FAIL_EXPECTED_TARGET_SET'
+    WHEN COUNT(*) FILTER (WHERE exact_match) <> 140 THEN 'FAIL_TARGET_MISMATCH'
+    ELSE 'PASS'
+  END AS target_status
+FROM comparison;
 
 -- Exact Jan-2025 Nature parity against persisted AUDIT_SI.
 WITH company AS (
