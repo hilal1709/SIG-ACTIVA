@@ -57,6 +57,16 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
     setBusy(false);
   }
 
+  async function revalidate() {
+    setBusy(true);
+    setError('');
+    const response = await fetch(`/api/cost-structure/uploads/${uploadId}/revalidate`, { method: 'POST' });
+    const value = await response.json();
+    if (!response.ok) setError(value.error ?? 'Revalidation gagal.');
+    await load();
+    setBusy(false);
+  }
+
   async function resolve(item: Item, action: string) {
     const groupId = action === 'EXCLUDE' ? undefined : Number(prompt('Cost Group ID:'));
     const group = map?.groups.find((g) => g.id === groupId);
@@ -94,6 +104,7 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
   const sources = (rec?.sources ?? []) as Record<string, unknown>[];
   const completeness = (rec?.completeness ?? {}) as Record<string, unknown>;
   const issues = (upload.validationIssues ?? []) as Record<string, unknown>[];
+  const canRevalidate = upload.isActiveVersion === true && upload.status === 'VALIDATION_FAILED';
 
   const unmappedItems = useMemo(
     () => (map?.items ?? []).filter((item) => item.mappingStatus === 'UNMAPPED'),
@@ -117,9 +128,13 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
             <p className="text-muted-foreground">{String(company.companyCode ?? '')} · {String(period.fiscalYear ?? '')}/{String(period.fiscalPeriod ?? '')} · v{String(upload.version ?? '')} · {String(upload.originalFileName ?? '')}</p>
             <p className="mt-1 text-sm text-muted-foreground">{upload.isActiveVersion ? 'Active' : 'Superseded'} · {String(upload.status ?? '')} · Period {String(rec?.periodStatus ?? '')}</p>
           </div>
-          <button disabled={busy || !upload.isActiveVersion} onClick={run} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">{busy ? 'Running…' : 'Run reconciliation'}</button>
+          <div className="flex flex-wrap gap-2">
+            {canRevalidate && <button disabled={busy} onClick={revalidate} className="rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">{busy ? 'Processing…' : 'Revalidate file'}</button>}
+            <button disabled={busy || !upload.isActiveVersion} onClick={run} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">{busy ? 'Running…' : 'Run reconciliation'}</button>
+          </div>
         </div>
 
+        {canRevalidate && <p data-cost-motion className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">File ini gagal validasi dengan rule sebelumnya. Revalidate menjalankan ulang parser terbaru pada file/hash yang sama tanpa membuat upload version duplikat.</p>}
         {error && <p data-cost-motion className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
 
         <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
