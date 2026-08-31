@@ -23,11 +23,25 @@ test('automatic advance runs only for advanceable non-blocked, non-finalized sta
   assert.equal(shouldAutoAdvance(process('FINALIZED', { canAdvance: true })), false);
 });
 
-test('runner prevents duplicate advance and offers explicit retry with backoff', () => {
+test('runner prevents duplicate advance and offers bounded network retry', () => {
   const source = readFileSync('components/cost-structure/process/process-workflow.tsx', 'utf8');
   assert.match(source, /if \(requestInFlight\.current\) return/);
   assert.match(source, /NETWORK_BACKOFF_MS/);
   assert.match(source, /onRetry=\{advance\}/);
+});
+
+test('business blocker response updates process state instead of entering network retry loop', () => {
+  const api = readFileSync('components/cost-structure/process/api.ts', 'utf8');
+  const runner = readFileSync('components/cost-structure/process/process-workflow.tsx', 'utf8');
+  assert.match(api, /if \(process\)[\s\S]*retryable/);
+  assert.match(runner, /if \(e\.process\) \{[\s\S]*update\(e\.process\)[\s\S]*networkAttempt\.current = 0/);
+});
+
+test('automatic workflow is primary; manual reconciliation is not exposed as a normal action', () => {
+  const source = readFileSync('app/cost-structure/upload/[id]/phase-d-workspace.tsx', 'utf8');
+  assert.match(source, /<ProcessWorkflow uploadId=\{uploadId\}/);
+  assert.doesNotMatch(source, /Run reconciliation/);
+  assert.match(source, /Revalidate file/);
 });
 
 test('READY and FINALIZED summaries render without automatic finalization', () => {
