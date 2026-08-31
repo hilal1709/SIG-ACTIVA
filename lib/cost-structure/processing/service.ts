@@ -28,7 +28,16 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
   const report = await getPhaseDReport(uploadId);
   if (!report) throw new CostStructureProcessNotFoundError('Upload tidak ditemukan.');
   const audit = await getAuditSnapshotReadiness(uploadId, upload.period.company.companyCode);
-  const phaseDIssueCodes = new Set(['CC_GROUP_TOTAL_NOT_FOUND', 'CC_GROUP_TOTAL_AMBIGUOUS', 'CC_GROUP_NOT_RECONCILED', 'UNMAPPED_COA', 'MAPPING_AMBIGUOUS', 'MAPPING_OVERLAP', 'MAPPING_TARGET_INVALID']);
+  const phaseDIssueCodes = new Set([
+    'CC_GROUP_TOTAL_NOT_FOUND',
+    'CC_GROUP_TOTAL_AMBIGUOUS',
+    'CC_GROUP_NOT_RECONCILED',
+    'SOURCE_ROW_MISSING_COA',
+    'UNMAPPED_COA',
+    'MAPPING_AMBIGUOUS',
+    'MAPPING_OVERLAP',
+    'MAPPING_TARGET_INVALID',
+  ]);
   const structuralIssues = upload.validationIssues.filter((issue) => !phaseDIssueCodes.has(issue.issueCode));
   const phaseDStarted = upload.sourceRows.length > 0 || upload.validationIssues.some((issue) => phaseDIssueCodes.has(issue.issueCode));
   const activeRun = upload.period.activeCalculationRun;
@@ -56,7 +65,7 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
 type AdvanceDependencies = {
   status(uploadId: number): Promise<CostStructureProcessStatus>;
   reconcile(uploadId: number): Promise<void>;
-  hydrate(periodId: number, userId: number): Promise<void>;
+  hydrate(periodId: number, uploadId: number, userId: number): Promise<void>;
   calculate(periodId: number, userId: number): Promise<void>;
   postCheck(periodId: number, userId: number): Promise<void>;
 };
@@ -64,7 +73,7 @@ type AdvanceDependencies = {
 const dependencies: AdvanceDependencies = {
   status: getCostStructureProcessStatus,
   reconcile: async (uploadId) => { await runPhaseD(uploadId); await refreshPeriodReadiness(uploadId); },
-  hydrate: async (periodId, userId) => { await hydrateAuditSnapshot(periodId, userId); },
+  hydrate: async (periodId, uploadId, userId) => { await hydrateAuditSnapshot(periodId, userId, uploadId); },
   calculate: async (periodId, userId) => { await runCostStructureCalculation(periodId, userId); },
   postCheck: async (periodId, userId) => { await reconcileCostStructure(periodId, userId); },
 };
@@ -74,7 +83,7 @@ export async function advanceCostStructureProcess(uploadId: number, userId: numb
   const before = await deps.status(uploadId);
   return executeNextProcessStage(before, {
     RECONCILIATION: () => deps.reconcile(uploadId),
-    AUDIT_READINESS: () => deps.hydrate(before.periodId, userId),
+    AUDIT_READINESS: () => deps.hydrate(before.periodId, uploadId, userId),
     CALCULATION: () => deps.calculate(before.periodId, userId),
     POST_CHECK: () => deps.postCheck(before.periodId, userId),
   }, () => deps.status(uploadId));
