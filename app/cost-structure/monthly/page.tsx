@@ -24,7 +24,7 @@ export default async function MonthlyCostStructurePage() {
     fiscalPeriod: period.fiscalPeriod,
     status: period.status,
     upload: period.uploads[0]
-      ? { version: period.uploads[0].version, status: period.uploads[0].status }
+      ? { id: period.uploads[0].id, version: period.uploads[0].version, status: period.uploads[0].status }
       : null,
     run: period.activeCalculationRun
       ? {
