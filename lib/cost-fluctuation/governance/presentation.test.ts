@@ -13,17 +13,20 @@ test('COMPANY and ANALYSIS_BASIS are context, not commentary targets', () => {
   for (const target of ['COST_GROUP', 'NATURE', 'COA', 'CALCULATED_ITEM']) assert.equal(isCommentaryTarget(target), true);
 });
 
-test('returned commentary is editable while reviewed commentary is immutable', () => {
+test('returned commentary must be saved back to DRAFT before submit and reviewed is immutable', () => {
   const maker = governancePermissions('STAFF_ACCOUNTING');
   assert.equal(commentaryActions('RETURNED', maker).canEdit, true);
-  assert.equal(commentaryActions('RETURNED', maker).canSubmit, true);
+  assert.equal(commentaryActions('RETURNED', maker).canSubmit, false);
+  assert.equal(commentaryActions('DRAFT', maker).canSubmit, true);
   assert.equal(commentaryActions('REVIEWED', maker).immutable, true);
   assert.equal(commentaryActions('REVIEWED', maker).canEdit, false);
 });
 
-test('maker/checker action visibility follows lifecycle', () => {
-  assert.equal(commentaryActions('SUBMITTED', governancePermissions('STAFF_ACCOUNTING')).canCheck, false);
-  assert.equal(commentaryActions('SUBMITTED', governancePermissions('SUPERVISOR_ACCOUNTING')).canCheck, true);
+test('maker/checker action visibility follows lifecycle and actor identity', () => {
+  assert.equal(commentaryActions('SUBMITTED', governancePermissions('STAFF_ACCOUNTING'), 10, 20).canCheck, false);
+  assert.equal(commentaryActions('SUBMITTED', governancePermissions('SUPERVISOR_ACCOUNTING'), 10, 20).canCheck, true);
+  assert.equal(commentaryActions('SUBMITTED', governancePermissions('ADMIN_SYSTEM'), 10, 10).canCheck, false);
+  assert.equal(commentaryActions('SUBMITTED', governancePermissions('ADMIN_SYSTEM'), 10, 10).makerCheckerBlocked, true);
 });
 
 test('materiality AND/OR explanations do not invent thresholds', () => {
