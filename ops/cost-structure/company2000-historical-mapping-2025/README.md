@@ -35,7 +35,7 @@ The 19 explicit candidates were reconstructed against `AUDIT_SI`. With those can
 
 1. `preflight.sql` — read-only guards. Must return `READY_TO_APPLY` before execution.
 2. `apply.sql` — transactional, idempotent, fail-closed DML. Creates missing COA master rows only when required, inserts predecessor mappings, and writes one audit-log record.
-3. `verify.sql` — read-only post-apply verification, including exact Nature parity against Jan-2025 `AUDIT_SI`.
+3. `verify.sql` — read-only post-apply verification. It requires mapping cardinality, exact individual action/group/nature target identity, and exact Nature parity against Jan-2025 `AUDIT_SI`.
 
 ## Safety properties
 
@@ -54,6 +54,9 @@ The 19 explicit candidates were reconstructed against `AUDIT_SI`. With those can
 1. Run `preflight.sql` against production.
 2. Review the output and confirm `READY_TO_APPLY`.
 3. Apply `apply.sql` in one transaction.
-4. Run `verify.sql` and require all mapping/Nature differences to be zero.
+4. Run `verify.sql` and require:
+   - `mapping_status = PASS`
+   - `target_status = PASS`
+   - every Nature and TOTAL `difference = 0.00`
 5. Only after the application deployment containing failed-upload revalidation is live: open Jan-2025 upload → `Revalidate file` → `Run reconciliation`.
 6. Calculate Jan-2025 separately and compare the Engine 1 result to the persisted `AUDIT_SI` before finalization.
