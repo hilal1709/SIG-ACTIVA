@@ -12,8 +12,12 @@ const AUDIT_PREFIX = 'AUDIT_';
  * One-time maintenance operation for uploads created before audit-only parser persistence existed.
  * It verifies the stored workbook SHA-256, parses it once, then replaces only AUDIT_* rows.
  * Engine 1 rows, mappings, calculation runs/results, and CostPeriod status are never changed.
+ *
+ * `expectedUploadId` is used by the automatic processing pipeline so a reopened/new upload
+ * cannot accidentally hydrate the upload belonging to an older active calculation run.
+ * Existing callers may omit it to retain the export-maintenance authoritative-run behavior.
  */
-export async function hydrateAuditSnapshot(periodId: number, userId: number) {
+export async function hydrateAuditSnapshot(periodId: number, userId: number, expectedUploadId?: number) {
   const period = await prisma.costPeriod.findUnique({
     where: { id: periodId },
     include: {
@@ -24,10 +28,17 @@ export async function hydrateAuditSnapshot(periodId: number, userId: number) {
   });
   if (!period) throw new Error('Periode tidak ditemukan.');
 
+  const explicitUpload = expectedUploadId
+    ? await prisma.costUpload.findUnique({ where: { id: expectedUploadId } })
+    : null;
+  if (expectedUploadId && (!explicitUpload || explicitUpload.periodId !== period.id || !explicitUpload.isActiveVersion)) {
+    throw new Error('Upload processing tidak lagi merupakan versi aktif periode ini.');
+  }
+
   const activeUploadId = period.activeCalculationRun?.uploadId;
-  const upload = activeUploadId
+  const upload = explicitUpload ?? (activeUploadId
     ? (period.uploads.find((item) => item.id === activeUploadId) ?? await prisma.costUpload.findUnique({ where: { id: activeUploadId } }))
-    : period.uploads[0];
+    : period.uploads[0]);
   if (!upload) throw new Error('Upload authoritative tidak ditemukan.');
 
   const bytes = await costStructureStorage.download(upload.storageKey);
