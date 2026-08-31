@@ -28,7 +28,12 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
   const report = await getPhaseDReport(uploadId);
   if (!report) throw new CostStructureProcessNotFoundError('Upload tidak ditemukan.');
   const audit = await getAuditSnapshotReadiness(uploadId, upload.period.company.companyCode);
-  const phaseDIssueCodes = new Set([
+
+  // SOURCE_ROW_MISSING_COA is intentionally allowed to enter Phase D because
+  // control/total rows can be auto-classified there. It must not, by itself,
+  // make us think Phase D has already run; otherwise the pre-run report would
+  // block the very reconciliation that can resolve those control-row issues.
+  const phaseDResolvableIssueCodes = new Set([
     'CC_GROUP_TOTAL_NOT_FOUND',
     'CC_GROUP_TOTAL_AMBIGUOUS',
     'CC_GROUP_NOT_RECONCILED',
@@ -38,8 +43,17 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
     'MAPPING_OVERLAP',
     'MAPPING_TARGET_INVALID',
   ]);
-  const structuralIssues = upload.validationIssues.filter((issue) => !phaseDIssueCodes.has(issue.issueCode));
-  const phaseDStarted = upload.sourceRows.length > 0 || upload.validationIssues.some((issue) => phaseDIssueCodes.has(issue.issueCode));
+  const phaseDProducedIssueCodes = new Set([
+    'CC_GROUP_TOTAL_NOT_FOUND',
+    'CC_GROUP_TOTAL_AMBIGUOUS',
+    'CC_GROUP_NOT_RECONCILED',
+    'UNMAPPED_COA',
+    'MAPPING_AMBIGUOUS',
+    'MAPPING_OVERLAP',
+    'MAPPING_TARGET_INVALID',
+  ]);
+  const structuralIssues = upload.validationIssues.filter((issue) => !phaseDResolvableIssueCodes.has(issue.issueCode));
+  const phaseDStarted = upload.sourceRows.length > 0 || upload.validationIssues.some((issue) => phaseDProducedIssueCodes.has(issue.issueCode));
   const activeRun = upload.period.activeCalculationRun;
   const postCheckBlockers = activeRun?.status === 'SUCCESS'
     ? activeRun.results.filter((control) => control.reconciliationStatus !== 'RECONCILED' || !control.reconciliationDifference?.isZero()).map((control) => ({ code: control.resultCode, message: `${control.resultCode} belum reconciled (difference ${control.reconciliationDifference?.toString() ?? 'N/A'}).` }))
