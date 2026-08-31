@@ -27,3 +27,12 @@ test('export fails explicitly when mandatory persisted audit templates are absen
   assert.match(source, /requireAuditRows/);
   assert.match(source, /Audit snapshot .* belum dipersist/);
 });
+
+test('AUDIT_CC_DRV is period-optional in export while other mandatory audit snapshots remain fail-closed', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /addSourceSheet\(workbook, 'cc_drv', rowsByCode\(allRows, 'AUDIT_CC_DRV'\)\)/);
+  assert.doesNotMatch(source, /requireAuditRows\(allRows, 'AUDIT_CC_DRV'/);
+  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_DERIV'/);
+  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_RINCIAN'/);
+  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_SI2000_DRV'/);
+});
