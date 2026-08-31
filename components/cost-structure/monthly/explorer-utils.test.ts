@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { availableYears, canShowCalculationAction, displayGroupCodes, filterPeriods, groupPeriods, initialExpandedPeriod, latestYear, nextExpandedPeriod } from './explorer-utils';
+import { availableYears, canOpenProcess, displayGroupCodes, filterPeriods, groupPeriods, initialExpandedPeriod, latestYear, nextExpandedPeriod } from './explorer-utils';
 import type { MonthlyPeriod } from './types';
 
 const period = (id: number, companyCode: string, fiscalYear: number, fiscalPeriod: number, status = 'CALCULATED', errorMessage: string | null = null): MonthlyPeriod => ({
-  id, companyCode, fiscalYear, fiscalPeriod, status, upload: { version: 1, status: 'VALIDATED' },
+  id, companyCode, fiscalYear, fiscalPeriod, status, upload: { id: id + 100, version: 1, status: 'VALIDATED' },
   run: { runNumber: 1, status: errorMessage ? 'FAILED' : 'SUCCESS', ruleSetVersion: 'v1', completedAt: null, errorMessage, actualLineCount: 1, results: [] },
 });
 const periods = [period(1, '2000', 2025, 1), period(2, '7000', 2026, 2, 'FINALIZED'), period(3, '2000', 2026, 1, 'SOURCE_RECONCILED')];
@@ -19,6 +19,15 @@ test('accordion expands one selected detail and collapses it', () => { assert.eq
 test('error period is represented and initially expanded', () => assert.equal(initialExpandedPeriod([periods[0], period(6, '7000', 2026, 3, 'CALCULATED', 'blocked')]), 6));
 test('company result sections preserve 2000 and 7000 scope', () => { assert.deepEqual(displayGroupCodes('2000'), ['ADUM', 'PASAR', 'TOTAL']); assert.deepEqual(displayGroupCodes('7000'), ['HPP', 'ADUM', 'PASAR', 'TOTAL']); });
 test('empty data has no latest year or groups', () => { assert.equal(latestYear([]), null); assert.deepEqual(groupPeriods([]), {}); });
-test('calculation action eligibility preserves existing period and company restrictions', () => { assert.equal(canShowCalculationAction(periods[2]), true); assert.equal(canShowCalculationAction(periods[1]), false); assert.equal(canShowCalculationAction(period(9, '9999', 2026, 1, 'CALCULATED')), false); });
+test('unfinished periods route to automatic processing while finalized periods stay read-only', () => {
+  assert.equal(canOpenProcess(periods[2]), true);
+  assert.equal(canOpenProcess(periods[1]), false);
+  assert.equal(canOpenProcess({ ...period(9, '9999', 2026, 1), upload: null }), false);
+});
 test('mobile layout retains overflow guards and comfortable tap target', () => { const source = readFileSync('components/cost-structure/monthly/company-period-group.tsx', 'utf8'); assert.match(source, /min-w-0 overflow-hidden/); assert.match(source, /min-h-14 w-full min-w-0/); });
 test('status badge always renders visible status text and an icon', () => { const source = readFileSync('components/cost-structure/monthly/status-badge.tsx', 'utf8'); assert.match(source, /Icon className/); assert.match(source, /normalized\.replaceAll/); });
+test('monthly detail does not expose a separate Run Calculation button', () => {
+  const source = readFileSync('components/cost-structure/monthly/period-detail.tsx', 'utf8');
+  assert.doesNotMatch(source, /CalculationButton|Run Calculation/);
+  assert.match(source, /Buka proses/);
+});
