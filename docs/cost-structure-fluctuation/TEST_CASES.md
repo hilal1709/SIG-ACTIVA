@@ -206,6 +206,10 @@ PASAR `16487761095`, and company total `124331919006`. Tests cover the dynamic `
 eight-digit-only CC_DRV parsing/control, negative derivative lineage, source-specific 676 mapping,
 Product Development zero-net exclusion, 7xx exclusion, and the six SI controls at zero.
 
+Negative control fixtures must also prove that independently supplied Rincian, CC_DRV, SI PASAR,
+and company evidence can produce non-zero reconciliation differences. Zero-only unknown support
+COAs are non-contributing; a non-zero delta or derivative without active `CostCoa` is blocking.
+
 ## 7. Engine 1 — Company 7000 tests
 
 ### E1-7000-001 Scope

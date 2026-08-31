@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { COMPANY_2000_GROUPS, COMPANY_2000_SOURCES, COMPANY_2000_SUPPORT_SOURCES } from './constants';
 import type { Company2000GroupCode, EngineActualLine, EngineResult, ResolvedAdjustment, ResolvedSourceLine } from './types';
+import type { Company2000SupportControls } from './company-2000-si-adapter';
 
 const zero = () => new Prisma.Decimal(0);
 const allowedGroups = new Set<string>(COMPANY_2000_GROUPS);
@@ -13,7 +14,7 @@ function validateTarget(line: { groupCode?: string; targetActive?: boolean; natu
   if (line.natureCalculationType !== 'MAPPED') throw new Error('Company 2000 Phase E accepts only MAPPED Nature targets.');
 }
 
-export function calculateCompany2000(input: { sourceLines: ResolvedSourceLine[]; adjustments?: ResolvedAdjustment[]; derivativeControlTotal?: Prisma.Decimal }): EngineResult {
+export function calculateCompany2000(input: { sourceLines: ResolvedSourceLine[]; adjustments?: ResolvedAdjustment[]; supportControl?: Company2000SupportControls }): EngineResult {
   const actualLines: EngineActualLine[] = [];
   const natureMetadata = new Map<string, { costGroupId: number; natureId: number; groupCode: Company2000GroupCode; natureCode: string }>();
 
@@ -64,18 +65,23 @@ export function calculateCompany2000(input: { sourceLines: ResolvedSourceLine[];
   const rincianDelta = { ADUM: contribution('ADUM', (line) => line.ruleCode === 'RINCIAN_DELTA_ADUM'), PASAR: contribution('PASAR', (line) => line.ruleCode === 'RINCIAN_DELTA_PASAR') };
   const derivative = contribution('PASAR', (line) => line.ruleCode === 'CC_DRV_DERIVATIVE_OFFSET');
   const manual = { ADUM: contribution('ADUM', (line) => line.lineType === 'ADJUSTMENT' && !line.ruleCode), PASAR: contribution('PASAR', (line) => line.lineType === 'ADJUSTMENT' && !line.ruleCode) };
-  const rincianBase = { ADUM: raw.ADUM.add(rincianDelta.ADUM), PASAR: raw.PASAR.add(rincianDelta.PASAR) };
+  const rincianActual = { ADUM: raw.ADUM.add(rincianDelta.ADUM), PASAR: raw.PASAR.add(rincianDelta.PASAR) };
+  const evidence = input.supportControl ?? { rincianAdumTotal: rincianActual.ADUM, rincianPasarTotal: rincianActual.PASAR, derivativeDetailTotal: derivative.abs(), derivativeControlTotal: derivative.abs() };
+  const expectedSi = {
+    ADUM: evidence.rincianAdumTotal.add(manual.ADUM),
+    PASAR: evidence.rincianPasarTotal.sub(evidence.derivativeSiTotal ?? evidence.derivativeControlTotal).add(manual.PASAR),
+  };
   const controls = COMPANY_2000_GROUPS.map((code) => {
     const sum = natureTotals.filter((nature) => nature.groupCode === code).reduce((value, nature) => value.add(nature.amount), zero());
     return { resultCode: `${code}_NATURE_RECONCILIATION`, costGroupId: groupIds.get(code) ?? 0, amount: groupTotals[code], difference: groupTotals[code].sub(sum) };
   });
   controls.push(
-    { resultCode: 'RINCIAN_ADUM_RECONCILIATION', costGroupId: groupIds.get('ADUM') ?? 0, amount: rincianBase.ADUM, difference: rincianBase.ADUM.sub(raw.ADUM.add(rincianDelta.ADUM)) },
-    { resultCode: 'RINCIAN_PASAR_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: rincianBase.PASAR, difference: rincianBase.PASAR.sub(raw.PASAR.add(rincianDelta.PASAR)) },
-    { resultCode: 'CC_DRV_DETAIL_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: input.derivativeControlTotal ?? derivative.abs(), difference: zero() },
-    { resultCode: 'SI_ADUM_RECONCILIATION', costGroupId: groupIds.get('ADUM') ?? 0, amount: groupTotals.ADUM, difference: groupTotals.ADUM.sub(rincianBase.ADUM.add(manual.ADUM)) },
-    { resultCode: 'SI_PASAR_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: groupTotals.PASAR, difference: groupTotals.PASAR.sub(rincianBase.PASAR.add(derivative).add(manual.PASAR)) },
-    { resultCode: 'SI_COMPANY_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: groupTotals.ADUM.add(groupTotals.PASAR), difference: groupTotals.ADUM.add(groupTotals.PASAR).sub(groupTotals.ADUM.add(groupTotals.PASAR)) },
+    { resultCode: 'RINCIAN_ADUM_RECONCILIATION', costGroupId: groupIds.get('ADUM') ?? 0, amount: evidence.rincianAdumTotal, difference: rincianActual.ADUM.sub(evidence.rincianAdumTotal) },
+    { resultCode: 'RINCIAN_PASAR_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: evidence.rincianPasarTotal, difference: rincianActual.PASAR.sub(evidence.rincianPasarTotal) },
+    { resultCode: 'CC_DRV_DETAIL_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: evidence.derivativeControlTotal, difference: evidence.derivativeDetailTotal.sub(evidence.derivativeControlTotal) },
+    { resultCode: 'SI_ADUM_RECONCILIATION', costGroupId: groupIds.get('ADUM') ?? 0, amount: expectedSi.ADUM, difference: groupTotals.ADUM.sub(expectedSi.ADUM) },
+    { resultCode: 'SI_PASAR_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: expectedSi.PASAR, difference: groupTotals.PASAR.sub(expectedSi.PASAR) },
+    { resultCode: 'SI_COMPANY_RECONCILIATION', costGroupId: groupIds.get('PASAR') ?? 0, amount: expectedSi.ADUM.add(expectedSi.PASAR), difference: groupTotals.ADUM.add(groupTotals.PASAR).sub(expectedSi.ADUM.add(expectedSi.PASAR)) },
   );
   return { actualLines, natureTotals, groupTotals, companyTotal: groupTotals.ADUM.add(groupTotals.PASAR), controls };
 }

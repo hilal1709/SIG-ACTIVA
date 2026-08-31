@@ -14,6 +14,16 @@ export type SiSupportAmount = {
   amount: Prisma.Decimal;
 };
 
+export type Company2000SupportControls = {
+  rincianAdumTotal: Prisma.Decimal;
+  rincianPasarTotal: Prisma.Decimal;
+  derivativeDetailTotal: Prisma.Decimal;
+  derivativeControlTotal: Prisma.Decimal;
+  derivativeSiTotal?: Prisma.Decimal;
+};
+
+export type RincianDelta = SiSupportAmount & { groupCode: 'ADUM' | 'PASAR'; rawAmount: Prisma.Decimal };
+
 const zero = () => new Prisma.Decimal(0);
 const normalized = (value: unknown) => String(value ?? '').trim().toUpperCase().replace(/[_.-]+/g, ' ').replace(/\s+/g, ' ');
 const rawRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -57,7 +67,7 @@ export function parseCompany2000Rincian(rows: PersistedSupportRow[]): { ADUM: Si
 }
 
 /** Parses only eight-digit CC_DRV details and reconciles them to its persisted Grand Total. */
-export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { details: SiSupportAmount[]; controlTotal: Prisma.Decimal } {
+export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { details: SiSupportAmount[]; detailTotal: Prisma.Decimal; controlTotal: Prisma.Decimal; difference: Prisma.Decimal } {
   const details: SiSupportAmount[] = [];
   let controlTotal: Prisma.Decimal | null = null;
   for (const row of rows.filter((item) => item.logicalSourceCode === 'AUDIT_CC_DRV')) {
@@ -68,8 +78,46 @@ export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { detai
   }
   if (controlTotal === null) throw new Error('AUDIT_CC_DRV Grand Total control was not found.');
   const detailTotal = details.reduce((sum, item) => sum.add(item.amount), zero());
-  if (!detailTotal.equals(controlTotal)) throw new Error(`CC_DRV detail does not reconcile: detail ${detailTotal.toString()}, control ${controlTotal.toString()}.`);
-  return { details, controlTotal };
+  const difference = detailTotal.sub(controlTotal);
+  if (!difference.isZero()) throw new Error(`CC_DRV detail does not reconcile: detail ${detailTotal.toString()}, control ${controlTotal.toString()}.`);
+  return { details, detailTotal, controlTotal, difference };
+}
+
+export function deriveCompany2000Support(input: {
+  rincian: { ADUM: SiSupportAmount[]; PASAR: SiSupportAmount[] };
+  derivative: { details: SiSupportAmount[]; detailTotal: Prisma.Decimal; controlTotal: Prisma.Decimal };
+  rawByGroup: { ADUM: Map<string, Prisma.Decimal>; PASAR: Map<string, Prisma.Decimal> };
+}): { rincianDeltas: RincianDelta[]; derivativeDetails: SiSupportAmount[]; contributingCoaCodes: string[]; controls: Company2000SupportControls } {
+  const rincianDeltas: RincianDelta[] = [];
+  for (const groupCode of ['ADUM', 'PASAR'] as const) {
+    const rincianByCoa = sumSupportByCoa(input.rincian[groupCode]);
+    for (const [coaCode, amount] of rincianByCoa) {
+      const rawAmount = input.rawByGroup[groupCode].get(coaCode) ?? zero();
+      const delta = amount.sub(rawAmount);
+      if (delta.isZero()) continue;
+      const evidence = input.rincian[groupCode].find((item) => item.coaCode === coaCode)!;
+      rincianDeltas.push({ ...evidence, groupCode, rawAmount, amount: delta });
+    }
+  }
+  const derivativeDetails = input.derivative.details.filter((item) => !item.amount.isZero());
+  return {
+    rincianDeltas,
+    derivativeDetails,
+    contributingCoaCodes: [...new Set([...rincianDeltas.map((item) => item.coaCode), ...derivativeDetails.map((item) => item.coaCode)])],
+    controls: {
+      rincianAdumTotal: input.rincian.ADUM.reduce((sum, item) => sum.add(item.amount), zero()),
+      rincianPasarTotal: input.rincian.PASAR.reduce((sum, item) => sum.add(item.amount), zero()),
+      derivativeDetailTotal: input.derivative.detailTotal,
+      derivativeControlTotal: input.derivative.controlTotal,
+      derivativeSiTotal: input.derivative.controlTotal,
+    },
+  };
+}
+
+export function assertContributingSupportCoasResolved(contributingCoaCodes: string[], resolvedCoaCodes: Iterable<string>): void {
+  const resolved = new Set(resolvedCoaCodes);
+  const missing = contributingCoaCodes.find((code) => !resolved.has(code));
+  if (missing) throw new Error(`Non-zero Company 2000 SI support contribution for COA ${missing} has no active CostCoa master.`);
 }
 
 export function sumSupportByCoa(lines: SiSupportAmount[]): Map<string, Prisma.Decimal> {

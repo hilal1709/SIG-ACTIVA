@@ -53,13 +53,14 @@ test('unrecognized sources have zero effect and rerun is deterministic', () => {
 test('Company 2000 authoritative golden arithmetic contract', () => {
   let id = 0;
   const nature = (groupCode: 'ADUM'|'PASAR', natureCode: string, amount: string, logicalSourceCode = groupCode === 'ADUM' ? 'CC_ADUM' : 'CC_PASAR', ruleCode?: string) => line({ sourceRowId: ++id, logicalSourceCode, groupCode, costGroupId: groupCode === 'ADUM' ? 20 : 21, natureId: ++id + 100, natureCode, amount: d(amount), ruleCode });
-  const result = calculateCompany2000({ derivativeControlTotal:d('1488906545'), sourceLines: [
+  const result = calculateCompany2000({ supportControl: { rincianAdumTotal:d('107844157911'), rincianPasarTotal:d('17976667640'), derivativeDetailTotal:d('1488906545'), derivativeControlTotal:d('1488906545') }, sourceLines: [
     nature('ADUM','N01','180971720'), nature('ADUM','N02','37590056'), nature('ADUM','N02','-388','AUDIT_RINCIAN','RINCIAN_DELTA_ADUM'), nature('ADUM','N03','700733597'),
     nature('ADUM','N04','49865167866'), nature('ADUM','N04','40572754'), nature('ADUM','N04','7035484'), nature('ADUM','N05','1998787267'), nature('ADUM','N06','5514747437'), nature('ADUM','N07','44532279743'), nature('ADUM','N08','954509200'), nature('ADUM','N09','4011763175'),
     nature('PASAR','N02','117483235'), nature('PASAR','N02','-12540370','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'), nature('PASAR','N03','220626'),
     nature('PASAR','N04','8051373527'), nature('PASAR','N04','9500000'), nature('PASAR','N04','-1115041922','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
     nature('PASAR','N06','1528950213'), nature('PASAR','N06','16270603'), nature('PASAR','N07','1938877955'), nature('PASAR','N07','65679295'), nature('PASAR','N07','-142428608','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
     nature('PASAR','N08','6197966291'), nature('PASAR','N08','-168549750','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
+    nature('PASAR','N08','50345895'), nature('PASAR','N08','-50345895','AUDIT_CC_DRV','CC_DRV_DERIVATIVE_OFFSET'),
   ] });
   assert.equal(result.groupTotals.ADUM.toFixed(0), '107844157911');
   assert.equal(result.groupTotals.PASAR.toFixed(0), '16487761095');
@@ -69,4 +70,21 @@ test('Company 2000 authoritative golden arithmetic contract', () => {
   assert.equal(total('ADUM','N02'),'37589668'); assert.equal(total('ADUM','N04'),'49912776104');
   assert.equal(total('PASAR','N02'),'104942865'); assert.equal(total('PASAR','N04'),'6945831605'); assert.equal(total('PASAR','N06'),'1545220816'); assert.equal(total('PASAR','N07'),'1862128642'); assert.equal(total('PASAR','N08'),'6029416541');
   assert.ok(result.controls.filter((control)=>control.resultCode.endsWith('RECONCILIATION')).every((control)=>control.difference.isZero()));
+});
+
+test('independent source evidence makes Rincian, derivative, SI PASAR and company controls fail', () => {
+  const result = calculateCompany2000({
+    sourceLines: [
+      line({ amount: d(100) }),
+      line({ sourceRowId: 2, logicalSourceCode: 'CC_PASAR', groupCode: 'PASAR', costGroupId: 21, natureId: 31, natureCode: 'N02', amount: d(80) }),
+      line({ sourceRowId: 3, logicalSourceCode: 'AUDIT_CC_DRV', groupCode: 'PASAR', costGroupId: 21, natureId: 31, natureCode: 'N02', amount: d(-10), ruleCode: 'CC_DRV_DERIVATIVE_OFFSET' }),
+    ],
+    supportControl: { rincianAdumTotal: d(101), rincianPasarTotal: d(82), derivativeDetailTotal: d(10), derivativeControlTotal: d(11) },
+  });
+  const difference = (code: string) => result.controls.find((control) => control.resultCode === code)!.difference.toString();
+  assert.equal(difference('RINCIAN_ADUM_RECONCILIATION'), '-1');
+  assert.equal(difference('RINCIAN_PASAR_RECONCILIATION'), '-2');
+  assert.equal(difference('CC_DRV_DETAIL_RECONCILIATION'), '-1');
+  assert.equal(difference('SI_PASAR_RECONCILIATION'), '-1');
+  assert.equal(difference('SI_COMPANY_RECONCILIATION'), '-2');
 });
