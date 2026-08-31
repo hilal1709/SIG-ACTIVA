@@ -21,6 +21,16 @@ test('run, ruleset, upload and basis changes make commentary lineage stale', () 
   assert.notEqual(base, lineageKey('MOM', [{ ...si, basisCode: 'GHOPO' }], []));
 });
 
+test('comparison snapshot changes make commentary lineage stale', () => {
+  const comparison = { ...si, periodId: 3, fiscalPeriod: 6, runId: 30, uploadId: 3 };
+  const base = lineageKey('MOM', [si], [comparison]);
+  assert.notEqual(base, lineageKey('MOM', [si], [{ ...comparison, periodId: 4 }]));
+  assert.notEqual(base, lineageKey('MOM', [si], [{ ...comparison, runId: 31 }]));
+  assert.notEqual(base, lineageKey('MOM', [si], [{ ...comparison, uploadId: 4 }]));
+  assert.notEqual(base, lineageKey('MOM', [si], [{ ...comparison, ruleSetVersion: 'changed' }]));
+  assert.notEqual(base, lineageKey('MOM', [si], [{ ...comparison, basisCode: 'GHOPO' }]));
+});
+
 const metric = { currentAmount: '1.00', comparisonAmount: '0.00', varianceAmount: '1.00', variancePercent: null, variancePercentStatus: 'NM' as const, contribution: null, contributionStatus: 'NOT_APPLICABLE' as const, contributionBasis: null };
 const leaf = (basis: 'GHOPO' | 'DERIV'): ComparedNode => ({ ...metric, key: `basis:${basis}:group:20:nature:27:calculated:DERIV_SOURCE:DERIV_SHEET_AMOUNT`, id: null, code: 'ITEM', label: 'Item', nodeType: 'CALCULATED_ITEM', order: 1 });
 const nature = (basis: 'GHOPO' | 'DERIV'): ComparedNode => ({ ...metric, key: `basis:${basis}:group:20:nature:27`, id: 27, code: 'N07', label: 'UUA', nodeType: 'NATURE', order: 1, children: [leaf(basis)] });

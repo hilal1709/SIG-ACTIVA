@@ -45,6 +45,7 @@ function auditRows(uploadId: number, company: '2000' | '7000'): PersistedSourceR
   const sourceCode = company === '2000' ? 'AUDIT_SI' : 'AUDIT_GHOPO';
   const codes: Code[] = company === '2000' ? ['ADUM', 'PASAR'] : ['HPP', 'ADUM', 'PASAR'];
   const data: Array<[string, string]> = [];
+  data.push([company === '2000' ? 'Ctrl' : '710344 OA Clinker keluar', company === '2000' ? '0' : '999']);
   for (const code of codes) {
     data.push([code === 'HPP' ? 'Beban Pokok Penjualan' : code === 'ADUM' ? 'UMUM & ADMINISTRASI' : 'PEMASARAN', '']);
     const values = company === '2000' ? SI[code as 'ADUM' | 'PASAR'] : GHOPO[code];
@@ -114,6 +115,13 @@ test('production-shaped GHoPO and DERIV preserve all stable Nature identities an
 
 test('financial parity normalizes only to deterministic cent precision', () => { assert.equal(financial('93152232023.316').toFixed(2), '93152232023.32'); assert.equal(financial('41023853211.684').toFixed(2), '41023853211.68'); });
 
+test('financial arithmetic retains negative and large full-IDR Decimal precision', () => {
+  assert.equal(financial('-0.005').toFixed(2), '-0.01');
+  assert.equal(financial('9007199254740993.004').toFixed(2), '9007199254740993.00');
+  assert.equal(financial('9007199254740993.005').toFixed(2), '9007199254740993.01');
+  assert.equal(financial('93152232023.316').sub(financial('93152232023.312')).toFixed(2), '0.01');
+});
+
 test('source parity fails closed for missing, unknown, duplicate, and mismatched audit data', () => {
   const mutations: Array<(p: PersistedPeriod) => void> = [
     p => { p.activeRun!.sourceRows = p.activeRun!.sourceRows.filter(r => !(r.logicalSourceCode === 'AUDIT_SI' && (r.rawDataJson as Record<string,string>).COLUMN_1 === 'Bahan Penolong')); },
@@ -125,12 +133,44 @@ test('source parity fails closed for missing, unknown, duplicate, and mismatched
   const missingDeriv = period('7000'); missingDeriv.activeRun!.sourceRows = missingDeriv.activeRun!.sourceRows.filter(r => r.logicalSourceCode !== 'AUDIT_DERIV'); assert.throws(() => buildFinalizedMonthlySnapshot(missingDeriv), /AUDIT_DERIV source is missing/);
 });
 
+test('audit parsing accepts only locked headers, controls, and zero unknown rows', () => {
+  const zeroUnknown = period('2000');
+  zeroUnknown.activeRun!.sourceRows.unshift(...rows(zeroUnknown.activeRun!.uploadId, 'AUDIT_SI', [['Unknown blank', ''], ['Unknown zero', '0']]));
+  assert.equal(buildFinalizedMonthlySnapshot(zeroUnknown)!.amount.toFixed(2), '124331919006.00');
+
+  const wrongHeader = period('2000');
+  const header = wrongHeader.activeRun!.sourceRows.find((row) => row.logicalSourceCode === 'AUDIT_SI' && (row.rawDataJson as Record<string, string>).COLUMN_1 === 'UMUM & ADMINISTRASI')!;
+  (header.rawDataJson as Record<string, string>).COLUMN_1 = 'ADMIN SECTION';
+  assert.throws(() => buildFinalizedMonthlySnapshot(wrongHeader), FluctuationIntegrityError);
+
+  const beforeSection = period('2000');
+  beforeSection.activeRun!.sourceRows.unshift(...rows(beforeSection.activeRun!.uploadId, 'AUDIT_SI', [['Bahan Penolong', '1']]));
+  assert.throws(() => buildFinalizedMonthlySnapshot(beforeSection), FluctuationIntegrityError);
+});
+
 test('snapshot reconciliation enforces company, basis, group, and zero-Nature item invariants', () => {
   const valid = buildFinalizedMonthlySnapshot(period('2000'))!;
   valid.bases[0].amount = valid.bases[0].amount.sub(1); assert.throws(() => assertSnapshotReconciles(valid), /Analysis Basis|Analysis Bases/);
   const zero = buildFinalizedMonthlySnapshot(period('2000'))!; const nature = zero.bases[0].groups.find(g => g.code === 'PASAR')!.natures.find(n => n.code === 'N01')!;
   nature.items.push({ key: `${nature.key}:calculated:BAD:BAD`, id: null, code: 'BAD', label: 'bad', amount: d(1), order: 1 }); assert.throws(() => assertSnapshotReconciles(zero), /analytical items/);
   const total = period('2000'); total.activeRun!.results.find(r => r.resultCode === 'TOTAL_COMPANY')!.amount = d('1'); assert.throws(() => buildFinalizedMonthlySnapshot(total), /TOTAL_COMPANY/);
+});
+
+test('snapshot reconciliation independently enforces group and Nature rollups', () => {
+  const groupMismatch = buildFinalizedMonthlySnapshot(period('2000'))!;
+  groupMismatch.bases[0].groups[0].amount = groupMismatch.bases[0].groups[0].amount.add(1);
+  assert.throws(() => assertSnapshotReconciles(groupMismatch), /Cost Group|Analysis Basis/);
+
+  const natureMismatch = buildFinalizedMonthlySnapshot(period('2000'))!;
+  const nature = natureMismatch.bases[0].groups[0].natures.find((candidate) => !candidate.amount.isZero())!;
+  nature.items[0].amount = nature.items[0].amount.sub(1);
+  assert.throws(() => assertSnapshotReconciles(natureMismatch), /Nature|analytical items/);
+
+  const validZero = buildFinalizedMonthlySnapshot(period('2000'))!;
+  const zeroNature = validZero.bases[0].groups.find((group) => group.code === 'PASAR')!.natures.find((candidate) => candidate.code === 'N01')!;
+  assert.equal(zeroNature.amount.toFixed(2), '0.00');
+  assert.deepEqual(zeroNature.items, []);
+  assert.doesNotThrow(() => assertSnapshotReconciles(validZero));
 });
 
 test('canonical identities, display ordering, and unrelated subtotals are deterministic', () => {
@@ -167,6 +207,31 @@ test('comparison is deterministic, treats a missing leaf as zero, and keeps calc
   const current = buildFinalizedMonthlySnapshot(period('7000'))!; const comparison = buildFinalizedMonthlySnapshot(period('7000',2025,7))!; const nature = current.bases[1].groups.find(g=>g.code==='PASAR')!.natures.find(n=>n.code==='N02')!; const calculated = nature.items[0];
   comparison.bases[1].groups.find(g=>g.code==='PASAR')!.natures.find(n=>n.code==='N02')!.items=[];
   const first=compareSnapshots(current,comparison), second=compareSnapshots(current,comparison); assert.deepEqual(first,second); const node=first.children![1].children!.find(g=>g.code==='PASAR')!.children!.find(n=>n.code==='N02')!.children![0]; assert.equal(node.comparisonAmount,'0.00'); assert.equal(node.id,null); assert.equal(node.key,calculated.key); assert.equal(node.contributionBasis,'CALCULATED_ITEM_TO_NATURE');
+});
+
+test('variance uses the union of current and comparison items with exact zero semantics', () => {
+  const current = buildFinalizedMonthlySnapshot(period('2000'))!;
+  const comparison = buildFinalizedMonthlySnapshot(period('2000', 2025, 7))!;
+  const currentNature = current.bases[0].groups[0].natures.find((nature) => !nature.amount.isZero())!;
+  const comparisonNature = comparison.bases[0].groups[0].natures.find((nature) => nature.key === currentNature.key)!;
+  const template = currentNature.items[0];
+  currentNature.items = [
+    { ...template, key: `${currentNature.key}:coa:70001`, id: 70001, code: 'CURRENT_ONLY', amount: d(25), order: 1 },
+    { ...template, key: `${currentNature.key}:coa:70002`, id: 70002, code: 'BOTH', amount: d(0), order: 2 },
+    { ...template, key: `${currentNature.key}:coa:70003`, id: 70003, code: 'BOTH_ZERO', amount: d(0), order: 3 },
+  ];
+  comparisonNature.items = [
+    { ...template, key: `${currentNature.key}:coa:70002`, id: 70002, code: 'BOTH', amount: d(10), order: 2 },
+    { ...template, key: `${currentNature.key}:coa:70003`, id: 70003, code: 'BOTH_ZERO', amount: d(0), order: 3 },
+    { ...template, key: `${currentNature.key}:coa:70004`, id: 70004, code: 'COMPARISON_ONLY', amount: d(40), order: 4 },
+  ];
+  const nodes = compareSnapshots(current, comparison).children![0].children![0].children!.find((nature) => nature.key === currentNature.key)!.children!;
+  assert.deepEqual(nodes.map((node) => [node.code, node.currentAmount, node.comparisonAmount, node.varianceAmount, node.variancePercentStatus]), [
+    ['CURRENT_ONLY', '25.00', '0.00', '25.00', 'NM'],
+    ['BOTH', '0.00', '10.00', '-10.00', 'AVAILABLE'],
+    ['BOTH_ZERO', '0.00', '0.00', '0.00', 'AVAILABLE'],
+    ['COMPARISON_ONLY', '0.00', '40.00', '-40.00', 'AVAILABLE'],
+  ]);
 });
 
 test('finalization and active SUCCESS lineage gates reject invalid or superseded runs', () => {
