@@ -5,7 +5,7 @@ function fixedDecimal(value: string, fractionDigits: number): { negative: boolea
   const negative = match[1] === '-';
   const whole = match[2].replace(/^0+(?=\d)/, '') || '0';
   const sourceFraction = match[3] ?? '';
-  const scale = 10n ** BigInt(fractionDigits);
+  const scale = BigInt(10) ** BigInt(fractionDigits);
   let scaled = BigInt(whole) * scale;
 
   if (fractionDigits > 0) {
@@ -14,7 +14,7 @@ function fixedDecimal(value: string, fractionDigits: number): { negative: boolea
   }
 
   const nextDigit = sourceFraction[fractionDigits] ?? '0';
-  if (nextDigit >= '5') scaled += 1n;
+  if (nextDigit >= '5') scaled += BigInt(1);
 
   const scaledWhole = scaled / scale;
   const scaledFraction = fractionDigits > 0
@@ -22,7 +22,7 @@ function fixedDecimal(value: string, fractionDigits: number): { negative: boolea
     : '';
 
   return {
-    negative: negative && scaled !== 0n,
+    negative: negative && scaled !== BigInt(0),
     whole: scaledWhole.toString(),
     fraction: scaledFraction,
   };
