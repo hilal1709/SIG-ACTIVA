@@ -2,6 +2,8 @@ import CostStructureShell from '@/app/components/CostStructureShell';
 import { prisma } from '@/lib/prisma';
 import FluctuationWorkflow from './workflow';
 
+export const dynamic = 'force-dynamic';
+
 export default async function CostFluctuationPage() {
   const periods = await prisma.costPeriod.findMany({
     where: { status: 'FINALIZED' },
