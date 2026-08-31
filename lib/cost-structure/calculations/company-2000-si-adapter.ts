@@ -1,0 +1,127 @@
+import { Prisma } from '@prisma/client';
+
+export type PersistedSupportRow = {
+  id: number;
+  logicalSourceCode: string;
+  sourceRowNumber: number;
+  rawData: unknown;
+};
+
+export type SiSupportAmount = {
+  sourceRowId: number;
+  sourceRowNumber: number;
+  coaCode: string;
+  amount: Prisma.Decimal;
+};
+
+export type Company2000SupportControls = {
+  rincianAdumTotal: Prisma.Decimal;
+  rincianPasarTotal: Prisma.Decimal;
+  derivativeDetailTotal: Prisma.Decimal;
+  derivativeControlTotal: Prisma.Decimal;
+  derivativeSiTotal?: Prisma.Decimal;
+};
+
+export type RincianDelta = SiSupportAmount & { groupCode: 'ADUM' | 'PASAR'; rawAmount: Prisma.Decimal };
+
+const zero = () => new Prisma.Decimal(0);
+const normalized = (value: unknown) => String(value ?? '').trim().toUpperCase().replace(/[_.-]+/g, ' ').replace(/\s+/g, ' ');
+const rawRecord = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const cell = (row: PersistedSupportRow, column: number) => rawRecord(row.rawData)[`COLUMN_${column}`];
+
+function decimal(value: unknown, reference: string): Prisma.Decimal {
+  const raw = String(value ?? '').trim();
+  if (!raw) return zero();
+  const negativeParentheses = /^\(.*\)$/.test(raw);
+  const trailingMinus = raw.endsWith('-');
+  const cleaned = raw.replace(/[(),\s]/g, '').replace(/-$/, '');
+  if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) throw new Error(`Invalid Decimal amount at ${reference}.`);
+  const result = new Prisma.Decimal(cleaned);
+  return negativeParentheses || trailingMinus ? result.negated() : result;
+}
+
+/** Builds the persisted Rincian analytical base by COA without reopening the workbook. */
+export function parseCompany2000Rincian(rows: PersistedSupportRow[]): { ADUM: SiSupportAmount[]; PASAR: SiSupportAmount[] } {
+  const ordered = rows.filter((row) => row.logicalSourceCode === 'AUDIT_RINCIAN').sort((a, b) => a.sourceRowNumber - b.sourceRowNumber);
+  let columns: { coa: number; adum: number; pasar: number } | null = null;
+  const result: { ADUM: SiSupportAmount[]; PASAR: SiSupportAmount[] } = { ADUM: [], PASAR: [] };
+  for (const row of ordered) {
+    const raw = rawRecord(row.rawData);
+    const entries = Object.entries(raw).map(([key, value]) => ({ column: Number(key.replace('COLUMN_', '')), label: normalized(value) }));
+    const coa = entries.find((entry) => ['G/L ACC', 'G/L ACCOUNT', 'GL ACCOUNT', 'ACCOUNT', 'COA'].includes(entry.label));
+    const adum = entries.find((entry) => ['ADM', 'ADUM'].includes(entry.label));
+    const pasar = entries.find((entry) => entry.label === 'PASAR');
+    if (coa && adum && pasar) { columns = { coa: coa.column, adum: adum.column, pasar: pasar.column }; continue; }
+    if (!columns) continue;
+    const coaCode = normalized(cell(row, columns.coa)).match(/^(\d{8})(?:\s|$)/)?.[1];
+    if (!coaCode) continue;
+    for (const group of ['ADUM', 'PASAR'] as const) {
+      const column = group === 'ADUM' ? columns.adum : columns.pasar;
+      const value = cell(row, column);
+      if (value == null || String(value).trim() === '') continue;
+      result[group].push({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode, amount: decimal(value, `AUDIT_RINCIAN row ${row.sourceRowNumber}`) });
+    }
+  }
+  if (!columns) throw new Error('AUDIT_RINCIAN ADM/PASAR semantic header was not found.');
+  return result;
+}
+
+/** Parses only eight-digit CC_DRV details and reconciles them to its persisted Grand Total. */
+export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { details: SiSupportAmount[]; detailTotal: Prisma.Decimal; controlTotal: Prisma.Decimal; difference: Prisma.Decimal } {
+  const details: SiSupportAmount[] = [];
+  let controlTotal: Prisma.Decimal | null = null;
+  for (const row of rows.filter((item) => item.logicalSourceCode === 'AUDIT_CC_DRV')) {
+    const label = String(cell(row, 29) ?? '').trim();
+    const coaCode = label.match(/^\s*(\d{8})(?:\s|$)/)?.[1];
+    if (coaCode) details.push({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode, amount: decimal(cell(row, 30), `AUDIT_CC_DRV row ${row.sourceRowNumber}`) });
+    else if (normalized(label) === 'GRAND TOTAL') controlTotal = decimal(cell(row, 30), `AUDIT_CC_DRV control row ${row.sourceRowNumber}`);
+  }
+  if (controlTotal === null) throw new Error('AUDIT_CC_DRV Grand Total control was not found.');
+  const detailTotal = details.reduce((sum, item) => sum.add(item.amount), zero());
+  const difference = detailTotal.sub(controlTotal);
+  if (!difference.isZero()) throw new Error(`CC_DRV detail does not reconcile: detail ${detailTotal.toString()}, control ${controlTotal.toString()}.`);
+  return { details, detailTotal, controlTotal, difference };
+}
+
+export function deriveCompany2000Support(input: {
+  rincian: { ADUM: SiSupportAmount[]; PASAR: SiSupportAmount[] };
+  derivative: { details: SiSupportAmount[]; detailTotal: Prisma.Decimal; controlTotal: Prisma.Decimal };
+  rawByGroup: { ADUM: Map<string, Prisma.Decimal>; PASAR: Map<string, Prisma.Decimal> };
+}): { rincianDeltas: RincianDelta[]; derivativeDetails: SiSupportAmount[]; contributingCoaCodes: string[]; controls: Company2000SupportControls } {
+  const rincianDeltas: RincianDelta[] = [];
+  for (const groupCode of ['ADUM', 'PASAR'] as const) {
+    const rincianByCoa = sumSupportByCoa(input.rincian[groupCode]);
+    for (const [coaCode, amount] of rincianByCoa) {
+      const rawAmount = input.rawByGroup[groupCode].get(coaCode) ?? zero();
+      const delta = amount.sub(rawAmount);
+      if (delta.isZero()) continue;
+      const evidence = input.rincian[groupCode].find((item) => item.coaCode === coaCode)!;
+      rincianDeltas.push({ ...evidence, groupCode, rawAmount, amount: delta });
+    }
+  }
+  const derivativeDetails = input.derivative.details.filter((item) => !item.amount.isZero());
+  return {
+    rincianDeltas,
+    derivativeDetails,
+    contributingCoaCodes: [...new Set([...rincianDeltas.map((item) => item.coaCode), ...derivativeDetails.map((item) => item.coaCode)])],
+    controls: {
+      rincianAdumTotal: input.rincian.ADUM.reduce((sum, item) => sum.add(item.amount), zero()),
+      rincianPasarTotal: input.rincian.PASAR.reduce((sum, item) => sum.add(item.amount), zero()),
+      derivativeDetailTotal: input.derivative.detailTotal,
+      derivativeControlTotal: input.derivative.controlTotal,
+      derivativeSiTotal: input.derivative.controlTotal,
+    },
+  };
+}
+
+export function assertContributingSupportCoasResolved(contributingCoaCodes: string[], resolvedCoaCodes: Iterable<string>): void {
+  const resolved = new Set(resolvedCoaCodes);
+  const missing = contributingCoaCodes.find((code) => !resolved.has(code));
+  if (missing) throw new Error(`Non-zero Company 2000 SI support contribution for COA ${missing} has no active CostCoa master.`);
+}
+
+export function sumSupportByCoa(lines: SiSupportAmount[]): Map<string, Prisma.Decimal> {
+  const totals = new Map<string, Prisma.Decimal>();
+  for (const line of lines) totals.set(line.coaCode, (totals.get(line.coaCode) ?? zero()).add(line.amount));
+  return totals;
+}

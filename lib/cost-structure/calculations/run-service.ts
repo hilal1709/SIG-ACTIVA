@@ -6,12 +6,12 @@ import { classifySourceRow } from '@/lib/cost-structure/reconciliation/source-co
 import { calculateCompany2000 } from './company-2000';
 import { calculateCompany7000, COMPANY_7000_GROUPS, COMPANY_7000_MAPPED_SOURCES, ENGINE1_7000_RULE_SET_VERSION } from './company-7000';
 import { buildCompany7000Input } from './company-7000-source-adapter';
-import { COMPANY_2000_GROUPS, COMPANY_2000_SOURCES, DERIVATIVE_SOURCE_CODES, ENGINE1_2000_RULE_SET_VERSION } from './constants';
+import { COMPANY_2000_GROUPS, COMPANY_2000_SOURCES, ENGINE1_2000_RULE_SET_VERSION } from './constants';
+import { assertContributingSupportCoasResolved, deriveCompany2000Support, parseCompany2000Derivative, parseCompany2000Rincian, sumSupportByCoa } from './company-2000-si-adapter';
 import { buildMappingSnapshot } from './snapshot';
 import type { ResolvedSourceLine } from './types';
 
 const companySources = new Set<string>(COMPANY_2000_SOURCES);
-const ignoredSources = new Set<string>(DERIVATIVE_SOURCE_CODES);
 const PERSIST_CHUNK_SIZE = 750;
 
 export class CalculationConflictError extends Error {}
@@ -187,10 +187,35 @@ export async function runCompany2000Calculation(periodId: number, startedById: n
     for (const groupCode of COMPANY_2000_GROUPS) if (!groupIdByCode.has(groupCode)) throw new Error(`Cost Group ${groupCode} aktif tidak ditemukan untuk Company 2000.`);
 
     const candidates = currentUpload.sourceRows.filter((row) => companySources.has(row.logicalSourceCode) && classifySourceRow({ coaCodeRaw: row.coaCodeRaw, descriptionRaw: row.descriptionRaw, amount: row.amount?.toString() ?? null }).kind === 'DETAIL');
-    const coaIds = [...new Set(candidates.flatMap((row) => row.coaId ? [row.coaId] : []))];
+    const supportRows = currentUpload.sourceRows.map((row) => ({ id: row.id, logicalSourceCode: row.logicalSourceCode, sourceRowNumber: row.sourceRowNumber, rawData: row.rawDataJson }));
+    const rincian = parseCompany2000Rincian(supportRows);
+    const derivative = parseCompany2000Derivative(supportRows);
+    const rawByGroup = { ADUM: sumSupportByCoa(candidates.filter((row) => row.logicalSourceCode === 'CC_ADUM').map((row) => ({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode: row.coa?.coaCode ?? row.coaCodeRaw ?? '', amount: row.amount ?? new Prisma.Decimal(0) }))), PASAR: sumSupportByCoa(candidates.filter((row) => row.logicalSourceCode === 'CC_PASAR').map((row) => ({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode: row.coa?.coaCode ?? row.coaCodeRaw ?? '', amount: row.amount ?? new Prisma.Decimal(0) }))) };
+    const support = deriveCompany2000Support({ rincian, derivative, rawByGroup });
+    const supportCoas = support.contributingCoaCodes.length ? await prisma.costCoa.findMany({ where: { coaCode: { in: support.contributingCoaCodes }, active: true } }) : [];
+    const supportCoaByCode = new Map(supportCoas.map((coa) => [coa.coaCode, coa]));
+    assertContributingSupportCoasResolved(support.contributingCoaCodes, supportCoaByCode.keys());
+    const coaIds = [...new Set([...candidates.flatMap((row) => row.coaId ? [row.coaId] : []), ...supportCoas.map((coa) => coa.id)])];
     const mappings = await prisma.costCoaMapping.findMany({ where: { companyId: state.companyId, sourceLogicalCode: { in: [...COMPANY_2000_SOURCES] }, coaId: { in: coaIds }, active: true, validFrom: { lte: state.periodStart }, OR: [{ validTo: null }, { validTo: { gte: state.periodStart } }] }, include: { costGroup: true, nature: true }, orderBy: { id: 'asc' } });
     const byKey = new Map<string, typeof mappings>();
     for (const mapping of mappings) { const key = `${mapping.sourceLogicalCode}:${mapping.coaId}`; byKey.set(key, [...(byKey.get(key) ?? []), mapping]); }
+    // Equal explicitly excluded base/derivative evidence (for example Product Development) remains
+    // in the full CC_DRV detail control, but is removed consistently from the analytical SI basis.
+    const analyticalControls = { ...support.controls };
+    for (const groupCode of COMPANY_2000_GROUPS) {
+      const sourceCode = groupCode === 'ADUM' ? 'CC_ADUM' : 'CC_PASAR';
+      for (const item of rincian[groupCode]) {
+        const coa = supportCoaByCode.get(item.coaCode);
+        if (coa && byKey.get(`${sourceCode}:${coa.id}`)?.[0]?.mappingAction === 'EXCLUDE') {
+          if (groupCode === 'ADUM') analyticalControls.rincianAdumTotal = analyticalControls.rincianAdumTotal.sub(item.amount);
+          else analyticalControls.rincianPasarTotal = analyticalControls.rincianPasarTotal.sub(item.amount);
+        }
+      }
+    }
+    analyticalControls.derivativeSiTotal = derivative.details.reduce((total, item) => {
+      const coa = supportCoaByCode.get(item.coaCode);
+      return coa && byKey.get(`CC_PASAR:${coa.id}`)?.[0]?.mappingAction === 'EXCLUDE' ? total : total.add(item.amount);
+    }, new Prisma.Decimal(0));
     const resolved: ResolvedSourceLine[] = candidates.map((row) => {
       const applicable = row.coaId ? byKey.get(`${row.logicalSourceCode}:${row.coaId}`) ?? [] : [];
       const mapping = applicable[0];
@@ -199,9 +224,25 @@ export async function runCompany2000Calculation(periodId: number, startedById: n
       const disposition = !mapping ? 'UNMAPPED' : mapping.mappingAction === 'EXCLUDE' ? 'EXCLUDED' : mapping.mappingAction === 'RECLASS' ? 'RECLASSIFIED' : 'MAPPED';
       return { sourceRowId: row.id, uploadId: currentUpload.id, uploadVersion: currentUpload.version, logicalSourceCode: row.logicalSourceCode, sourceRowNumber: row.sourceRowNumber, coaId: row.coaId ?? 0, coaCode: row.coa?.coaCode ?? row.coaCodeRaw ?? '', amount, disposition, applicableMappingCount: applicable.length, mappingId: mapping?.id, mappingAction: mapping?.mappingAction, costGroupId: mapping?.costGroupId ?? undefined, groupCode: mapping?.costGroup?.code, natureId: mapping?.natureId ?? undefined, natureCode: mapping?.nature?.code, targetActive: Boolean(mapping?.costGroup?.active && mapping?.nature?.active && mapping.costGroup.companyId === state.companyId && mapping.nature.costGroupId === mapping.costGroupId), natureCalculationType: mapping?.nature?.calculationType };
     });
-    void ignoredSources;
-    const result = calculateCompany2000({ sourceLines: resolved, adjustments: state.adjustments.map((item) => ({ adjustmentId: item.id, costGroupId: item.costGroupId, groupCode: item.costGroup.code, natureId: item.natureId, natureCode: item.nature.code, coaId: item.coaId, amount: item.amount, reason: item.reason, reference: item.reference, targetActive: item.costGroup.active && item.nature.active && item.costGroup.companyId === state.companyId && item.nature.costGroupId === item.costGroupId, natureCalculationType: item.nature.calculationType })) });
-    const relevantMappingIds = new Set(resolved.flatMap((line) => line.mappingId ? [line.mappingId] : []));
+    const supportLines: ResolvedSourceLine[] = [];
+    for (const item of support.rincianDeltas) {
+        const { groupCode, coaCode } = item;
+        const coa = supportCoaByCode.get(coaCode)!;
+        const applicable = byKey.get(`${groupCode === 'ADUM' ? 'CC_ADUM' : 'CC_PASAR'}:${coa.id}`) ?? [];
+        const mapping = applicable[0];
+        if (mapping?.mappingAction === 'EXCLUDE') continue;
+        supportLines.push({ sourceRowId: item.sourceRowId, uploadId: currentUpload.id, uploadVersion: currentUpload.version, logicalSourceCode: 'AUDIT_RINCIAN', sourceRowNumber: item.sourceRowNumber, coaId: coa.id, coaCode, amount: item.amount, disposition: mapping ? 'MAPPED' : 'UNMAPPED', applicableMappingCount: applicable.length, mappingId: mapping?.id, mappingAction: mapping?.mappingAction, costGroupId: mapping?.costGroupId ?? undefined, groupCode: mapping?.costGroup?.code, natureId: mapping?.natureId ?? undefined, natureCode: mapping?.nature?.code, targetActive: Boolean(mapping?.costGroup?.active && mapping?.nature?.active), natureCalculationType: mapping?.nature?.calculationType, ruleCode: `RINCIAN_DELTA_${groupCode}`, sourceReference: { rincianAmount: item.amount.add(item.rawAmount).toString(), ccAmount: item.rawAmount.toString() } });
+    }
+    for (const item of support.derivativeDetails) {
+      const coa = supportCoaByCode.get(item.coaCode)!;
+      const applicable = byKey.get(`CC_PASAR:${coa.id}`) ?? [];
+      const mapping = applicable[0];
+      if (mapping?.mappingAction === 'EXCLUDE') continue;
+      supportLines.push({ sourceRowId: item.sourceRowId, uploadId: currentUpload.id, uploadVersion: currentUpload.version, logicalSourceCode: 'AUDIT_CC_DRV', sourceRowNumber: item.sourceRowNumber, coaId: coa.id, coaCode: item.coaCode, amount: item.amount.negated(), disposition: mapping ? 'MAPPED' : 'UNMAPPED', applicableMappingCount: applicable.length, mappingId: mapping?.id, mappingAction: mapping?.mappingAction, costGroupId: mapping?.costGroupId ?? undefined, groupCode: mapping?.costGroup?.code, natureId: mapping?.natureId ?? undefined, natureCode: mapping?.nature?.code, targetActive: Boolean(mapping?.costGroup?.active && mapping?.nature?.active), natureCalculationType: mapping?.nature?.calculationType, ruleCode: 'CC_DRV_DERIVATIVE_OFFSET' });
+    }
+    const allResolved = [...resolved, ...supportLines];
+    const result = calculateCompany2000({ sourceLines: allResolved, supportControl: analyticalControls, adjustments: state.adjustments.map((item) => ({ adjustmentId: item.id, costGroupId: item.costGroupId, groupCode: item.costGroup.code, natureId: item.natureId, natureCode: item.nature.code, coaId: item.coaId, amount: item.amount, reason: item.reason, reference: item.reference, targetActive: item.costGroup.active && item.nature.active && item.costGroup.companyId === state.companyId && item.nature.costGroupId === item.costGroupId, natureCalculationType: item.nature.calculationType })) });
+    const relevantMappingIds = new Set(allResolved.flatMap((line) => line.mappingId ? [line.mappingId] : []));
     const mappingSnapshot = buildMappingSnapshot(mappings.filter((mapping) => relevantMappingIds.has(mapping.id)).map((mapping) => ({ mappingId: mapping.id, companyId: mapping.companyId, sourceLogicalCode: mapping.sourceLogicalCode, coaId: mapping.coaId, mappingAction: mapping.mappingAction, costGroupId: mapping.costGroupId, natureId: mapping.natureId, validFrom: mapping.validFrom, validTo: mapping.validTo, updatedAt: mapping.updatedAt })));
 
     await prisma.$transaction(async (tx) => {
@@ -210,13 +251,13 @@ export async function runCompany2000Calculation(periodId: number, startedById: n
       const liveUpload = await tx.costUpload.findUnique({ where: { id: upload.id }, select: { isActiveVersion: true } });
       if (!liveUpload?.isActiveVersion) throw new Error('Upload menjadi superseded sebelum aktivasi run.');
       await tx.costCalculationRun.update({ where: { id: run.id }, data: { mappingSnapshotJson: mappingSnapshot } });
-      const actualLineData = result.actualLines.map((line) => ({ calculationRunId: run.id, periodId, costGroupId: line.costGroupId, natureId: line.natureId, coaId: line.coaId, lineType: line.lineType, sourceAmount: line.sourceAmount, adjustmentAmount: line.adjustmentAmount, finalAmount: line.finalAmount, sourceRowId: line.sourceRowId, sourceReferenceJson: line.sourceReference as Prisma.InputJsonValue }));
+      const actualLineData = result.actualLines.map((line) => ({ calculationRunId: run.id, periodId, costGroupId: line.costGroupId, natureId: line.natureId, coaId: line.coaId, lineType: line.lineType, sourceAmount: line.sourceAmount, adjustmentAmount: line.adjustmentAmount, finalAmount: line.finalAmount, ruleCode: line.ruleCode, sourceRowId: line.sourceRowId, sourceReferenceJson: line.sourceReference as Prisma.InputJsonValue }));
       for (let offset = 0; offset < actualLineData.length; offset += PERSIST_CHUNK_SIZE) await tx.costActualLine.createMany({ data: actualLineData.slice(offset, offset + PERSIST_CHUNK_SIZE) });
       await tx.costCalculationResult.createMany({ data: [
         ...result.natureTotals.map((item) => ({ calculationRunId: run.id, periodId, costGroupId: item.costGroupId, natureId: item.natureId, resultCode: 'NATURE_TOTAL', resultType: 'NATURE' as const, amount: item.amount })),
         ...COMPANY_2000_GROUPS.map((code) => ({ calculationRunId: run.id, periodId, costGroupId: groupIdByCode.get(code)!, natureId: null, resultCode: `TOTAL_${code}`, resultType: 'TOTAL' as const, amount: result.groupTotals[code] })),
         { calculationRunId: run.id, periodId, costGroupId: null, natureId: null, resultCode: 'TOTAL_COMPANY', resultType: 'TOTAL' as const, amount: result.companyTotal },
-        ...result.controls.map((control) => { const groupCode = control.resultCode.startsWith('ADUM_') ? 'ADUM' : 'PASAR'; return { calculationRunId: run.id, periodId, costGroupId: groupIdByCode.get(groupCode)!, natureId: null, resultCode: control.resultCode, resultType: 'CONTROL' as const, amount: control.amount, reconciliationDifference: control.difference, reconciliationStatus: control.difference.isZero() ? 'RECONCILED' : 'NOT_RECONCILED' }; }),
+        ...result.controls.map((control) => ({ calculationRunId: run.id, periodId, costGroupId: control.costGroupId, natureId: null, resultCode: control.resultCode, resultType: 'CONTROL' as const, amount: control.amount, reconciliationDifference: control.difference, reconciliationStatus: control.difference.isZero() ? 'RECONCILED' : 'NOT_RECONCILED' })),
       ] });
       await tx.costCalculationRun.updateMany({ where: { periodId, isActive: true }, data: { isActive: false } });
       await tx.costCalculationRun.update({ where: { id: run.id }, data: { status: 'SUCCESS', isActive: true, completedAt: new Date() } });

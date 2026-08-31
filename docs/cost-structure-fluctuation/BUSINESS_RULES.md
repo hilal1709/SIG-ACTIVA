@@ -35,6 +35,10 @@ Cost groups:
 
 ### Explicit exclusion
 
+> **Superseded for Company 2000 (2026-08-31):** the blanket derivative exclusion below is
+> historical. `ENGINE1_2000_V2` reconstructs SI from mapped CC detail, COA-level Rincian
+> corrections, and negative CC_DRV detail classified through the PASAR SI mapping.
+
 Derivatif is out of scope for both companies.
 
 It must not be included in:
@@ -155,6 +159,17 @@ Company 2000 uses the validated existing workflow for forming:
 The engine uses source CC Group detail, system mapping and any validated existing allocation/reclassification rules required by the reference workbook.
 
 There is no HPP Cost Group in company 2000 scope.
+
+### 10.1 Locked SI V2 contract
+
+`raw mapped CC + (Rincian by COA - raw CC by COA) = Rincian base`; CC_DRV eight-digit detail is
+then a negative PASAR contribution. Subtotals and Grand Total do not contribute, and detail must
+reconcile to the persisted Grand Total. The final persisted Engine 1 result is SI. PASAR category-67
+tax/retribution maps to N07 (UUA), while source-specific ADUM mapping remains N09.
+
+For future Engine 2 work, “7000 DERIV excluded” is superseded. The locked direction is Company 2000
+basis = final SI and Company 7000 basis = persisted GHoPO + DERIV. The 7000 Phase H refactor is
+pending a separate implementation/review and is not implemented here.
 
 ## 11. Company 7000 calculation principle
 
