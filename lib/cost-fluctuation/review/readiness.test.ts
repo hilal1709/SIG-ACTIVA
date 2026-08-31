@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict';import test from'node:test';import{readiness}from'./readiness';
+const available=(materialityStatus:string,commentaryStatus?:string)=>[{available:true,rows:[{key:'nature:1',materialityStatus,commentaryStatus}]}];
+test('review blocks non-finalized and all unavailable',()=>{assert.equal(readiness('CALCULATED',available('NORMAL')).ready,false);assert.equal(readiness('FINALIZED',[{available:false,rows:[]}]).ready,false);});
+test('NOT_CONFIGURED and NOT_EVALUABLE block',()=>{assert.equal(readiness('FINALIZED',available('NOT_CONFIGURED')).ready,false);assert.equal(readiness('FINALIZED',available('NOT_EVALUABLE')).ready,false);});
+test('mandatory OPEN DRAFT SUBMITTED RETURNED block while REVIEWED passes',()=>{for(const status of [undefined,'DRAFT','SUBMITTED','RETURNED'])assert.equal(readiness('FINALIZED',available('REQUIRES_EXPLANATION',status)).ready,false);assert.equal(readiness('FINALIZED',available('REQUIRES_EXPLANATION','REVIEWED')).ready,true);});
+test('NORMAL needs no commentary and unavailable comparison creates no false blocker',()=>{assert.equal(readiness('FINALIZED',[...available('NORMAL'),{available:false,rows:[{key:'x',materialityStatus:'REQUIRES_EXPLANATION'}]}]).ready,true);});

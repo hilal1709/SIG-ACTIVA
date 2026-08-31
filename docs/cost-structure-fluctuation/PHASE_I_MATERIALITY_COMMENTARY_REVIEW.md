@@ -8,6 +8,8 @@ Phase I adds `CostMaterialityRule`, `CostCommentary`, append-only `CostCommentar
 
 Rules are resolved at the current period's `periodEnd`, first by Company + Cost Group + comparison, then by Company-wide + comparison. Resolution never crosses Company/comparison and multiple rules at one specificity are integrity errors. Exact-scope active intervals may not overlap. A successor is created after end-dating its predecessor rather than rewriting history.
 
+Rule creation and successor changes run in SERIALIZABLE transactions and acquire a PostgreSQL transaction advisory lock keyed by Company, optional Cost Group, and comparison type before checking overlap. The successor API preserves scope and predecessor identity. Since intervals are inclusive and timestamps have millisecond precision, the predecessor ends exactly one millisecond before the successor begins. Active Company and Cost Group ownership are validated inside the transaction.
+
 Magnitude uses absolute variance. Threshold equality passes. `OR` requires any PASS; without PASS an unevaluable configured criterion yields `NOT_EVALUABLE`. `AND` returns NORMAL on any FAIL, otherwise `NOT_EVALUABLE` when needed, otherwise requires explanation. An N/M percentage is unevaluable, never zero. Missing rules are `NOT_CONFIGURED`, unavailable comparisons are `UNAVAILABLE`, and Company roots are `NOT_APPLICABLE`.
 
 ## Commentary identity, lineage, and workflow
@@ -16,9 +18,13 @@ Canonical Phase H keys identify COST_GROUP, NATURE, COA, and CALCULATED_ITEM tar
 
 OPEN is derived for material nodes without a record. Persisted transitions are `DRAFT -> SUBMITTED -> REVIEWED` or `DRAFT -> SUBMITTED -> RETURNED -> DRAFT`. Submit requires a reason; return requires a note; reviewed rows are immutable. Reviewer and preparer IDs come from the session, and maker/checker prohibits self-review. Each save/transition atomically updates commentary, appends a monotonic history version, and writes `CostAuditLog`.
 
+Every draft and transition locks and re-reads all Phase H lineage periods inside the same SERIALIZABLE transaction. It verifies FINALIZED status, active run identity, SUCCESS/active flags, fiscal month, and rule-set version before writing. This closes the context-resolution/commit race without reading source rows or recalculating Engine 1. The database target constraint exactly distinguishes COST_GROUP, NATURE, COA, and CALCULATED_ITEM nullability; server hierarchy traversal additionally proves each target belongs to its parent.
+
 ## Period review and authorization
 
 Review completion requires a FINALIZED period, at least one AVAILABLE comparison, deterministic configured/evaluable materiality for all available output, and REVIEWED current-lineage commentary for every required node. Unavailable comparisons do not create false blockers. Completion writes review evidence/audit without changing `CostPeriod.status`.
+
+Completion performs a preview and then fully revalidates under a SERIALIZABLE transaction: it locks the period/lineage, takes the same materiality advisory locks used by rule writers, resolves current rules again, and re-reads mandatory REVIEWED commentary. A reopen, run replacement, rule change, or commentary transition therefore aborts completion. Period completion aggregates already maker/checker-approved evidence; it cannot approve commentary. Review status is intentionally only `OPEN` or `COMPLETED`.
 
 Read uses existing finance read roles; draft/submit uses ADMIN_SYSTEM or STAFF_ACCOUNTING; return/review/complete uses ADMIN_SYSTEM or SUPERVISOR_ACCOUNTING; rule administration is ADMIN_SYSTEM only. Every mutation checks authorization in the route.
 
@@ -28,4 +34,4 @@ Read materiality at `GET /api/cost-fluctuation/materiality`. Rule administration
 
 ## Migration and validation
 
-The additive migration is `prisma/migrations/20260831120000_phase_i_materiality_commentary_review/migration.sql`. It creates only Phase I enums, tables, indexes, constraints, and foreign keys. It must be externally reviewed and applied through controlled Supabase tooling; Codex did not apply it to production. Tests cover rule priority/effective dating, exact/absolute thresholds, AND/OR and N/M logic, no-rule/company states, ambiguity, and deterministic lineage. Phase J charts, dashboard/export, and AI commentary remain deferred.
+The additive migration is `prisma/migrations/20260831120000_phase_i_materiality_commentary_review/migration.sql`. It creates only Phase I enums, tables, indexes, exact target/check constraints, and foreign keys. It must be externally reviewed and applied through controlled Supabase tooling; Codex did not apply it to production. Tests cover rule priority/effective dating, exact/absolute thresholds, AND/OR and N/M logic, workflow transitions/history/audits, maker/checker IDs, readiness blockers, authorization boundaries, and commit-time lineage races. Phase J charts, dashboard/export, and AI commentary remain deferred.

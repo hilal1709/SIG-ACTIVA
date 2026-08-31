@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict';import test from'node:test';import{assertCurrentLineage}from'./lineage';import{lineageKey}from'./context';
+const line={periodId:1,fiscalYear:2026,fiscalPeriod:7,runId:8,ruleSetVersion:'v1'};
+function tx(row:Partial<{id:number;fiscalYear:number;fiscalPeriod:number;status:string;activeCalculationRunId:number;runId:number;runStatus:string;isActive:boolean;ruleSetVersion:string}>={}){let calls=0;return{$queryRaw:async()=>++calls===1?[{id:1}]:[{id:1,fiscalYear:2026,fiscalPeriod:7,status:'FINALIZED',activeCalculationRunId:8,runId:8,runStatus:'SUCCESS',isActive:true,ruleSetVersion:'v1',...row}]};}
+test('commit-time lineage validator accepts exact finalized active SUCCESS lineage',async()=>{await assertCurrentLineage(tx() as never,'MOM',[line],[],lineageKey('MOM',[line],[]));});
+test('race: reopened period or changed active run is rejected inside transaction',async()=>{await assert.rejects(assertCurrentLineage(tx({status:'CALCULATED'})as never,'MOM',[line],[],lineageKey('MOM',[line],[])),/stale/);await assert.rejects(assertCurrentLineage(tx({activeCalculationRunId:9,runId:9})as never,'MOM',[line],[],lineageKey('MOM',[line],[])),/stale/);});
+test('stale digest blocks submit return review and draft commit paths',async()=>{await assert.rejects(assertCurrentLineage(tx()as never,'MOM',[line],[],'old-lineage'),/stale/);});

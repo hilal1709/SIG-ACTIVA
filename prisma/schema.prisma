@@ -121,7 +121,6 @@ enum CostCommentaryStatus {
 
 enum CostPeriodReviewStatus {
   OPEN
-  IN_REVIEW
   COMPLETED
 }
 

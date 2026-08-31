@@ -3,7 +3,7 @@ CREATE TYPE "CostFluctuationComparisonType" AS ENUM ('MOM', 'YOY', 'YTD');
 CREATE TYPE "CostMaterialityOperator" AS ENUM ('AND', 'OR');
 CREATE TYPE "CostCommentaryAnalysisLevel" AS ENUM ('COST_GROUP', 'NATURE', 'COA', 'CALCULATED_ITEM');
 CREATE TYPE "CostCommentaryStatus" AS ENUM ('DRAFT', 'SUBMITTED', 'RETURNED', 'REVIEWED');
-CREATE TYPE "CostPeriodReviewStatus" AS ENUM ('OPEN', 'IN_REVIEW', 'COMPLETED');
+CREATE TYPE "CostPeriodReviewStatus" AS ENUM ('OPEN', 'COMPLETED');
 
 CREATE TABLE "cost_materiality_rules" (
  "id" SERIAL PRIMARY KEY, "companyId" INTEGER NOT NULL, "costGroupId" INTEGER,
@@ -26,7 +26,12 @@ CREATE TABLE "cost_commentaries" (
  "reason" TEXT NOT NULL, "status" "CostCommentaryStatus" NOT NULL, "preparedById" INTEGER, "preparedAt" TIMESTAMP(3),
  "submittedAt" TIMESTAMP(3), "reviewedById" INTEGER, "reviewedAt" TIMESTAMP(3), "reviewerNote" TEXT,
  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL,
- CONSTRAINT "cost_commentaries_target_check" CHECK (("analysisLevel" = 'COA' AND "coaId" IS NOT NULL AND "calculatedItemKey" IS NULL) OR ("analysisLevel" = 'CALCULATED_ITEM' AND "coaId" IS NULL AND "calculatedItemKey" IS NOT NULL) OR ("analysisLevel" IN ('COST_GROUP','NATURE') AND "coaId" IS NULL AND "calculatedItemKey" IS NULL))
+ CONSTRAINT "cost_commentaries_target_check" CHECK (
+   ("analysisLevel" = 'COST_GROUP' AND "natureId" IS NULL AND "coaId" IS NULL AND "calculatedItemKey" IS NULL) OR
+   ("analysisLevel" = 'NATURE' AND "natureId" IS NOT NULL AND "coaId" IS NULL AND "calculatedItemKey" IS NULL) OR
+   ("analysisLevel" = 'COA' AND "natureId" IS NOT NULL AND "coaId" IS NOT NULL AND "calculatedItemKey" IS NULL) OR
+   ("analysisLevel" = 'CALCULATED_ITEM' AND "natureId" IS NOT NULL AND "coaId" IS NULL AND "calculatedItemKey" IS NOT NULL)
+ )
 );
 CREATE UNIQUE INDEX "cost_commentaries_business_identity_key" ON "cost_commentaries"("periodId","comparisonType","analysisKey","analysisLineageKey");
 CREATE INDEX "cost_commentaries_period_comparison_lineage_idx" ON "cost_commentaries"("periodId","comparisonType","analysisLineageKey");
