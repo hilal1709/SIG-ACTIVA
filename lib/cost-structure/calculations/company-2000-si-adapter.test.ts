@@ -26,6 +26,32 @@ test('CC_DRV uses eight-digit details only, ignores subtotals, and reconciles De
   assert.equal(parsed.difference.toString(), '0');
 });
 
+test('CC_DRV is optional and missing historical source has zero semantics', () => {
+  const parsed = parseCompany2000Derivative([
+    row(1, 'AUDIT_RINCIAN', { COLUMN_2: 'G/L acc', COLUMN_5: 'ADM', COLUMN_6: 'PASAR' }),
+  ]);
+  assert.deepEqual(parsed.details, []);
+  assert.equal(parsed.detailTotal.toString(), '0');
+  assert.equal(parsed.controlTotal.toString(), '0');
+  assert.equal(parsed.difference.toString(), '0');
+});
+
+test('CC_DRV present with only blank or zero values has zero semantics even without Grand Total', () => {
+  const parsed = parseCompany2000Derivative([
+    row(1, 'AUDIT_CC_DRV', { COLUMN_29: '62140001 DIESEL', COLUMN_30: '0' }),
+    row(2, 'AUDIT_CC_DRV', { COLUMN_29: '63130015 COMMUNICAT. INCEN', COLUMN_30: null }),
+  ]);
+  assert.equal(parsed.detailTotal.toString(), '0');
+  assert.equal(parsed.controlTotal.toString(), '0');
+  assert.equal(parsed.difference.toString(), '0');
+});
+
+test('CC_DRV non-zero source still requires Grand Total control', () => {
+  assert.throws(() => parseCompany2000Derivative([
+    row(1, 'AUDIT_CC_DRV', { COLUMN_29: '62140002 GASOLINE', COLUMN_30: '12' }),
+  ]), /Grand Total control was not found for a non-zero derivative source/);
+});
+
 test('CC_DRV rejects an independently mismatched Grand Total', () => {
   assert.throws(() => parseCompany2000Derivative([
     row(1, 'AUDIT_CC_DRV', { COLUMN_29: '62140002 GASOLINE', COLUMN_30: '12' }),
