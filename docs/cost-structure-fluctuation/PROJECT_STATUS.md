@@ -12,7 +12,7 @@ Phase D — Source reconciliation/mapping            COMPLETE
 Phase E — Engine 1 Company 2000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase F — Engine 1 Company 7000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase G — Finalization/dashboard/export            COMPLETE / PRODUCTION UAT PASS
-Phase H — Engine 2 comparison                      READY / NEXT
+Phase H — Engine 2 comparison                      IMPLEMENTED / REVIEW
 Phase I — Materiality/commentary/review             NOT STARTED
 Phase J — Fluctuation dashboard/export              NOT STARTED
 Phase K — Hardening/deployment                     NOT STARTED
@@ -207,9 +207,9 @@ The financial data/content of the production export has been accepted for Phase 
 
 See `PHASE_G_DASHBOARD_EXPORT.md` for the detailed contract.
 
-## Next phase — Phase H
+## Phase H — IMPLEMENTED / REVIEW
 
-Phase H is Engine 2 comparison/fluctuation. Its input is **only FINALIZED Engine 1 history**; it never accepts a separate raw workbook upload.
+Phase H implements Engine 2 comparison/fluctuation. Its input is **only FINALIZED Engine 1 history**; it never accepts a separate raw workbook upload.
 
 Locked scope:
 
@@ -222,6 +222,6 @@ Locked scope:
 - Company / Cost Group / Nature / COA or calculated-item drill-down;
 - deterministic server-side comparison service using finalized active Engine 1 runs only.
 
-Initial Phase H implementation should not create a transactional comparison-result table merely to persist derivable MoM/YoY/YTD values. Materiality/commentary/review persistence remains Phase I unless a separately reviewed performance requirement justifies snapshots later.
+The Phase H implementation uses deterministic read-service aggregation and creates no comparison transaction table. See `PHASE_H_COMPARISON_ENGINE.md` for its API, precision, availability, identity, and contribution contracts.
 
 Phase I will add materiality, commentary and review workflow after Phase H arithmetic and finalized-history controls are tested.

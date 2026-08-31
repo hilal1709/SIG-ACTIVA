@@ -13,8 +13,8 @@ async function collectTests(directory) {
   return files;
 }
 
-const root = path.resolve('lib/cost-structure');
-const tests = (await collectTests(root)).sort();
+const roots = [path.resolve('lib/cost-structure'), path.resolve('lib/cost-fluctuation')];
+const tests = (await Promise.all(roots.map(collectTests))).flat().sort();
 if (tests.length === 0) {
   console.error('No Cost Structure tests found.');
   process.exit(1);
