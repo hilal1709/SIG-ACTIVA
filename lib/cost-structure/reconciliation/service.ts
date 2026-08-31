@@ -14,6 +14,14 @@ const mappingIssueCodes = ['UNMAPPED_COA', 'MAPPING_AMBIGUOUS', 'MAPPING_OVERLAP
 const phaseDCodes = [...sourceControlCodes, ...mappingIssueCodes];
 const mappingBlockingCodes = new Set(['MAPPING_AMBIGUOUS', 'MAPPING_OVERLAP', 'MAPPING_TARGET_INVALID']);
 
+// Phase D can legitimately touch hundreds of distinct COAs in one upload.
+// Prisma's default 5s interactive-transaction timeout is too short for that
+// workload, especially when mapping issues need to be synchronized row by row.
+const reconciliationTransactionOptions = {
+  maxWait: 10_000,
+  timeout: 60_000,
+};
+
 async function syncSourceIssue(
   tx: Prisma.TransactionClient,
   uploadId: number,
@@ -239,7 +247,7 @@ export async function runPhaseD(uploadId: number) {
       });
     }
     return results;
-  });
+  }, reconciliationTransactionOptions);
 }
 
 export async function getPhaseDReport(uploadId: number) {
