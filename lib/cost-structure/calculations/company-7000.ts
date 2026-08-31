@@ -38,21 +38,25 @@ function uniqueTarget(input: Company7000Input, groupCode: Company7000GroupCode, 
 
 function sum(values: Prisma.Decimal[]) { return values.reduce((total, value) => total.add(value), zero()); }
 
-function assertDependency(dependency: FormulaDependency, expectedSources: string | string[], label: string) {
+function assertDependency(dependency: FormulaDependency, expectedSources: string | string[], label: string, allowAbsentZero = false) {
   const allowed = Array.isArray(expectedSources) ? expectedSources : [expectedSources];
   if (!allowed.includes(dependency.logicalSourceCode)) throw new Error(`${label} must resolve from ${allowed.join(' or ')}.`);
-  if (dependency.sourceRowIds.length === 0) throw new Error(`${label} requires source-row lineage.`);
+  const explicitAbsentZero = allowAbsentZero
+    && dependency.amount.isZero()
+    && dependency.sourceRowIds.length === 0
+    && dependency.sourceReference?.absentTreatedAsZero === true;
+  if (dependency.sourceRowIds.length === 0 && !explicitAbsentZero) throw new Error(`${label} requires source-row lineage.`);
 }
 
 function assertFormulaDependencies(input: Company7000Input) {
   assertDependency(input.formulaDependencies.accountGroup5Total, 'TB', 'Account Group 5 total');
-  assertDependency(input.formulaDependencies.cogsMortar, 'TB', 'COGS Mortar');
+  assertDependency(input.formulaDependencies.cogsMortar, 'TB', 'COGS Mortar', true);
   if (input.formulaDependencies.coalComponents.length !== 2) throw new Error('COAL_7000_EXISTING requires exactly two verified COAL components.');
   if (input.formulaDependencies.coalInboundComponents.length !== 2) throw new Error('COAL_INBOUND_7000_EXISTING requires exactly two verified COAL components.');
   if (input.formulaDependencies.oaComponents.length === 0) throw new Error('OA_7000_EXISTING requires verified OA components.');
   input.formulaDependencies.coalComponents.forEach((item, index) => assertDependency(item, 'COAL', `Batubara component ${index + 1}`));
   input.formulaDependencies.coalInboundComponents.forEach((item, index) => assertDependency(item, 'COAL', `Batubara Inbound component ${index + 1}`));
-  input.formulaDependencies.oaComponents.forEach((item, index) => assertDependency(item, ['OA_STAT', 'CC_PASAR'], `OA component ${index + 1}`));
+  input.formulaDependencies.oaComponents.forEach((item, index) => assertDependency(item, ['OA_STAT', 'CC_PASAR'], `OA component ${index + 1}`, item.sourceReference?.absentTreatedAsZero === true));
   if (!input.formulaDependencies.oaComponents.some((item) => item.logicalSourceCode === 'OA_STAT')) throw new Error('OA_7000_EXISTING requires OA_STAT lineage.');
 }
 
