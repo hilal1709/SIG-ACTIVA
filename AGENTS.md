@@ -95,7 +95,7 @@ Engine 2 must never calculate directly from uploaded raw Excel files. It consume
 - ADUM
 - PASAR
 
-Derivatif is out of scope and must not enter calculation, final cost structure, fluctuation analysis, dashboard, or export.
+Engine 1 scope is company-specific: Company 2000 final SI includes validated CC_DRV effects through ENGINE1_2000_V2, while Company 7000 DERIV remains excluded from Engine 1. Engine 2 uses SI for Company 2000 and separate GHOPO plus DERIV analysis bases for Company 7000; DERIV is not a Cost Group.
 
 ## Locked financial formulas
 

@@ -39,7 +39,7 @@ Cost groups:
 > historical. `ENGINE1_2000_V2` reconstructs SI from mapped CC detail, COA-level Rincian
 > corrections, and negative CC_DRV detail classified through the PASAR SI mapping.
 
-Derivatif is out of scope for both companies.
+Engine 1 treats derivative data by company: Company 2000 final SI includes validated CC_DRV effects in V2; Company 7000 excludes DERIV. Engine 2 uses no separate DERIV basis for 2000 and uses a separate DERIV analysis basis for 7000.
 
 It must not be included in:
 
@@ -490,3 +490,12 @@ Reference workbooks supplied for company 2000 and company 7000 are golden test s
 Implementation is not accepted until the system reproduces validated existing Cost Structure values and specific locked formulas exactly.
 
 Golden values are maintained in tests/documentation after verification against the source workbook. Do not invent expected amounts in code.
+
+
+## Engine 2 V2 analysis bases (2026-08-31)
+
+Engine 2 derives only from a FINALIZED period and its active SUCCESS calculation run/upload. Company 2000 has one `SI` analysis basis (final Engine 1 V2 detail independently controlled against `AUDIT_SI`). Company 7000 has separate additive `GHOPO` and `DERIV` analysis bases: GHOPO retains finalized Engine 1 detail and is controlled against `AUDIT_GHOPO`; DERIV is parsed from `AUDIT_DERIV` on that same upload in Rp-thousand and normalized to full IDR. DERIV remains excluded from Company 7000 Engine 1 and is never a Cost Group.
+
+The hierarchy and stable identity are Company -> Analysis Basis -> Cost Group -> Nature -> COA/calculated item. Keys are basis-qualified (`basis:<BASIS>:group:<id>:nature:<id>:...`) and monthly run/upload identity remains lineage, not node identity. All parity uses Decimal normalization to two financial decimal places. Missing source controls and non-reconciling finalized sources are integrity failures, while missing comparison periods remain `UNAVAILABLE`.
+
+PR #23 remains HOLD. Its Phase I assumptions about legacy unqualified analysis keys are superseded; after Engine 2 V2 merges, Phase I must be rebased and adapted separately. Phase I materiality, commentary, and review are not part of this redesign.

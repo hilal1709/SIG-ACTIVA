@@ -3,11 +3,12 @@ import { money, ratio, variance } from './math';
 import type { AnalyticalSnapshot, ComparedNode, SnapshotItem } from './types';
 
 type TreeItem = SnapshotItem & { children?: TreeItem[]; nodeType: ComparedNode['nodeType'] };
-const tree = (snapshot: AnalyticalSnapshot): TreeItem => ({ key: `company:${snapshot.companyId}`, id: snapshot.companyId, code: snapshot.companyCode, label: `Company ${snapshot.companyCode}`, amount: snapshot.amount, order: 0, nodeType: 'COMPANY', children: snapshot.groups.map((g) => ({ ...g, nodeType: 'COST_GROUP', children: g.natures.map((n) => ({ ...n, nodeType: 'NATURE', children: n.items.map((i) => ({ ...i, nodeType: i.id ? 'COA' : 'CALCULATED_ITEM' })) })) })) });
+const tree = (snapshot: AnalyticalSnapshot): TreeItem => ({ key: `company:${snapshot.companyId}`, id: snapshot.companyId, code: snapshot.companyCode, label: `Company ${snapshot.companyCode}`, amount: snapshot.amount, order: 0, nodeType: 'COMPANY', children: snapshot.bases.map((b) => ({ ...b, nodeType: 'ANALYSIS_BASIS', children: b.groups.map((g) => ({ ...g, nodeType: 'COST_GROUP', children: g.natures.map((n) => ({ ...n, nodeType: 'NATURE', children: n.items.map((i) => ({ ...i, nodeType: i.id ? 'COA' : 'CALCULATED_ITEM' })) })) })) })) });
 
 const CONTRIBUTION_BASIS: Record<ComparedNode['nodeType'], string | null> = {
   COMPANY: null,
-  COST_GROUP: 'COST_GROUP_TO_COMPANY',
+  ANALYSIS_BASIS: 'ANALYSIS_BASIS_TO_COMPANY',
+  COST_GROUP: 'COST_GROUP_TO_ANALYSIS_BASIS',
   NATURE: 'NATURE_TO_COST_GROUP',
   COA: 'COA_TO_NATURE',
   CALCULATED_ITEM: 'CALCULATED_ITEM_TO_NATURE',
