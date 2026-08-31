@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import CostModuleFrame from '@/app/components/CostModuleFrame';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import ProcessWorkflow from '@/components/cost-structure/process/process-workflow';
 
 type Item = {
   logicalSourceCode: string;
@@ -137,17 +138,22 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
         {canRevalidate && <p data-cost-motion className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">File ini gagal validasi dengan rule sebelumnya. Revalidate menjalankan ulang parser terbaru pada file/hash yang sama tanpa membuat upload version duplikat.</p>}
         {error && <p data-cost-motion className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
+        <ProcessWorkflow uploadId={uploadId} />
+
+        <details data-cost-motion className="group min-w-0 rounded-xl border bg-card" open={false}>
+          <summary className="cursor-pointer list-none p-4 font-semibold sm:p-6">Detail proses <span className="ml-1 text-sm font-normal text-muted-foreground group-open:hidden">(tampilkan)</span></summary>
+          <div className="min-w-0 space-y-6 px-4 pb-4 sm:px-6 sm:pb-6">
+        <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
           <CardHeader><CardTitle>Source reconciliation</CardTitle></CardHeader>
           <CardContent><Table headers={['Source', 'Detail Rows', 'Detail Amount', 'Reported Amount', 'Difference', 'Status']} rows={sources.map((s) => [s.logicalSourceCode, s.detailRowCount, s.detailAmount, s.reportedAmount ?? '—', s.difference ?? '—', s.status])} /></CardContent>
         </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
+        <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
           <CardHeader><CardTitle>Mapping completeness</CardTitle></CardHeader>
           <CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{['mappedAmount', 'excludedAmount', 'reclassifiedAmount', 'unmappedAmount', 'unmappedCoaCount', 'difference'].map((key) => <Metric key={key} label={key} value={String(completeness[key] ?? '—')} />)}</div></CardContent>
         </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
+        <Card id="mapping-detail" data-cost-hover className="min-w-0 scroll-mt-4 transition-shadow hover:shadow-md">
           <CardHeader><CardTitle>Unmapped COA work queue</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {blockingUnmapped.length === 0 && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Tidak ada COA non-zero yang membutuhkan mapping. Work queue bersih.</div>}
@@ -168,15 +174,17 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
           </CardContent>
         </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
+        <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
           <CardHeader><CardTitle>Validation issues</CardTitle></CardHeader>
           <CardContent><Table headers={['State', 'Severity', 'Code', 'Message']} rows={issues.map((issue) => [issue.resolved ? 'Resolved' : 'Open', issue.severity, issue.issueCode, issue.message])} /></CardContent>
         </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
+        <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
           <CardHeader><CardTitle>Readiness</CardTitle></CardHeader>
           <CardContent><p className="font-semibold">{rec?.ready ? 'SOURCE_RECONCILED' : 'SOURCE_VALIDATION'}</p><ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">{((rec?.blockers ?? []) as string[]).map((x) => <li key={x}>{x}</li>)}</ul></CardContent>
         </Card>
+          </div>
+        </details>
       </div>
     </CostModuleFrame>
   );
@@ -184,10 +192,10 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
 
 function Table({ headers, rows }: { headers: string[]; rows: (unknown | React.ReactNode)[][] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-left text-sm">
+    <div className="max-w-full overflow-x-auto rounded-lg border overscroll-x-contain">
+      <table className="w-full min-w-max text-left text-xs sm:text-sm">
         <thead className="bg-muted/40"><tr className="border-b">{headers.map((header) => <th className="p-2 font-medium" key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.map((row, i) => <tr className="border-b transition-colors hover:bg-muted/30" key={i}>{row.map((value, j) => <td className="p-2" key={j}>{value as React.ReactNode}</td>)}</tr>)}</tbody>
+        <tbody>{rows.map((row, i) => <tr className="border-b transition-colors hover:bg-muted/30" key={i}>{row.map((value, j) => <td className="max-w-56 whitespace-nowrap p-2 tabular-nums" key={j}>{value as React.ReactNode}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );

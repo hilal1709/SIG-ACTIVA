@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { CheckCircle2, FileSpreadsheet, Loader2, UploadCloud } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import CostModuleFrame from '@/app/components/CostModuleFrame';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
 
@@ -12,6 +13,7 @@ type Result = { id: number; version: number; status: string; hash: string; rowCo
 const steps = ['Metadata', 'Upload File', 'Verify File', 'Detect Sources', 'Normalize Data', 'Validation Result'];
 
 export default function UploadWorkspace({ companies }: { companies: Company[] }) {
+  const router = useRouter();
   const now = new Date();
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(1);
@@ -78,6 +80,7 @@ export default function UploadWorkspace({ companies }: { companies: Company[] })
       setResult(done.upload);
       setStep(6);
       void refresh();
+      router.push(`/cost-structure/upload/${done.upload.id}`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Upload gagal.');
     } finally {
