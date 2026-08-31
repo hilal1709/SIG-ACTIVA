@@ -14,13 +14,14 @@ const definitions: Definition[] = [
   { code:'ADJUSTMENT', companies:['2000','7000'], required:false, aliases:['ADJUSTMENT'] },
 
   // Raw worksheet snapshots remain DB-exportable. Company 2000 Engine 1 V2 additionally
-  // adapts persisted Rincian/CC_DRV cells into calculation-support lineage.
+  // adapts persisted Rincian/CC_DRV cells into calculation-support lineage. CC derivatif is
+  // period-optional: historical periods before its introduction legitimately have no sheet.
   { code:'AUDIT_SI', companies:['2000'], required:false, aliases:['SI'] },
   { code:'AUDIT_GHOPO', companies:['7000'], required:false, aliases:['GHOPO'] },
   { code:'AUDIT_DERIV', companies:['7000'], required:false, aliases:['DERIV'] },
   { code:'AUDIT_RINCIAN', companies:['2000'], required:true, aliases:['RINCIAN BIAYA'] },
   { code:'AUDIT_RINCIAN', companies:['7000'], required:false, aliases:['RINCIAN BIAYA'] },
-  { code:'AUDIT_CC_DRV', companies:['2000'], required:true, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
+  { code:'AUDIT_CC_DRV', companies:['2000'], required:false, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
   { code:'AUDIT_CC_DRV', companies:['7000'], required:false, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
   { code:'AUDIT_SI2000_DRV', companies:['7000'], required:false, aliases:['SI2000 DRV','SI2000_DRV'] },
 ];
