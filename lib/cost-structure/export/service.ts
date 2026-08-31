@@ -2,6 +2,8 @@ import 'server-only';
 import ExcelJS from 'exceljs';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { applyWorkbookStyleBlueprint } from './style-blueprint/apply';
+import { getWorkbookStyleBlueprint } from './style-blueprint/registry';
 
 type RawRecord = Record<string, unknown>;
 type SourceRow = {
@@ -18,7 +20,6 @@ type SourceRow = {
 
 const AUDIT_TEMPLATE_CODES = new Set(['AUDIT_SI', 'AUDIT_GHOPO', 'AUDIT_DERIV', 'AUDIT_RINCIAN', 'AUDIT_CC_DRV', 'AUDIT_SI2000_DRV']);
 const ACCOUNTING_FORMAT = '#,##0.00;[Red](#,##0.00);-';
-const THOUSAND_FORMAT = '#,##0.00;[Red](#,##0.00);-';
 
 function record(value: Prisma.JsonValue | null): RawRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as RawRecord : {};
@@ -93,33 +94,6 @@ function requireAuditRows(allRows: SourceRow[], code: string, label: string) {
   return rows;
 }
 
-function applyGhopoLayout(sheet: ExcelJS.Worksheet) {
-  sheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1, topLeftCell: 'A2' }];
-  sheet.pageSetup.orientation = 'portrait';
-  sheet.pageSetup.printArea = 'A1:B47';
-  const widths: Record<string, number> = { A: 53.78, B: 18, C: 14.44, D: 21.22, E: 12.44, F: 11.44, G: 10.44, H: 9.22, I: 36.22, J: 12.78, K: 18.78, L: 14.78, M: 12.22, N: 16.44, O: 9.22, R: 16.44, S: 12.44, T: 11.44, U: 11.78, V: 9.22 };
-  Object.entries(widths).forEach(([col, width]) => { sheet.getColumn(col).width = width; });
-  for (const col of ['C','D','E','F','G','H','I','J']) sheet.getColumn(col).hidden = true;
-  for (const row of [20,46,47,48,49,50]) sheet.getRow(row).hidden = true;
-  for (let row = 1; row <= Math.max(55, sheet.rowCount); row += 1) {
-    const a = sheet.getCell(row, 1); const b = sheet.getCell(row, 2);
-    a.font = { name: 'Arial', size: 10, bold: [2,19,22,32,34,44].includes(row), color: [2,22,34].includes(row) ? { argb: 'FFC00000' } : undefined };
-    b.font = { name: 'Arial', size: 10, bold: [19,32,44,45].includes(row) };
-    b.numFmt = THOUSAND_FORMAT;
-    if ([19,32,44,45].includes(row)) { a.fill = b.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }; }
-  }
-}
-
-function applyRincianLayout(sheet: ExcelJS.Worksheet) {
-  sheet.views = [{ state: 'frozen', xSplit: 3, ySplit: 381, topLeftCell: 'D382' }];
-  sheet.pageSetup.orientation = 'portrait';
-  const widths: Record<string, number> = { B:11.44,C:29.78,D:23.44,E:22.22,F:22.78,G:25.22,H:25.22,I:21.44,J:22.78,K:19,L:20.22,M:28.22,N:29.78,O:16.78,Q:11,R:17.78,S:22.22,T:15.78,U:16.22,W:10.22,X:16.22,Y:26,Z:26,AA:26 };
-  Object.entries(widths).forEach(([col, width]) => { sheet.getColumn(col).width = width; });
-  if (sheet.rowCount >= 3) sheet.autoFilter = 'B3:AA3';
-  const header = sheet.getRow(3); header.font = { name: 'Calibri', size: 11, bold: true }; header.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-  for (const col of ['D','E','F','G','H','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X']) sheet.getColumn(col).numFmt = ACCOUNTING_FORMAT;
-}
-
 function findResult(run: NonNullable<Awaited<ReturnType<typeof loadExportRun>>>, code: string) {
   return run.results.find((result) => result.resultCode === code);
 }
@@ -160,7 +134,6 @@ function writeCompany7000Ghopo(workbook: ExcelJS.Workbook, run: NonNullable<Awai
   sheet.getCell(19, 2).value = decimalToDisplay(totalHpp.amount, 1000);
   sheet.getCell(32, 2).value = decimalToDisplay(totalAdum.amount, 1000);
   sheet.getCell(45, 2).value = decimalToDisplay(oa.amount, 1000);
-  applyGhopoLayout(sheet);
 }
 
 function writeCompany2000Si(workbook: ExcelJS.Workbook, run: NonNullable<Awaited<ReturnType<typeof loadExportRun>>>) {
@@ -174,9 +147,6 @@ function writeCompany2000Si(workbook: ExcelJS.Workbook, run: NonNullable<Awaited
   const totalAdum = findResult(run, 'TOTAL_ADUM'); const totalPasar = findResult(run, 'TOTAL_PASAR');
   if (totalAdum) sheet.getCell(29, 2).value = decimalToDisplay(totalAdum.amount, 1000);
   if (totalPasar) sheet.getCell(41, 2).value = decimalToDisplay(totalPasar.amount, 1000);
-  sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 1, topLeftCell: 'B2' }];
-  sheet.pageSetup.orientation = 'portrait'; sheet.pageSetup.printArea = 'A1:B43'; sheet.getColumn('A').width = 53; sheet.getColumn('B').width = 18;
-  for (let row = 1; row <= sheet.rowCount; row += 1) sheet.getCell(row,2).numFmt = THOUSAND_FORMAT;
 }
 
 function flattenJson(value: unknown, path = '', output: Array<{ path: string; value: string }> = []) {
@@ -228,13 +198,14 @@ export async function buildCostStructureExport(periodId: number) {
 
   if (run.period.company.companyCode === '7000') {
     writeCompany7000Ghopo(workbook, run);
-    const deriv = workbook.addWorksheet('DERIV'); writeRawMatrix(deriv, requireAuditRows(allRows, 'AUDIT_DERIV', 'DERIV')); applyGhopoLayout(deriv);
-    const rincian = workbook.addWorksheet('rincian biaya'); writeRawMatrix(rincian, requireAuditRows(allRows, 'AUDIT_RINCIAN', 'rincian biaya')); applyRincianLayout(rincian);
+    const deriv = workbook.addWorksheet('DERIV'); writeRawMatrix(deriv, requireAuditRows(allRows, 'AUDIT_DERIV', 'DERIV'));
+    const rincian = workbook.addWorksheet('rincian biaya'); writeRawMatrix(rincian, requireAuditRows(allRows, 'AUDIT_RINCIAN', 'rincian biaya'));
     addSourceSheet(workbook, 'tb', rowsByCode(allRows, 'TB'), true);
     addSourceSheet(workbook, 'cc_prod', rowsByCode(allRows, 'CC_PROD'), true);
     addSourceSheet(workbook, 'cc_adm', rowsByCode(allRows, 'CC_ADUM'), true);
     addSourceSheet(workbook, 'cc pasar', rowsByCode(allRows, 'CC_PASAR'), true);
-    addSourceSheet(workbook, 'cc_drv', requireAuditRows(allRows, 'AUDIT_CC_DRV', 'cc_drv'), true);
+    // Historical periods can legitimately predate CC Derivatif; absent source means no cc_drv sheet.
+    addSourceSheet(workbook, 'cc_drv', rowsByCode(allRows, 'AUDIT_CC_DRV'));
     addSourceSheet(workbook, 'SI2000_DRV', requireAuditRows(allRows, 'AUDIT_SI2000_DRV', 'SI2000_DRV'), true);
     addSourceSheet(workbook, 'WHRPG', rowsByCode(allRows, 'CC_WHRPG'), true);
     addSourceSheet(workbook, 'Batu bara', rowsByCode(allRows, 'COAL'), true);
@@ -243,13 +214,15 @@ export async function buildCostStructureExport(periodId: number) {
     addSourceSheet(workbook, 'solar PP order', rowsByCode(allRows, 'SOLAR_PP_ORDER'), true);
   } else {
     writeCompany2000Si(workbook, run);
-    const rincian = workbook.addWorksheet('rincian biaya'); writeRawMatrix(rincian, requireAuditRows(allRows, 'AUDIT_RINCIAN', 'rincian biaya')); applyRincianLayout(rincian);
+    const rincian = workbook.addWorksheet('rincian biaya'); writeRawMatrix(rincian, requireAuditRows(allRows, 'AUDIT_RINCIAN', 'rincian biaya'));
     addSourceSheet(workbook, 'cc prod', rowsByCode(allRows, 'CC_PROD'));
     addSourceSheet(workbook, 'cc ADM', rowsByCode(allRows, 'CC_ADUM'), true);
     addSourceSheet(workbook, 'cc pasar', rowsByCode(allRows, 'CC_PASAR'), true);
     addSourceSheet(workbook, 'cc derivatif', rowsByCode(allRows, 'AUDIT_CC_DRV'));
   }
   writeFormulaAudit(workbook, run);
+  // Styling is static and style-only; all values above came from the active persisted SUCCESS run.
+  applyWorkbookStyleBlueprint(workbook, getWorkbookStyleBlueprint(run.period.company.companyCode));
 
   const buffer = await workbook.xlsx.writeBuffer();
   const company = run.period.company.companyCode;
