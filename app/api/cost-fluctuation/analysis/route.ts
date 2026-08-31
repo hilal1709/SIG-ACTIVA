@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireCostStructureRead } from '@/lib/cost-structure/auth';
 import { getCostFluctuationAnalysis } from '@/lib/cost-fluctuation/analysis/service';
 import type { ComparisonType } from '@/lib/cost-fluctuation/analysis/types';
+import { FluctuationIntegrityError } from '@/lib/cost-fluctuation/analysis/snapshot';
 
 const TYPES = new Set<ComparisonType>(['MOM', 'YOY', 'YTD']);
 export async function GET(request: NextRequest) {
@@ -15,6 +16,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     console.error('Cost fluctuation analysis failed', error);
+    if (error instanceof FluctuationIntegrityError) return NextResponse.json({ error: error.message, code: 'FLUCTUATION_INTEGRITY_ERROR' }, { status: 409 });
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Analysis failed.' }, { status: 500 });
   }
 }

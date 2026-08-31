@@ -1,169 +1,188 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
-import { resolveComparisonMonths, comparisonLabel } from './periods';
-import { variance } from './math';
-import { buildFinalizedMonthlySnapshot, FluctuationIntegrityError } from './snapshot';
+import { aggregateSnapshots } from './aggregate';
 import { compareSnapshots } from './compare';
+import { financial, variance } from './math';
 import { createAnalysisService } from './orchestrator';
-import type { AnalysisRepository, PersistedLine, PersistedPeriod, PersistedResult } from './types';
+import { comparisonLabel, resolveComparisonMonths } from './periods';
+import { assertSnapshotReconciles, buildFinalizedMonthlySnapshot, FluctuationIntegrityError } from './snapshot';
+import type { AnalysisRepository, AnalyticalSnapshot, PersistedLine, PersistedPeriod, PersistedResult, PersistedSourceRow } from './types';
 
-const d = (value: string | number) => new Prisma.Decimal(value);
-const GROUPS = { HPP: { id: 30, order: 1 }, ADUM: { id: 10, order: 2 }, PASAR: { id: 20, order: 3 } } as const;
-type GroupCode = keyof typeof GROUPS;
+const d = (value: Prisma.Decimal.Value) => new Prisma.Decimal(value);
+type Code = 'HPP' | 'ADUM' | 'PASAR';
+const GROUPS: Record<Code, { id: number; order: number }> = { HPP: { id: 30, order: 1 }, ADUM: { id: 10, order: 2 }, PASAR: { id: 20, order: 3 } };
+const COMMON = [
+  ['N01', 'Bahan Penolong'], ['N02', 'Bahan Bakar'], ['N03', 'Energi Listrik'], ['N04', 'Tenaga Kerja'], ['N05', 'Pemeliharaan'],
+  ['N06', 'DPA'], ['N07', 'Urusan Umum dan Administrasi Kantor'], ['N08', 'Perniagaan'], ['N09', 'Pajak & Asuransi'],
+] as const;
+const HPP = [
+  ['H01', 'Bahan Baku'], ['H02', 'Bahan Penolong'], ['H03', 'Kemasan'], ['H04', 'Batubara'], ['H05', 'Batubara Inbound'],
+  ['H06', 'Bahan Bakar lainnya'], ['H07', 'Listrik'], ['H08', 'Tenaga Kerja'], ['H09', 'Pemeliharaan'], ['H10', 'Penyusutan & Amortisasi'],
+  ['H11', 'Urusan Umum dan Administrasi Kantor'], ['H12', 'Perniagaan'], ['H13', 'Pajak & Asuransi'], ['H14', 'Pembelian Terak'],
+  ['H15', 'Ongkos Angkut FG dan WIP'], ['H16', 'Selisih Persediaan'],
+] as const;
+const SI: Record<'ADUM' | 'PASAR', readonly string[]> = {
+  ADUM: ['180971720','37589668','700733597','49912776104','1998787267','5514747437','44532279743','954509200','4011763175'],
+  PASAR: ['0','104942865','220626','6945831605','0','1545220816','1862128642','6029416541','0'],
+};
+const GHOPO: Record<Code, readonly string[]> = {
+  HPP: ['41963786488','8975125427','26664274904','93152232023.32','41023853211.68','6422129096','69402132632','27590902628','35431263500','30907540908','5898145713','30137567870','15046158800','0','1707619761','-21153010152'],
+  ADUM: ['0','150337563','311498436','2795914715','3262790203','871635171','2973368724','0','1301839163'],
+  PASAR: ['65990693','0','0','0','5146767','0','31917788','9469804797','0','72068727025'],
+};
+const DERIV: Record<Code, readonly string[]> = {
+  HPP: ['0','0','0','0','0','0','0','0','0','0','0','0','0','0','0','4571043173'],
+  ADUM: ['0','0','0','0','0','0','0','0','0'],
+  PASAR: ['0','12540370','0','1115041922','0','0','192774503','168549750','0','368191098'],
+};
+const TOTALS = { SI: { ADUM: '107844157911', PASAR: '16487761095' }, GHOPO: { HPP: '413169722810', ADUM: '11667383975', PASAR: '81641587070' } } as const;
+const definitions = (code: Code, company: '2000' | '7000') => code === 'HPP' ? HPP : [...COMMON, ...(code === 'PASAR' && company === '7000' ? [['OA', 'OA'] as const] : [])];
+const rows = (uploadId: number, logicalSourceCode: string, data: Array<[string, string]>): PersistedSourceRow[] => data.map(([label, amount], index) => ({ id: index + 1, uploadId, logicalSourceCode, sourceRowNumber: index + 1, rawDataJson: { COLUMN_1: label, COLUMN_2: amount } }));
+const thousands = (value: string) => d(value).div(1000).toString();
 
-function period(companyCode: '2000' | '7000', fiscalYear: number, fiscalPeriod: number, options: { status?: string; runStatus?: string; isActive?: boolean; corruptRun?: boolean; extraSubtotal?: boolean; reverseResults?: boolean } = {}): PersistedPeriod {
-  const codes: GroupCode[] = companyCode === '2000' ? ['ADUM', 'PASAR'] : ['HPP', 'ADUM', 'PASAR'];
+function auditRows(uploadId: number, company: '2000' | '7000'): PersistedSourceRow[] {
+  const sourceCode = company === '2000' ? 'AUDIT_SI' : 'AUDIT_GHOPO';
+  const codes: Code[] = company === '2000' ? ['ADUM', 'PASAR'] : ['HPP', 'ADUM', 'PASAR'];
+  const data: Array<[string, string]> = [];
+  for (const code of codes) {
+    data.push([code === 'HPP' ? 'Beban Pokok Penjualan' : code === 'ADUM' ? 'UMUM & ADMINISTRASI' : 'PEMASARAN', '']);
+    const values = company === '2000' ? SI[code as 'ADUM' | 'PASAR'] : GHOPO[code];
+    definitions(code, company).forEach(([, label], index) => {
+      let value = values[index];
+      if (company === '7000' && code === 'HPP' && index === 3) value = '93152232023.316';
+      if (company === '7000' && code === 'HPP' && index === 4) value = '41023853211.684';
+      data.push([label, thousands(value)]);
+    });
+    if (code === 'PASAR') data.push(['Total Perniagaan', thousands(company === '2000' ? TOTALS.SI.PASAR : '9572860045')]);
+    else data.push([code === 'HPP' ? 'Total HPP' : 'Total Adum', thousands(TOTALS[company === '2000' ? 'SI' : 'GHOPO'][code as 'ADUM'])]);
+    if (company === '7000' && code === 'PASAR') data.push(['Total Pemasaran', thousands(TOTALS.GHOPO.PASAR)]);
+  }
+  return rows(uploadId, sourceCode, data);
+}
+
+function derivRows(uploadId: number): PersistedSourceRow[] {
+  const data: Array<[string, string]> = [];
+  for (const code of ['HPP', 'ADUM', 'PASAR'] as Code[]) {
+    data.push([code === 'HPP' ? 'Beban Pokok Penjualan' : code === 'ADUM' ? 'UMUM & ADMINISTRASI' : 'PEMASARAN', '']);
+    definitions(code, '7000').forEach(([, label], index) => data.push([label, thousands(DERIV[code][index])]));
+    data.push([code === 'HPP' ? 'Total HPP' : code === 'ADUM' ? 'Total Adum' : 'Total Perniagaan', thousands(code === 'HPP' ? '4571043173' : code === 'ADUM' ? '0' : '1488906545')]);
+    if (code === 'PASAR') data.push(['Total Pemasaran', thousands('1857097643')]);
+  }
+  return rows(uploadId, 'AUDIT_DERIV', data);
+}
+
+function period(company: '2000' | '7000', year = 2026, month = 7): PersistedPeriod {
+  const codes: Code[] = company === '2000' ? ['ADUM', 'PASAR'] : ['HPP', 'ADUM', 'PASAR'];
   const results: PersistedResult[] = []; const actualLines: PersistedLine[] = [];
   for (const code of codes) {
-    const group = GROUPS[code]; const natureId = group.id + 100; const amount = code === 'HPP' ? 30 : code === 'ADUM' ? 10 : 20;
-    results.push({ costGroupId: group.id, natureId: null, resultCode: `TOTAL_${code}`, resultType: 'TOTAL', amount: d(amount), costGroup: { code, name: code, displayOrder: group.order }, nature: null });
-    // Deliberately reverse lexical IDs versus display order.
-    results.push({ costGroupId: group.id, natureId, resultCode: 'NATURE_TOTAL', resultType: 'NATURE', amount: d(amount), costGroup: { code, name: code, displayOrder: group.order }, nature: { code: `${code}_N`, name: `${code} Nature`, displayOrder: code === 'HPP' ? 9 : group.order } });
-    actualLines.push({ costGroupId: group.id, natureId, coaId: group.id + 1000, lineType: 'COA', finalAmount: d(amount), ruleCode: null, coa: { coaCode: String(9000 - group.id), coaDescription: `${code} COA` } });
+    const values = company === '2000' ? SI[code as 'ADUM' | 'PASAR'] : GHOPO[code];
+    const total = TOTALS[company === '2000' ? 'SI' : 'GHOPO'][code as 'ADUM'];
+    results.push({ costGroupId: GROUPS[code].id, natureId: null, resultCode: `TOTAL_${code}`, resultType: 'TOTAL', amount: d(total), costGroup: { code, name: code, displayOrder: GROUPS[code].order }, nature: null });
+    definitions(code, company).forEach(([natureCode, label], index) => {
+      const natureId = GROUPS[code].id * 100 + index + 1; const amount = d(values[index]);
+      results.push({ costGroupId: GROUPS[code].id, natureId, resultCode: 'NATURE_TOTAL', resultType: 'NATURE', amount, costGroup: { code, name: code, displayOrder: GROUPS[code].order }, nature: { code: natureCode, name: label, displayOrder: index + 1 } });
+      if (!amount.isZero()) actualLines.push({ costGroupId: GROUPS[code].id, natureId, coaId: natureId + 10000, lineType: 'COA', finalAmount: amount, ruleCode: null, coa: { coaCode: `COA-${natureCode}`, coaDescription: label } });
+    });
   }
-  const total = companyCode === '2000' ? 30 : 60;
+  const total = company === '2000' ? '124331919006' : '506478693855';
   results.push({ costGroupId: null, natureId: null, resultCode: 'TOTAL_COMPANY', resultType: 'TOTAL', amount: d(total), costGroup: null, nature: null });
-  if (options.extraSubtotal) results.push({ costGroupId: GROUPS.PASAR.id, natureId: null, resultCode: 'TOTAL_PASAR_REGULAR', resultType: 'TOTAL', amount: d(999), costGroup: { code: 'PASAR', name: 'PASAR', displayOrder: 3 }, nature: null });
-  if (options.reverseResults) results.reverse();
-  const id = fiscalYear * 100 + fiscalPeriod + (companyCode === '7000' ? 1_000_000 : 0); const runId = id + 10;
-  return { id, companyId: companyCode === '2000' ? 1 : 2, companyCode, fiscalYear, fiscalPeriod, status: options.status ?? 'FINALIZED', activeCalculationRunId: runId, activeRun: { id: runId, periodId: options.corruptRun ? id + 1 : id, status: options.runStatus ?? 'SUCCESS', isActive: options.isActive ?? true, ruleSetVersion: `ENGINE1_${companyCode}_V1`, results: options.reverseResults ? results : results.reverse(), actualLines } };
+  const id = year * 100 + month + (company === '7000' ? 1_000_000 : 0); const uploadId = id + 2;
+  return { id, companyId: company === '2000' ? 20 : 70, companyCode: company, fiscalYear: year, fiscalPeriod: month, status: 'FINALIZED', activeCalculationRunId: id + 1, activeRun: { id: id + 1, periodId: id, uploadId, status: 'SUCCESS', isActive: true, ruleSetVersion: `ENGINE1_${company}_V${company === '2000' ? 2 : 1}`, results, actualLines, sourceRows: [...auditRows(uploadId, company), ...(company === '7000' ? derivRows(uploadId) : [])] } };
 }
 
-function repository(periods: PersistedPeriod[]): AnalysisRepository {
-  return { async findPeriodById(id) { return periods.find((item) => item.id === id) ?? null; }, async findPeriod(companyId, month) { return periods.find((item) => item.companyId === companyId && item.fiscalYear === month.fiscalYear && item.fiscalPeriod === month.fiscalPeriod) ?? null; } };
+const repository = (periods: PersistedPeriod[]): AnalysisRepository => ({ async findPeriodById(id) { return periods.find(p => p.id === id) ?? null; }, async findPeriod(companyId, ref) { return periods.find(p => p.companyId === companyId && p.fiscalYear === ref.fiscalYear && p.fiscalPeriod === ref.fiscalPeriod) ?? null; } });
+
+test('production-shaped SI parses UUA as Nature and reconciles every Nature', () => {
+  const snapshot = buildFinalizedMonthlySnapshot(period('2000'))!;
+  assert.deepEqual(snapshot.bases.map(b => b.code), ['SI']); assert.equal(snapshot.amount.toFixed(2), '124331919006.00');
+  assert.deepEqual(snapshot.bases[0].groups.map(g => [g.code, g.amount.toFixed(2)]), [['ADUM','107844157911.00'],['PASAR','16487761095.00']]);
+  assert.equal(snapshot.bases[0].groups.find(g => g.code === 'ADUM')!.natures.find(n => n.code === 'N07')!.amount.toFixed(2), '44532279743.00');
+  assert.equal(snapshot.bases[0].groups.find(g => g.code === 'PASAR')!.natures.find(n => n.code === 'N07')!.amount.toFixed(2), '1862128642.00');
+});
+
+test('production-shaped GHoPO and DERIV preserve all stable Nature identities and goldens', () => {
+  const snapshot = buildFinalizedMonthlySnapshot(period('7000'))!; const [ghopo, deriv] = snapshot.bases;
+  assert.deepEqual(snapshot.bases.map(b => b.code), ['GHOPO','DERIV']); assert.equal(ghopo.amount.toFixed(2), '506478693855.00'); assert.equal(deriv.amount.toFixed(2), '6428140816.00'); assert.equal(snapshot.amount.toFixed(2), '512906834671.00');
+  assert.deepEqual(ghopo.groups.map(g => [g.code, g.amount.toFixed(2)]), [['HPP','413169722810.00'],['ADUM','11667383975.00'],['PASAR','81641587070.00']]);
+  assert.deepEqual(deriv.groups.map(g => [g.code, g.amount.toFixed(2)]), [['HPP','4571043173.00'],['ADUM','0.00'],['PASAR','1857097643.00']]);
+  assert.equal(deriv.groups.find(g => g.code === 'PASAR')!.natures.find(n => n.code === 'N07')!.amount.toFixed(2), '192774503.00');
+  assert.equal(deriv.groups.find(g => g.code === 'PASAR')!.natures.find(n => n.code === 'OA')!.amount.toFixed(2), '368191098.00');
+  assert.deepEqual(deriv.groups.find(g => g.code === 'HPP')!.natures.map(n => n.code), HPP.map(([code]) => code));
+  assert.equal(deriv.groups.flatMap(g => g.natures).filter(n => !n.amount.isZero()).every(n => n.items.length === 1 && n.items[0].id === null), true);
+});
+
+test('financial parity normalizes only to deterministic cent precision', () => { assert.equal(financial('93152232023.316').toFixed(2), '93152232023.32'); assert.equal(financial('41023853211.684').toFixed(2), '41023853211.68'); });
+
+test('source parity fails closed for missing, unknown, duplicate, and mismatched audit data', () => {
+  const mutations: Array<(p: PersistedPeriod) => void> = [
+    p => { p.activeRun!.sourceRows = p.activeRun!.sourceRows.filter(r => !(r.logicalSourceCode === 'AUDIT_SI' && (r.rawDataJson as Record<string,string>).COLUMN_1 === 'Bahan Penolong')); },
+    p => { p.activeRun!.sourceRows.push(...rows(p.activeRun!.uploadId, 'AUDIT_SI', [['Mystery Nature','1']])); },
+    p => { const total = p.activeRun!.sourceRows.find(r => r.logicalSourceCode === 'AUDIT_SI' && (r.rawDataJson as Record<string,string>).COLUMN_1 === 'Total Adum')!; p.activeRun!.sourceRows.push({ ...total, id: 999 }); },
+    p => { (p.activeRun!.sourceRows.find(r => r.logicalSourceCode === 'AUDIT_SI' && (r.rawDataJson as Record<string,string>).COLUMN_1 === 'Bahan Penolong')!.rawDataJson as Record<string,string>).COLUMN_2 = '1'; },
+  ];
+  for (const mutate of mutations) { const raw = period('2000'); mutate(raw); assert.throws(() => buildFinalizedMonthlySnapshot(raw), FluctuationIntegrityError); }
+  const missingDeriv = period('7000'); missingDeriv.activeRun!.sourceRows = missingDeriv.activeRun!.sourceRows.filter(r => r.logicalSourceCode !== 'AUDIT_DERIV'); assert.throws(() => buildFinalizedMonthlySnapshot(missingDeriv), /AUDIT_DERIV source is missing/);
+});
+
+test('snapshot reconciliation enforces company, basis, group, and zero-Nature item invariants', () => {
+  const valid = buildFinalizedMonthlySnapshot(period('2000'))!;
+  valid.bases[0].amount = valid.bases[0].amount.sub(1); assert.throws(() => assertSnapshotReconciles(valid), /Analysis Basis|Analysis Bases/);
+  const zero = buildFinalizedMonthlySnapshot(period('2000'))!; const nature = zero.bases[0].groups.find(g => g.code === 'PASAR')!.natures.find(n => n.code === 'N01')!;
+  nature.items.push({ key: `${nature.key}:calculated:BAD:BAD`, id: null, code: 'BAD', label: 'bad', amount: d(1), order: 1 }); assert.throws(() => assertSnapshotReconciles(zero), /analytical items/);
+  const total = period('2000'); total.activeRun!.results.find(r => r.resultCode === 'TOTAL_COMPANY')!.amount = d('1'); assert.throws(() => buildFinalizedMonthlySnapshot(total), /TOTAL_COMPANY/);
+});
+
+test('canonical identities, display ordering, and unrelated subtotals are deterministic', () => {
+  const raw = period('7000'); raw.activeRun!.results.push({ ...raw.activeRun!.results.find(r => r.resultCode === 'TOTAL_PASAR')!, resultCode: 'TOTAL_PASAR_REGULAR', amount: d(1) }); raw.activeRun!.results.reverse();
+  const snapshot = buildFinalizedMonthlySnapshot(raw)!; assert.deepEqual(snapshot.bases[0].groups.map(g => g.code), ['HPP','ADUM','PASAR']); assert.deepEqual(snapshot.bases[0].groups[0].natures.map(n => n.code), HPP.map(([code]) => code));
+  const duplicate = period('2000'); duplicate.activeRun!.results.push({ ...duplicate.activeRun!.results.find(r => r.resultCode === 'TOTAL_ADUM')! }); assert.throws(() => buildFinalizedMonthlySnapshot(duplicate), FluctuationIntegrityError);
+  const mismatch = period('2000'); mismatch.activeRun!.results.find(r => r.resultCode === 'TOTAL_ADUM')!.costGroup = { code: 'PASAR', name: 'PASAR', displayOrder: 3 }; assert.throws(() => buildFinalizedMonthlySnapshot(mismatch), /stable Cost Group identity/);
+});
+
+test('basis-qualified complete paths prevent Nature and COA collisions', () => {
+  const snapshot = buildFinalizedMonthlySnapshot(period('7000'))!; const ghopo = snapshot.bases[0]; const deriv = snapshot.bases[1];
+  assert.notEqual(ghopo.groups[0].natures[0].key, deriv.groups[0].natures[0].key);
+  const first = ghopo.groups.find(g => g.code === 'PASAR')!.natures.find(n => n.code === 'N07')!.items[0]; const other = ghopo.groups.find(g => g.code === 'ADUM')!.natures.find(n => n.code === 'N07')!.items[0]; other.id = first.id; other.key = `${other.key.slice(0, other.key.lastIndexOf(':coa:'))}:coa:${first.id}`; assert.notEqual(first.key, other.key);
+});
+
+test('period resolution and labels cover MoM, January, YoY, and full YTD', () => {
+  assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'MOM').comparison, [{ fiscalYear: 2026, fiscalPeriod: 6 }]); assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 1 }, 'MOM').comparison, [{ fiscalYear: 2025, fiscalPeriod: 12 }]); assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'YOY').comparison, [{ fiscalYear: 2025, fiscalPeriod: 7 }]); assert.equal(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'YTD').current.length, 7);
+  assert.equal(comparisonLabel('MOM',{fiscalYear:2026,fiscalPeriod:7},{fiscalYear:2026,fiscalPeriod:6}),'MoM: Jul-2026 vs Jun-2026'); assert.equal(comparisonLabel('YOY',{fiscalYear:2026,fiscalPeriod:7},{fiscalYear:2025,fiscalPeriod:7}),'YoY: Jul-2026 vs Jul-2025'); assert.equal(comparisonLabel('YTD',{fiscalYear:2026,fiscalPeriod:7},{fiscalYear:2025,fiscalPeriod:7}),'YTD: Jan-Jul-2026 vs Jan-Jul-2025');
+});
+
+function tiny(companyAmount: string, basisAmount: string, groupAmounts: [string,string]): AnalyticalSnapshot {
+  const makeGroup = (code: string, amount: string, id: number) => ({ key:`basis:SI:group:${id}`,id,code,label:code,amount:d(amount),order:id,natures:[{key:`basis:SI:group:${id}:nature:${id}`,id,code:'N',label:'N',amount:d(amount),order:1,items:[]}] });
+  return { companyId: 1, companyCode: '2000', amount:d(companyAmount), bases:[{key:'basis:SI',id:null,basisCode:'SI',code:'SI',label:'SI',amount:d(basisAmount),order:1,groups:[makeGroup('ADUM',groupAmounts[0],1),makeGroup('PASAR',groupAmounts[1],2)]}],lineage:[] };
 }
 
-function setGroupAmount(raw: PersistedPeriod, code: GroupCode, amount: number) {
-  const group = GROUPS[code]; const run = raw.activeRun!;
-  run.results.find((item) => item.resultCode === `TOTAL_${code}`)!.amount = d(amount);
-  run.results.find((item) => item.resultType === 'NATURE' && item.costGroupId === group.id)!.amount = d(amount);
-  run.actualLines.find((item) => item.costGroupId === group.id)!.finalAmount = d(amount);
-}
-
-function setCompanyAmount(raw: PersistedPeriod, amount: number) {
-  raw.activeRun!.results.find((item) => item.resultCode === 'TOTAL_COMPANY')!.amount = d(amount);
-}
-
-test('E2-001..004 resolve normal MoM, January rollover, YoY, and complete YTD with human labels', () => {
-  assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'MOM').comparison, [{ fiscalYear: 2026, fiscalPeriod: 6 }]);
-  assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 1 }, 'MOM').comparison, [{ fiscalYear: 2025, fiscalPeriod: 12 }]);
-  assert.deepEqual(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'YOY').comparison, [{ fiscalYear: 2025, fiscalPeriod: 7 }]);
-  assert.equal(resolveComparisonMonths({ fiscalYear: 2026, fiscalPeriod: 7 }, 'YTD').current.length, 7);
-  assert.equal(comparisonLabel('MOM', { fiscalYear: 2026, fiscalPeriod: 7 }, { fiscalYear: 2026, fiscalPeriod: 6 }), 'MoM: Jul-2026 vs Jun-2026');
-  assert.equal(comparisonLabel('YOY', { fiscalYear: 2026, fiscalPeriod: 7 }, { fiscalYear: 2025, fiscalPeriod: 7 }), 'YoY: Jul-2026 vs Jul-2025');
-  assert.equal(comparisonLabel('YTD', { fiscalYear: 2026, fiscalPeriod: 7 }, { fiscalYear: 2025, fiscalPeriod: 7 }), 'YTD: Jan-Jul-2026 vs Jan-Jul-2025');
+test('comparison preserves signed variance, NM/both-zero, signed contribution, and every basis label', () => {
+  assert.equal(variance(d(-80),d(-100)).percent,'20.000000'); assert.equal(variance(d(100),d(0)).status,'NM'); assert.equal(variance(d(0),d(0)).percent,'0.000000');
+  const compared = compareSnapshots(tiny('20','20',['-100','120']), tiny('100','100',['100','0'])); const basis = compared.children![0]; const [adum,pasar] = basis.children!;
+  assert.equal(adum.contribution,'250.000000'); assert.equal(pasar.contribution,'-150.000000'); assert.equal(basis.contribution,'100.000000'); assert.equal(basis.contributionBasis,'ANALYSIS_BASIS_TO_COMPANY'); assert.equal(adum.contributionBasis,'COST_GROUP_TO_ANALYSIS_BASIS'); assert.equal(adum.children![0].contributionBasis,'NATURE_TO_COST_GROUP');
+  const same = compareSnapshots(tiny('0','0',['0','0']),tiny('0','0',['0','0'])); assert.equal(same.children![0].contributionStatus,'PARENT_ZERO');
 });
 
-test('variance preserves exact signed arithmetic and zero-denominator statuses', () => {
-  assert.equal(variance(d('-80'), d('-100')).percent, '20.000000');
-  assert.deepEqual(variance(d('100'), d('0')).status, 'NM'); assert.equal(variance(d('0'), d('0')).percent, '0.000000');
+test('comparison is deterministic, treats a missing leaf as zero, and keeps calculated items fake-COA-free', () => {
+  const current = buildFinalizedMonthlySnapshot(period('7000'))!; const comparison = buildFinalizedMonthlySnapshot(period('7000',2025,7))!; const nature = current.bases[1].groups.find(g=>g.code==='PASAR')!.natures.find(n=>n.code==='N02')!; const calculated = nature.items[0];
+  comparison.bases[1].groups.find(g=>g.code==='PASAR')!.natures.find(n=>n.code==='N02')!.items=[];
+  const first=compareSnapshots(current,comparison), second=compareSnapshots(current,comparison); assert.deepEqual(first,second); const node=first.children![1].children!.find(g=>g.code==='PASAR')!.children!.find(n=>n.code==='N02')!.children![0]; assert.equal(node.comparisonAmount,'0.00'); assert.equal(node.id,null); assert.equal(node.key,calculated.key); assert.equal(node.contributionBasis,'CALCULATED_ITEM_TO_NATURE');
 });
 
-test('CONT-001 uses signed parent variance and preserves negative and over-100% contributions', () => {
-  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6);
-  setGroupAmount(currentRaw, 'ADUM', 0); setGroupAmount(currentRaw, 'PASAR', 120); setCompanyAmount(currentRaw, 120);
-  setGroupAmount(priorRaw, 'ADUM', 100); setGroupAmount(priorRaw, 'PASAR', 0); setCompanyAmount(priorRaw, 100);
-  const result = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
-  assert.equal(result.varianceAmount, '20.00');
-  const adum = result.children!.find((node) => node.code === 'ADUM')!; const pasar = result.children!.find((node) => node.code === 'PASAR')!;
-  assert.equal(adum.varianceAmount, '-100.00'); assert.equal(adum.contribution, '-500.000000');
-  assert.equal(pasar.varianceAmount, '120.00'); assert.equal(pasar.contribution, '600.000000');
-
-  setCompanyAmount(currentRaw, 80); setGroupAmount(currentRaw, 'PASAR', 80);
-  const negativeParent = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
-  assert.equal(negativeParent.varianceAmount, '-20.00');
-  assert.equal(negativeParent.children!.find((node) => node.code === 'PASAR')!.contribution, '-400.000000');
+test('finalization and active SUCCESS lineage gates reject invalid or superseded runs', () => {
+  const provisional=period('2000'); provisional.status='CALCULATED'; assert.equal(buildFinalizedMonthlySnapshot(provisional),null);
+  for (const mutate of [(p:PersistedPeriod)=>{p.activeRun!.status='FAILED';},(p:PersistedPeriod)=>{p.activeRun!.isActive=false;},(p:PersistedPeriod)=>{p.activeRun!.periodId++;},(p:PersistedPeriod)=>{p.activeCalculationRunId!++;}]) { const raw=period('2000'); mutate(raw); assert.throws(()=>buildFinalizedMonthlySnapshot(raw),/lineage/); }
+  const unrelated=period('7000'); unrelated.activeRun!.sourceRows.push(...rows(999,'AUDIT_DERIV',[['Unknown','999']])); assert.equal(buildFinalizedMonthlySnapshot(unrelated)!.amount.toFixed(2),'512906834671.00');
 });
 
-test('CONT-002 returns PARENT_ZERO instead of dividing by zero', () => {
-  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6);
-  setGroupAmount(currentRaw, 'ADUM', 0); setGroupAmount(currentRaw, 'PASAR', 30); setCompanyAmount(currentRaw, 30);
-  setGroupAmount(priorRaw, 'ADUM', 10); setGroupAmount(priorRaw, 'PASAR', 20); setCompanyAmount(priorRaw, 30);
-  const result = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
-  const adum = result.children!.find((node) => node.code === 'ADUM')!;
-  assert.equal(result.varianceAmount, '0.00'); assert.equal(adum.varianceAmount, '-10.00');
-  assert.equal(adum.contribution, null); assert.equal(adum.contributionStatus, 'PARENT_ZERO');
+test('missing/non-finalized comparisons and incomplete YTD are UNAVAILABLE', async () => {
+  const current=period('2000',2026,3); let result=await createAnalysisService(repository([current]))(current.id,'MOM'); assert.equal(result.kind==='OK'&&result.status,'UNAVAILABLE');
+  const prior=period('2000',2026,2); prior.status='CALCULATED'; result=await createAnalysisService(repository([current,prior]))(current.id,'MOM'); assert.equal(result.kind==='OK'&&result.status,'UNAVAILABLE');
+  const history=[current,period('2000',2026,1),period('2000',2026,2),period('2000',2025,1),period('2000',2025,3)]; result=await createAnalysisService(repository(history))(current.id,'YTD'); assert.equal(result.kind==='OK'&&result.status,'UNAVAILABLE'); if(result.kind==='OK'&&result.status==='UNAVAILABLE') assert.deepEqual(result.missingPeriods,[{fiscalYear:2025,fiscalPeriod:2}]);
 });
 
-test('CONT-003 exposes each explicit analytical contribution basis and Company is not applicable', () => {
-  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6); const natureId = GROUPS.ADUM.id + 100;
-  currentRaw.activeRun!.actualLines.find((line) => line.natureId === natureId)!.finalAmount = d(5);
-  currentRaw.activeRun!.actualLines.push({ costGroupId: GROUPS.ADUM.id, natureId, coaId: null, lineType: 'RESIDUAL', finalAmount: d(5), ruleCode: 'RESIDUAL_RULE', coa: null });
-  const result = compareSnapshots(buildFinalizedMonthlySnapshot(currentRaw)!, buildFinalizedMonthlySnapshot(priorRaw)!);
-  const group = result.children!.find((node) => node.code === 'ADUM')!; const nature = group.children![0];
-  const coa = nature.children!.find((node) => node.nodeType === 'COA')!; const calculated = nature.children!.find((node) => node.nodeType === 'CALCULATED_ITEM')!;
-  assert.equal(result.contribution, null); assert.equal(result.contributionStatus, 'NOT_APPLICABLE'); assert.equal(result.contributionBasis, null);
-  assert.equal(group.contributionBasis, 'COST_GROUP_TO_COMPANY'); assert.equal(nature.contributionBasis, 'NATURE_TO_COST_GROUP');
-  assert.equal(coa.contributionBasis, 'COA_TO_NATURE'); assert.equal(calculated.contributionBasis, 'CALCULATED_ITEM_TO_NATURE');
-});
-
-test('canonical structures exclude future subtotal and preserve CostGroup displayOrder', () => {
-  const company2000 = buildFinalizedMonthlySnapshot(period('2000', 2026, 7, { extraSubtotal: true }))!;
-  assert.deepEqual(company2000.groups.map((group) => group.code), ['ADUM', 'PASAR']); assert.ok(!company2000.groups.some((group) => group.code === 'HPP'));
-  const company7000 = buildFinalizedMonthlySnapshot(period('7000', 2026, 7))!;
-  assert.deepEqual(company7000.groups.map((group) => group.code), ['HPP', 'ADUM', 'PASAR']);
-  assert.ok(!JSON.stringify(company7000).includes('DERIV'));
-});
-
-test('duplicate or mismatched canonical Cost Group identities fail integrity validation', () => {
-  const duplicate = period('2000', 2026, 7); duplicate.activeRun!.results.push({ ...duplicate.activeRun!.results.find((item) => item.resultCode === 'TOTAL_ADUM')! });
-  assert.throws(() => buildFinalizedMonthlySnapshot(duplicate), FluctuationIntegrityError);
-  const mismatch = period('2000', 2026, 7); mismatch.activeRun!.results.find((item) => item.resultCode === 'TOTAL_ADUM')!.costGroup = { code: 'PASAR', name: 'PASAR', displayOrder: 3 };
-  assert.throws(() => buildFinalizedMonthlySnapshot(mismatch), /does not match its stable Cost Group identity/);
-});
-
-test('Nature display order and deterministic COA/calculated item order are preserved', () => {
-  const raw = period('2000', 2026, 7); const run = raw.activeRun!;
-  const adum = run.results.find((item) => item.resultType === 'NATURE' && item.costGroup?.code === 'ADUM')!; const secondNatureId = 999;
-  run.results.push({ ...adum, natureId: secondNatureId, amount: d(0), nature: { code: 'FIRST', name: 'First', displayOrder: 0 } });
-  const snapshot = buildFinalizedMonthlySnapshot(raw)!;
-  assert.deepEqual(snapshot.groups[0].natures.map((nature) => nature.code), ['FIRST', 'ADUM_N']);
-});
-
-test('FINALIZED and active SUCCESS run gates reject provisional, failed, inactive, superseded, and corrupt lineage', () => {
-  assert.equal(buildFinalizedMonthlySnapshot(period('2000', 2026, 7, { status: 'CALCULATED' })), null);
-  for (const raw of [period('2000', 2026, 7, { runStatus: 'FAILED' }), period('2000', 2026, 7, { isActive: false }), period('2000', 2026, 7, { corruptRun: true })]) assert.throws(() => buildFinalizedMonthlySnapshot(raw), FluctuationIntegrityError);
-  const superseded = period('2000', 2026, 7); superseded.activeCalculationRunId = superseded.activeRun!.id + 99;
-  assert.throws(() => buildFinalizedMonthlySnapshot(superseded), /invalid active calculation-run lineage/);
-});
-
-test('E2-005 missing and non-FINALIZED comparison periods are UNAVAILABLE, while current provisional is rejected', async () => {
-  const current = period('2000', 2026, 7); const missing = await createAnalysisService(repository([current]))(current.id, 'MOM');
-  assert.equal(missing.kind === 'OK' && missing.status, 'UNAVAILABLE');
-  if (missing.kind === 'OK' && missing.status === 'UNAVAILABLE') assert.deepEqual(missing.missingPeriods, [{ fiscalYear: 2026, fiscalPeriod: 6 }]);
-  const calculated = period('2000', 2026, 6, { status: 'CALCULATED' }); assert.equal((await createAnalysisService(repository([current, calculated]))(current.id, 'MOM') as { status: string }).status, 'UNAVAILABLE');
-  const provisional = period('2000', 2026, 7, { status: 'CALCULATED' }); assert.deepEqual(await createAnalysisService(repository([provisional]))(provisional.id, 'MOM'), { kind: 'INVALID_CURRENT', status: 'CALCULATED' });
-});
-
-test('E2-006 incomplete YTD is unavailable and reports every missing month', async () => {
-  const current = period('2000', 2026, 3); const history = [current, period('2000', 2026, 1), period('2000', 2026, 2), period('2000', 2025, 1), period('2000', 2025, 3)];
-  const result = await createAnalysisService(repository(history))(current.id, 'YTD');
-  assert.equal(result.kind === 'OK' && result.status, 'UNAVAILABLE'); if (result.kind === 'OK' && result.status === 'UNAVAILABLE') assert.deepEqual(result.missingPeriods, [{ fiscalYear: 2025, fiscalPeriod: 2 }]);
-});
-
-test('missing item is zero, calculated residual has stable no-fake-COA identity, and output is deterministic', () => {
-  const currentRaw = period('2000', 2026, 7); const priorRaw = period('2000', 2026, 6); const currentRun = currentRaw.activeRun!; const priorRun = priorRaw.activeRun!;
-  const natureId = GROUPS.ADUM.id + 100; currentRun.actualLines.find((line) => line.natureId === natureId)!.finalAmount = d(0);
-  currentRun.actualLines.push({ costGroupId: GROUPS.ADUM.id, natureId, coaId: null, lineType: 'RESIDUAL', finalAmount: d(10), ruleCode: 'RESIDUAL_RULE', coa: null });
-  priorRun.actualLines.find((line) => line.natureId === natureId)!.coaId = 5555; priorRun.actualLines.find((line) => line.natureId === natureId)!.coa = { coaCode: '5555', coaDescription: 'Prior only' };
-  const current = buildFinalizedMonthlySnapshot(currentRaw)!; const prior = buildFinalizedMonthlySnapshot(priorRaw)!;
-  const first = compareSnapshots(current, prior); const second = compareSnapshots(current, prior); assert.deepEqual(first, second);
-  const items = first.children![0].children![0].children!; const calculated = items.find((item) => item.nodeType === 'CALCULATED_ITEM')!;
-  assert.equal(calculated.id, null); assert.equal(calculated.key, `calculated:${natureId}:RESIDUAL:RESIDUAL_RULE`); assert.equal(calculated.comparisonAmount, '0.00'); assert.equal(calculated.variancePercentStatus, 'NM');
-});
-
-test('available hierarchy and variance reconcile at every level; identical comparisons are zero and deterministic', () => {
-  const snapshot = buildFinalizedMonthlySnapshot(period('7000', 2026, 7))!; const result = compareSnapshots(snapshot, snapshot);
-  const sum = (nodes: typeof result[]) => nodes.reduce((total, node) => total.add(node.currentAmount), d(0));
-  assert.equal(sum(result.children!).toFixed(2), result.currentAmount);
-  for (const group of result.children!) { assert.equal(sum(group.children!).toFixed(2), group.currentAmount); for (const nature of group.children!) assert.equal(sum(nature.children!).toFixed(2), nature.currentAmount); }
-  const walk = (node: typeof result) => { assert.equal(node.varianceAmount, '0.00'); assert.equal(node.variancePercent, '0.000000'); node.children?.forEach(walk); }; walk(result);
-  assert.deepEqual(compareSnapshots(snapshot, snapshot), result);
-});
-
-test('available YTD response exposes every constituent period/run lineage', async () => {
-  const periods = [2025, 2026].flatMap((year) => [1, 2, 3].map((month) => period('2000', year, month))); const current = periods.find((item) => item.fiscalYear === 2026 && item.fiscalPeriod === 3)!;
-  const result = await createAnalysisService(repository(periods))(current.id, 'YTD'); assert.equal(result.kind === 'OK' && result.status, 'AVAILABLE');
-  if (result.kind === 'OK' && result.status === 'AVAILABLE') { assert.equal(result.current.periods.length, 3); assert.equal(result.comparison.periods.length, 3); assert.equal(result.comparisonType, 'YTD'); assert.equal(result.hierarchy.length, 1); }
+test('available YTD keeps basis separation and every constituent run/basis lineage', async () => {
+  const periods=[2025,2026].flatMap(year=>[1,2,3].map(month=>period('7000',year,month))); const current=periods.find(p=>p.fiscalYear===2026&&p.fiscalPeriod===3)!; const result=await createAnalysisService(repository(periods))(current.id,'YTD'); assert.equal(result.kind==='OK'&&result.status,'AVAILABLE');
+  if(result.kind==='OK'&&result.status==='AVAILABLE'){assert.equal(result.current.periods.length,6);assert.equal(result.comparison.periods.length,6);assert.deepEqual(result.hierarchy[0].children!.map(n=>n.code),['GHOPO','DERIV']);}
+  const aggregated=aggregateSnapshots([buildFinalizedMonthlySnapshot(period('7000',2026,1))!,buildFinalizedMonthlySnapshot(period('7000',2026,2))!]); assert.deepEqual(aggregated.bases.map(b=>b.code),['GHOPO','DERIV']); assert.equal(aggregated.lineage.length,4);
 });

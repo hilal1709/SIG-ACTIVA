@@ -45,7 +45,7 @@ The private July-2026 workbooks were inspected without committing their contents
 - SAP Cost Center reported total is represented by `* Debit`;
 - `** Over/Underabsorption` is a duplicate/control row and must not be counted as detail or as a second reported total;
 - Company 2000 Engine 1 financial contribution is sourced from `CC_ADUM` and `CC_PASAR` only;
-- Derivatif and `CC_PROD` have zero Company 2000 Cost Structure effect.
+- Historical V1 excluded Derivatif and `CC_PROD`; current ENGINE1_2000_V2 final SI includes validated CC_DRV effects.
 
 ## Company 2000 application golden E2E
 
@@ -53,16 +53,9 @@ The real private source workbook has completed the deployed application flow:
 
 `Upload → Validation → Source Reconciliation → Mapping → Calculation`
 
-Production result:
+Historical V1 production result (superseded): ADUM `107,796,550,061`, PASAR `17,900,551,142`, TOTAL `125,697,101,203`.
 
-- active upload: validated;
-- source reconciliation: difference `0` for CC_ADUM and CC_PASAR;
-- active calculation run: `SUCCESS` / `ENGINE1_2000_V1`;
-- ADUM: `107,796,550,061`;
-- PASAR: `17,900,551,142`;
-- TOTAL: `125,697,101,203`;
-- ADUM reconciliation difference: `0`;
-- PASAR reconciliation difference: `0`.
+Current verified `ENGINE1_2000_V2` golden result: ADUM `107,844,157,911`, PASAR `16,487,761,095`, TOTAL `124,331,919,006`; both Cost Groups reconcile with zero difference.
 
 **GOLDEN ENGINE CONTRACT = PASS**
 
@@ -71,3 +64,23 @@ Production result:
 **GOLDEN WORKBOOK APPLICATION E2E = PASS**
 
 The private workbook remains outside the repository.
+
+
+## Engine 2 V2 analysis bases (2026-08-31)
+
+Engine 2 derives only from a FINALIZED period and its active SUCCESS calculation run/upload. Company 2000 has one `SI` analysis basis (final Engine 1 V2 detail independently controlled against `AUDIT_SI`). Company 7000 has separate additive `GHOPO` and `DERIV` analysis bases: GHOPO retains finalized Engine 1 detail and is controlled against `AUDIT_GHOPO`; DERIV is parsed from `AUDIT_DERIV` on that same upload in Rp-thousand and normalized to full IDR. DERIV remains excluded from Company 7000 Engine 1 and is never a Cost Group.
+
+The hierarchy and stable identity are Company -> Analysis Basis -> Cost Group -> Nature -> COA/calculated item. Keys are basis-qualified (`basis:<BASIS>:group:<id>:nature:<id>:...`) and monthly run/upload identity remains lineage, not node identity. All parity uses Decimal normalization to two financial decimal places. Missing source controls and non-reconciling finalized sources are integrity failures, while missing comparison periods remain `UNAVAILABLE`.
+
+PR #23 remains HOLD. Its Phase I assumptions about legacy unqualified analysis keys are superseded; after Engine 2 V2 merges, Phase I must be rebased and adapted separately. Phase I materiality, commentary, and review are not part of this redesign.
+
+### July 2026 Engine 2 V2 locked totals
+
+| Company | Analysis basis | HPP | ADUM | PASAR | Basis/company total |
+|---|---:|---:|---:|---:|---:|
+| 2000 | SI | — | 107,844,157,911.00 | 16,487,761,095.00 | 124,331,919,006.00 |
+| 7000 | GHOPO | 413,169,722,810.00 | 11,667,383,975.00 | 81,641,587,070.00 | 506,478,693,855.00 |
+| 7000 | DERIV | 4,571,043,173.00 | 0.00 | 1,857,097,643.00 | 6,428,140,816.00 |
+| 7000 | composite analytical total | — | — | — | 512,906,834,671.00 |
+
+DERIV PASAR consists of 1,488,906,545.00 regular PASAR plus 368,191,098.00 OA. These are Engine 2 analytical values only; the Company 7000 Engine 1 total remains 506,478,693,855.00.
