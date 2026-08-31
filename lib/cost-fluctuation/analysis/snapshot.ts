@@ -8,21 +8,24 @@ const byOrder = <T extends { order: number; code: string; key: string }>(a: T, b
 const norm = (value: unknown) => String(value ?? '').trim().toLocaleLowerCase('id-ID').replace(/[.&]/g, ' ').replace(/\s+/g, ' ');
 const aliases: Record<string, string> = {
   'bahan baku':'bahan baku', 'bahan penolong':'bahan penolong', kemasan:'kemasan', 'batu bara':'batubara', batubara:'batubara',
-  'batubara inbound':'batubara inbound', 'bahan bakar lainnya':'bahan bakar lainnya', 'bahan bakar':'bahan bakar', listrik:'listrik',
+  'batu bara inbound':'batubara inbound', 'batubara inbound':'batubara inbound', 'bahan bakar lainnya':'bahan bakar lainnya', 'bahan bakar':'bahan bakar', listrik:'listrik',
   'energi listrik':'energi listrik', energi:'energi', 'tenaga kerja':'tenaga kerja', pemeliharaan:'pemeliharaan',
-  'penyusutan amortisasi':'penyusutan amortisasi', 'deplesi, penyusutan amortisasi':'penyusutan amortisasi', dpa:'dpa',
-  'urusan umum adm kantor':'uua', 'urusan umum dan administrasi kantor':'uua', 'umum administrasi':'uua', uua:'uua', perniagaan:'perniagaan',
-  'pajak dan asuransi':'pajak asuransi', 'pajak asuransi':'pajak asuransi', 'pembelian terak':'pembelian terak',
+  'penyusutan amortisasi':'penyusutan amortisasi', 'deplesi, penyusutan amortisasi':'penyusutan amortisasi', dpa:'penyusutan amortisasi',
+  'umum adm kantor':'uua', 'urusan umum adm kantor':'uua', 'urusan umum dan administrasi kantor':'uua', 'umum administrasi':'uua', uua:'uua', perniagaan:'perniagaan',
+  'pajak dan asuransi':'pajak asuransi', 'pajak dan assuransi':'pajak asuransi', 'pajak asuransi':'pajak asuransi', 'pembelian terak':'pembelian terak',
   'ongkos angkut fg dan wip':'ongkos angkut fg dan wip', 'selisih persediaan':'selisih persediaan', oa:'oa',
 };
-const canonicalLabel = (value: unknown) => aliases[norm(value)] ?? norm(value);
+export const normalizeNatureSemantic = (value: unknown) => aliases[norm(value)] ?? norm(value);
+const canonicalLabel = normalizeNatureSemantic;
 const SECTION_MARKERS: Readonly<Record<string, string>> = {
   'beban pokok penjualan': 'HPP',
   'umum administrasi': 'ADUM',
   pemasaran: 'PASAR',
 };
 const NON_NATURE_CONTROLS: Readonly<Record<string, ReadonlySet<string>>> = {
-  AUDIT_SI: new Set(['opex - recap', 'opex - rincian', 'gap', 'derivatif']),
+  AUDIT_SI: new Set(['ctrl', 'opex - recap', 'opex - rincian', 'gap', 'derivatif']),
+  AUDIT_GHOPO: new Set(['710344 oa clinker keluar']),
+  AUDIT_DERIV: new Set(['710344 oa clinker keluar']),
 };
 const sectionFor = (label: string) => SECTION_MARKERS[label] ?? null;
 const totalFor = (label: string) => label === 'total hpp' ? 'HPP' : label === 'total adum' ? 'ADUM' : label === 'total perniagaan' ? 'PASAR_REGULAR' : label === 'total pasar' || label === 'total pemasaran' ? 'PASAR_TOTAL' : null;
