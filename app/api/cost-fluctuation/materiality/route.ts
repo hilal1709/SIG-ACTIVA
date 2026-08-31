@@ -1,0 +1,4 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { requireCostStructureRead } from '@/lib/cost-structure/auth';
+import { getMateriality } from '@/lib/cost-fluctuation/materiality/service';
+export async function GET(request: NextRequest) { const auth = await requireCostStructureRead(request); if ('error' in auth) return auth.error; const periodId = Number(request.nextUrl.searchParams.get('periodId')), comparison = request.nextUrl.searchParams.get('comparison'); if (!Number.isInteger(periodId) || !['MOM','YOY','YTD'].includes(comparison ?? '')) return NextResponse.json({ error: 'Invalid query.' }, { status: 400 }); try { return NextResponse.json(await getMateriality(periodId, comparison as 'MOM'|'YOY'|'YTD')); } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Materiality failed.' }, { status: 409 }); } }

@@ -1,0 +1,2 @@
+import { NextRequest, NextResponse } from 'next/server'; import { requireCostStructurePrepare } from '@/lib/cost-structure/auth'; import { saveDraft } from '@/lib/cost-fluctuation/commentary/service';
+export async function POST(request:NextRequest){const auth=await requireCostStructurePrepare(request);if('error'in auth)return auth.error;try{return NextResponse.json({commentary:await saveDraft(await request.json(),Number(auth.user.uid))},{status:201});}catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Draft failed.'},{status:400});}}

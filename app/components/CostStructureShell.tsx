@@ -1,6 +1,7 @@
 'use client';
 
 import { Construction, Layers3 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import CostModuleFrame from '@/app/components/CostModuleFrame';
 import { Badge } from '@/app/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
@@ -8,9 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 type CostStructureShellProps = {
   title: string;
   purpose: string;
+  children?: ReactNode;
 };
 
-export default function CostStructureShell({ title, purpose }: CostStructureShellProps) {
+export default function CostStructureShell({ title, purpose, children }: CostStructureShellProps) {
   return (
     <CostModuleFrame title={title} contentClassName="p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -20,7 +22,7 @@ export default function CostStructureShell({ title, purpose }: CostStructureShel
           <p className="max-w-3xl text-sm text-muted-foreground sm:text-base">{purpose}</p>
         </div>
 
-        <Card data-cost-motion data-cost-hover className="border-dashed transition-shadow hover:shadow-md">
+        {children ?? <Card data-cost-motion data-cost-hover className="border-dashed transition-shadow hover:shadow-md">
           <CardHeader>
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -40,7 +42,7 @@ export default function CostStructureShell({ title, purpose }: CostStructureShel
               </div>
             </div>
           </CardContent>
-        </Card>
+        </Card>}
       </div>
     </CostModuleFrame>
   );

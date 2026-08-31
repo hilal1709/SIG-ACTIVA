@@ -13,7 +13,7 @@ Phase E — Engine 1 Company 2000                    COMPLETE / PRODUCTION GOLDE
 Phase F — Engine 1 Company 7000                    COMPLETE / PRODUCTION GOLDEN E2E PASS
 Phase G — Finalization/dashboard/export            COMPLETE / PRODUCTION UAT PASS
 Phase H — Engine 2 comparison                      COMPLETE / PRODUCTION DEPLOYED
-Phase I — Materiality/commentary/review             READY / NEXT
+Phase I — Materiality/commentary/review             IMPLEMENTED / REVIEW
 Phase J — Fluctuation dashboard/export              NOT STARTED
 Phase K — Hardening/deployment                     NOT STARTED
 ```
@@ -260,6 +260,6 @@ Therefore no real production comparison history yet exists for Jun-2026, Jul-202
 
 See `PHASE_H_COMPARISON_ENGINE.md` for the detailed Engine 2 contract.
 
-## Next phase — Phase I
+## Phase I implementation review
 
-Phase I is **READY / NEXT** and will add materiality, commentary, and review workflow on top of immutable Engine 2 financial outputs. Phase I must not alter Engine 1 or Engine 2 authoritative amounts.
+Phase I is **IMPLEMENTED / REVIEW** with additive schema/migration, deterministic materiality, lineage-bound commentary, maker/checker review, period completion controls, APIs, workflow UI, and tests. Production DDL has not been applied; external migration and deployment review remain required. Phase I does not alter Engine 1 or Engine 2 authoritative amounts.
