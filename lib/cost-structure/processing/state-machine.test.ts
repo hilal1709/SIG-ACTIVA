@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { deriveProcessStatus, executeNextProcessStage, type ProcessingSnapshot } from './state-machine';
 
@@ -42,6 +43,13 @@ test('resolved and reconciled upload advances to calculation', () => {
   const status = deriveProcessStatus(base({ reconciliationReady: true }));
   assert.equal(status.currentStage, 'CALCULATION');
   assert.equal(status.canAdvance, true);
+});
+
+test('missing audit snapshot is a deterministic stage before calculation', () => {
+  const status = deriveProcessStatus(base({ reconciliationReady: true, auditReady: false, auditMissing: ['AUDIT_GHOPO'] }));
+  assert.equal(status.currentStage, 'AUDIT_READINESS');
+  assert.equal(status.canAdvance, true);
+  assert.equal(status.stages[3].blockers?.[0].message, 'Audit source AUDIT_GHOPO belum tersedia.');
 });
 
 test('successful calculation and post-check are ready for explicit finalization', () => {
@@ -99,4 +107,14 @@ test('post-check errors retain stage-specific details', () => {
   assert.equal(status.currentStage, 'POST_CHECK');
   assert.equal(status.stages[5].errorCode, 'POST_CHECK_FAILED');
   assert.deepEqual(status.stages[5].blockers, [{ code: 'HPP_RECONCILIATION', message: 'HPP difference 1.00.' }]);
+});
+
+test('pipeline hydrates the exact active upload and lets Phase D resolve missing-COA control rows', () => {
+  const service = readFileSync('lib/cost-structure/processing/service.ts', 'utf8');
+  const hydration = readFileSync('lib/cost-structure/audit-hydration/service.ts', 'utf8');
+  assert.match(service, /hydrateAuditSnapshot\(periodId, userId, uploadId\)/);
+  assert.match(hydration, /expectedUploadId\?: number/);
+  assert.match(service, /phaseDResolvableIssueCodes[\s\S]*SOURCE_ROW_MISSING_COA/);
+  const producedSet = service.match(/const phaseDProducedIssueCodes = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
+  assert.doesNotMatch(producedSet, /SOURCE_ROW_MISSING_COA/);
 });
