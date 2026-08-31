@@ -76,12 +76,13 @@ const dep = (amount: Prisma.Decimal, source: string, rows: AdapterSourceRow[], r
 export function deriveCompany7000TotalHpp(rows: AdapterSourceRow[]) {
   const tbRows = rows.filter((row) => row.logicalSourceCode === 'TB' && row.coaCode?.startsWith('5') && row.amount !== null);
   const mortar = tbRows.filter((row) => row.coaCode === MORTAR_COA);
-  if (mortar.length !== 1) throw new Error(`COGS Mortar ${MORTAR_COA} requires exactly one effective TB source row.`);
+  if (mortar.length > 1) throw new Error(`COGS Mortar ${MORTAR_COA} must not have more than one effective TB source row.`);
   const accountGroup5Total = sum(tbRows.map((row) => row.amount!));
+  const cogsMortar = mortar[0]?.amount ?? zero();
   return {
     accountGroup5Total: money(accountGroup5Total),
-    cogsMortar: money(mortar[0].amount!),
-    totalHpp: money(accountGroup5Total.sub(mortar[0].amount!)),
+    cogsMortar: money(cogsMortar),
+    totalHpp: money(accountGroup5Total.sub(cogsMortar)),
     accountGroup5Rows: tbRows,
     mortarRows: mortar,
   };
@@ -137,7 +138,10 @@ function buildOa(input: Company7000AdapterInput, pasar: Map<string, AggregatedCo
       const period = rawValue(row, 'Posting Period', 'POSTING_PERIOD');
       return normalized(company) === input.companyCode && normalized(period) === String(input.fiscalPeriod);
     });
-    if (!matches.length) throw new Error(`OA ${gl} ${role} source component is missing.`);
+    if (!matches.length) {
+      if (role === 'TRANSACTION' || role === 'DERIVATIVE') return { rows: [] as AdapterSourceRow[], amount: zero() };
+      throw new Error(`OA ${gl} ${role} source component is missing.`);
+    }
     return {
       rows: matches,
       amount: sum(matches.map((row) => decimal(rawValue(row, 'Amount in local currency', 'Amount', 'VALUE', 'ROLE_AMOUNT'), `OA ${gl} ${role}`))),
@@ -158,9 +162,9 @@ function buildOa(input: Company7000AdapterInput, pasar: Map<string, AggregatedCo
     dep(cc6811.amount, 'CC_PASAR', cc6811.rows, { gl: '68110001', role: 'CC_PASAR_DIRECT' }),
     dep(summary6811.amount, 'OA_STAT', summary6811.rows, { gl: '68110001', role: 'SUMMARY' }),
     dep(summary681405.amount, 'OA_STAT', summary681405.rows, { gl: '68140005', role: 'SUMMARY' }),
-    dep(tx681405.amount, 'OA_STAT', tx681405.rows, { gl: '68140005', role: 'TRANSACTION' }),
+    dep(tx681405.amount, 'OA_STAT', tx681405.rows, { gl: '68140005', role: 'TRANSACTION', absentTreatedAsZero: tx681405.rows.length === 0 }),
     dep(summary681406.amount, 'OA_STAT', summary681406.rows, { gl: '68140006', role: 'SUMMARY' }),
-    dep(tx681406.amount, 'OA_STAT', tx681406.rows, { gl: '68140006', role: 'TRANSACTION' }),
+    dep(tx681406.amount, 'OA_STAT', tx681406.rows, { gl: '68140006', role: 'TRANSACTION', absentTreatedAsZero: tx681406.rows.length === 0 }),
     dep(cc6817.amount, 'CC_PASAR', cc6817.rows, { gl: '68170002', role: 'CC_PASAR_DIRECT' }),
   ];
   const pasarAllocations = new Map<string, { amount: Prisma.Decimal; rows: AdapterSourceRow[] }>([
@@ -283,7 +287,7 @@ export function buildCompany7000Input(input: Company7000AdapterInput): Company70
       pasarFinal: pasarAmount.toString(),
       ...(oaPasarAllocation ? { pasarAllocationRuleCode: 'OA_7000_EXISTING' } : {}),
       derivativeExcluded: derivative.toString(),
-      ...(coa === '68140005' ? { derivativeRuleCode: 'DERIVATIVE_EXCLUDED_7000' } : {}),
+      ...(coa === '68140005' ? { derivativeRuleCode: 'DERIVATIVE_EXCLUDED_7000', derivativeAbsentTreatedAsZero: oa.derivative.rows.length === 0 } : {}),
     }));
   }
 
@@ -366,7 +370,7 @@ export function buildCompany7000Input(input: Company7000AdapterInput): Company70
     sourceLines,
     formulaDependencies: {
       accountGroup5Total: dep(hppTotal.accountGroup5Total, 'TB', hppTotal.accountGroup5Rows, { selector: 'account group starts with 5' }),
-      cogsMortar: dep(hppTotal.mortarRows[0].amount!, 'TB', hppTotal.mortarRows, { coa: MORTAR_COA }),
+      cogsMortar: dep(hppTotal.cogsMortar, 'TB', hppTotal.mortarRows, { coa: MORTAR_COA, absentTreatedAsZero: hppTotal.mortarRows.length === 0 }),
       coalComponents: [dep(h10.amount, 'COAL', [h10.row], { cell: 'H10' }), dep(h18.amount, 'COAL', [h18.row], { cell: 'H18' })],
       coalInboundComponents: [dep(i10.amount, 'COAL', [i10.row], { cell: 'I10' }), dep(i18.amount, 'COAL', [i18.row], { cell: 'I18' })],
       oaComponents: oa.components,
