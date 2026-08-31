@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import type { ComparisonType } from '../analysis/types';
 import { MATERIALITY_OPERATORS, positiveSafeInteger } from '../validation';
+import { parseBusinessDate, predecessorEndForSuccessor } from './business-date';
 
 export interface MaterialityRuleInput {
   companyId: unknown; costGroupId?: unknown; comparisonType: unknown; operator: unknown;
@@ -16,17 +17,12 @@ function decimal(value: unknown, scale: number) {
   if (value === null || value === undefined || value === '') return null;
   try { return new Prisma.Decimal(String(value)).toDecimalPlaces(scale); } catch { throw new Error('Threshold must be a valid decimal.'); }
 }
-function date(value: unknown, field: string, optional = false) {
-  if ((value === null || value === undefined || value === '') && optional) return null;
-  if (typeof value !== 'string') throw new Error(`${field} must be an ISO date.`);
-  const result = new Date(value); if (Number.isNaN(result.valueOf())) throw new Error(`${field} must be a valid date.`); return result;
-}
 function values(input: Pick<MaterialityRuleInput, 'amountThreshold'|'percentThreshold'|'operator'|'validFrom'|'validTo'>) {
   const amountThreshold = decimal(input.amountThreshold, 2), percentThreshold = decimal(input.percentThreshold, 6);
   if (!amountThreshold && !percentThreshold) throw new Error('At least one threshold is required.');
   if (amountThreshold?.isNegative() || percentThreshold?.isNegative()) throw new Error('Thresholds must be non-negative.');
   if (typeof input.operator !== 'string' || !MATERIALITY_OPERATORS.includes(input.operator as 'AND'|'OR')) throw new Error('operator must be AND or OR.');
-  const validFrom = date(input.validFrom, 'validFrom')!, validTo = date(input.validTo, 'validTo', true);
+  const validFrom = parseBusinessDate(input.validFrom, 'validFrom', 'start')!, validTo = parseBusinessDate(input.validTo, 'validTo', 'end', true);
   if (validTo && validTo < validFrom) throw new Error('validTo must not precede validFrom.');
   return { amountThreshold, percentThreshold, operator: input.operator as 'AND'|'OR', validFrom, validTo };
 }
@@ -66,7 +62,7 @@ export async function createMaterialitySuccessor(ruleId: number, input: Material
     await scopeLock(tx, predecessor.companyId, predecessor.costGroupId, predecessor.comparisonType);
     const locked = await tx.costMaterialityRule.findUniqueOrThrow({ where: { id: ruleId } });
     if (!locked.active || configured.validFrom <= locked.validFrom) throw new Error('Successor validFrom must be after predecessor validFrom.');
-    const predecessorEnd = new Date(configured.validFrom.getTime() - 1);
+    const predecessorEnd = predecessorEndForSuccessor(configured.validFrom);
     if (locked.validTo && predecessorEnd > locked.validTo) throw new Error('Successor must start within or immediately after the predecessor interval.');
     await assertScope(tx, locked.companyId, locked.costGroupId);
     await assertNoOverlap(tx, { companyId: locked.companyId, costGroupId: locked.costGroupId, comparisonType: locked.comparisonType }, configured.validFrom, configured.validTo, locked.id);

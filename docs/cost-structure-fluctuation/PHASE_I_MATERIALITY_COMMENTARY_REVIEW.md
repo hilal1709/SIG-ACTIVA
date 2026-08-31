@@ -10,6 +10,8 @@ Rules are resolved at the current period's `periodEnd`, first by Company + Cost 
 
 Rule creation and successor changes run in SERIALIZABLE transactions and acquire a PostgreSQL transaction advisory lock keyed by Company, optional Cost Group, and comparison type before checking overlap. The successor API preserves scope and predecessor identity. Since intervals are inclusive and timestamps have millisecond precision, the predecessor ends exactly one millisecond before the successor begins. Active Company and Cost Group ownership are validated inside the transaction.
 
+Rule dates are strict `YYYY-MM-DD` UTC business dates: `validFrom` normalizes to `00:00:00.000Z` and `validTo` to `23:59:59.999Z`. This makes a month-end `validTo` apply to the matching `CostPeriod.periodEnd`. The admin UI exposes both new-rule and non-destructive successor forms.
+
 Magnitude uses absolute variance. Threshold equality passes. `OR` requires any PASS; without PASS an unevaluable configured criterion yields `NOT_EVALUABLE`. `AND` returns NORMAL on any FAIL, otherwise `NOT_EVALUABLE` when needed, otherwise requires explanation. An N/M percentage is unevaluable, never zero. Missing rules are `NOT_CONFIGURED`, unavailable comparisons are `UNAVAILABLE`, and Company roots are `NOT_APPLICABLE`.
 
 ## Commentary identity, lineage, and workflow
@@ -17,6 +19,8 @@ Magnitude uses absolute variance. Threshold equality passes. `OR` requires any P
 Canonical Phase H keys identify COST_GROUP, NATURE, COA, and CALCULATED_ITEM targets; calculated items never receive fake COAs. The server validates the target against the current hierarchy. A SHA-256 digest over stable current/comparison period, run, rule-set, and comparison serialization binds each record to exact lineage. Old-lineage records remain historical and are not returned as current.
 
 OPEN is derived for material nodes without a record. Persisted transitions are `DRAFT -> SUBMITTED -> REVIEWED` or `DRAFT -> SUBMITTED -> RETURNED -> DRAFT`. Submit requires a reason; return requires a note; reviewed rows are immutable. Reviewer and preparer IDs come from the session, and maker/checker prohibits self-review. Each save/transition atomically updates commentary, appends a monotonic history version, and writes `CostAuditLog`.
+
+The production commentary service delegates every state decision and audit-action selection to the tested central workflow state machine. The production review service likewise delegates preview readiness to its tested pure readiness evaluator; commit-time database revalidation remains an additional mandatory gate.
 
 Every draft and transition locks and re-reads all Phase H lineage periods inside the same SERIALIZABLE transaction. It verifies FINALIZED status, active run identity, SUCCESS/active flags, fiscal month, and rule-set version before writing. This closes the context-resolution/commit race without reading source rows or recalculating Engine 1. The database target constraint exactly distinguishes COST_GROUP, NATURE, COA, and CALCULATED_ITEM nullability; server hierarchy traversal additionally proves each target belongs to its parent.
 

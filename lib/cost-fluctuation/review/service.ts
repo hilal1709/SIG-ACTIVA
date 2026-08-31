@@ -6,6 +6,7 @@ import { getCommentaryOverlay } from '../commentary/service';
 import { assertCurrentLineage } from '../commentary/lineage';
 import { evaluateNode, resolveRule } from '../materiality/evaluate';
 import type { MaterialityNode, MaterialityRuleValue } from '../materiality/types';
+import { readiness } from './readiness';
 
 const TYPES: ComparisonType[] = ['MOM', 'YOY', 'YTD'];
 const flatten = (nodes: MaterialityNode[]): MaterialityNode[] => nodes.flatMap((node) => [node, ...flatten(node.children ?? [])]);
@@ -15,17 +16,16 @@ async function preview(periodId: number) {
   const period = await prisma.costPeriod.findUnique({ where: { id: periodId }, include: { fluctuationReview: true } });
   if (!period) throw new Error('Period not found.');
   const analyses = await Promise.all(TYPES.map(async comparisonType => ({ comparisonType, overlay: await getCommentaryOverlay(periodId, comparisonType) })));
-  const blockers: string[] = []; const available: Available[] = [];
-  if (period.status !== 'FINALIZED') blockers.push('Cost Period must remain FINALIZED.');
+  const available: Available[] = [];
+  const readinessInput: Array<{ available: boolean; rows: Array<{ key: string; materialityStatus: string; commentaryStatus?: string }> }> = [];
   for (const { comparisonType, overlay } of analyses) {
-    if (overlay.kind !== 'OK' || overlay.status !== 'AVAILABLE') continue;
+    if (overlay.kind !== 'OK' || overlay.status !== 'AVAILABLE') { readinessInput.push({ available: false, rows: [] }); continue; }
     available.push({ comparisonType, current: overlay.current, comparison: overlay.comparison, analysisLineageKey: overlay.analysisLineageKey, hierarchy: overlay.hierarchy });
     const rows = flatten(overlay.hierarchy); const commentary = new Map(overlay.commentaries.map((row) => [row.analysisKey, row]));
-    if (rows.some((row) => row.nodeType !== 'COMPANY' && ['NOT_CONFIGURED', 'NOT_EVALUABLE'].includes(row.materialityStatus))) blockers.push(`${comparisonType}: materiality configuration is incomplete or not evaluable.`);
-    for (const row of rows.filter((item) => item.materialityStatus === 'REQUIRES_EXPLANATION')) if (commentary.get(row.key)?.status !== 'REVIEWED') blockers.push(`${comparisonType}: ${row.key} requires reviewed commentary.`);
+    readinessInput.push({ available: true, rows: rows.filter((row) => row.nodeType !== 'COMPANY').map((row) => ({ key: `${comparisonType}:${row.key}`, materialityStatus: row.materialityStatus, commentaryStatus: commentary.get(row.key)?.status })) });
   }
-  if (!available.length) blockers.push('At least one comparison must be AVAILABLE.');
-  return { period, available, blockers: [...new Set(blockers)], ready: blockers.length === 0 };
+  const evaluated = readiness(period.status, readinessInput);
+  return { period, available, blockers: evaluated.blockers, ready: evaluated.ready };
 }
 
 export async function reviewReadiness(periodId: number) {
