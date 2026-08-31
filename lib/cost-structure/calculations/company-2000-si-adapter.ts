@@ -66,18 +66,35 @@ export function parseCompany2000Rincian(rows: PersistedSupportRow[]): { ADUM: Si
   return result;
 }
 
-/** Parses only eight-digit CC_DRV details and reconciles them to its persisted Grand Total. */
+/**
+ * Parses eight-digit CC_DRV details and reconciles them to the persisted Grand Total when the
+ * source contributes. CC derivatif is period-optional: no persisted rows, or a present sheet with
+ * only blank/zero amounts, has Excel-style zero semantics and does not alter final SI.
+ */
 export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { details: SiSupportAmount[]; detailTotal: Prisma.Decimal; controlTotal: Prisma.Decimal; difference: Prisma.Decimal } {
+  const derivativeRows = rows.filter((item) => item.logicalSourceCode === 'AUDIT_CC_DRV');
+  if (!derivativeRows.length) return { details: [], detailTotal: zero(), controlTotal: zero(), difference: zero() };
+
   const details: SiSupportAmount[] = [];
   let controlTotal: Prisma.Decimal | null = null;
-  for (const row of rows.filter((item) => item.logicalSourceCode === 'AUDIT_CC_DRV')) {
+  let hasNonZeroAmount = false;
+  for (const row of derivativeRows) {
+    const amountValue = cell(row, 30);
+    const amount = decimal(amountValue, `AUDIT_CC_DRV row ${row.sourceRowNumber}`);
+    if (!amount.isZero()) hasNonZeroAmount = true;
+
     const label = String(cell(row, 29) ?? '').trim();
     const coaCode = label.match(/^\s*(\d{8})(?:\s|$)/)?.[1];
-    if (coaCode) details.push({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode, amount: decimal(cell(row, 30), `AUDIT_CC_DRV row ${row.sourceRowNumber}`) });
-    else if (normalized(label) === 'GRAND TOTAL') controlTotal = decimal(cell(row, 30), `AUDIT_CC_DRV control row ${row.sourceRowNumber}`);
+    if (coaCode) details.push({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode, amount });
+    else if (normalized(label) === 'GRAND TOTAL') controlTotal = amount;
   }
-  if (controlTotal === null) throw new Error('AUDIT_CC_DRV Grand Total control was not found.');
+
   const detailTotal = details.reduce((sum, item) => sum.add(item.amount), zero());
+  if (controlTotal === null) {
+    if (!hasNonZeroAmount) return { details, detailTotal, controlTotal: zero(), difference: zero() };
+    throw new Error('AUDIT_CC_DRV Grand Total control was not found for a non-zero derivative source.');
+  }
+
   const difference = detailTotal.sub(controlTotal);
   if (!difference.isZero()) throw new Error(`CC_DRV detail does not reconcile: detail ${detailTotal.toString()}, control ${controlTotal.toString()}.`);
   return { details, detailTotal, controlTotal, difference };
