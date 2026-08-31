@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
-import { isAdmin, getCurrentUserRole } from '../utils/rolePermissions';
+import { isAdmin, getCurrentUserRole, type UserRole } from '../utils/rolePermissions';
 import { cn } from '@/lib/utils';
 import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/t
 interface SubMenuItem {
   label: string;
   href:  string;
+  requireAdmin?: boolean;
 }
 
 interface MenuItem {
@@ -51,6 +52,8 @@ const menuItems: MenuItem[] = [
       { label: 'Upload & Proses', href: '/cost-structure/upload' },
       { label: 'Cost Structure Bulanan', href: '/cost-structure/monthly' },
       { label: 'Analisis Fluktuasi', href: '/cost-fluctuation' },
+      { label: 'Review Analitis', href: '/cost-fluctuation/review' },
+      { label: 'Materiality Rules', href: '/cost-fluctuation/materiality-rules', requireAdmin: true },
       { label: 'Riwayat Periode', href: '/cost-structure/periods' },
     ],
   },
@@ -67,7 +70,7 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const logoRef   = useRef<HTMLDivElement>(null);
   const navRef    = useRef<HTMLUListElement>(null);
@@ -165,7 +168,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   };
 
   const filteredMenuItems = menuItems.filter(item => {
-    if (item.requireAdmin && userRole) return isAdmin(userRole as any);
+    if (item.requireAdmin && userRole) return isAdmin(userRole);
     return true;
   });
 
@@ -294,7 +297,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                     {/* Sub-menu items */}
                     {hasChildren && isOpen && (
                       <ul className="mt-0.5 ml-4 pl-3 border-l border-sidebar-border space-y-0.5">
-                        {item.children!.map(child => {
+                        {item.children!.filter(child => !child.requireAdmin || (userRole !== null && isAdmin(userRole))).map(child => {
                           const childActive = pathname === child.href;
                           return (
                             <li key={child.href}>
