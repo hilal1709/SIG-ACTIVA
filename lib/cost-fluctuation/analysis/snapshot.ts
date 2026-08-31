@@ -21,6 +21,9 @@ const SECTION_MARKERS: Readonly<Record<string, string>> = {
   'umum administrasi': 'ADUM',
   pemasaran: 'PASAR',
 };
+const NON_NATURE_CONTROLS: Readonly<Record<string, ReadonlySet<string>>> = {
+  AUDIT_SI: new Set(['opex - recap', 'opex - rincian', 'gap', 'derivatif']),
+};
 const sectionFor = (label: string) => SECTION_MARKERS[label] ?? null;
 const totalFor = (label: string) => label === 'total hpp' ? 'HPP' : label === 'total adum' ? 'ADUM' : label === 'total perniagaan' ? 'PASAR_REGULAR' : label === 'total pasar' || label === 'total pemasaran' ? 'PASAR_TOTAL' : null;
 const amountFrom = (row: PersistedSourceRow) => {
@@ -44,6 +47,7 @@ function parseAudit(rows: PersistedSourceRow[], sourceCode: string, allowedLabel
       if (totals.has(total)) throw new FluctuationIntegrityError(`${sourceCode} contains duplicate ${label} controls.`);
       totals.set(total, amountFrom(row)); continue;
     }
+    if (NON_NATURE_CONTROLS[sourceCode]?.has(label)) continue;
     const semantic = canonicalLabel(label); const amount = amountFrom(row);
     if (semantic === 'oa') {
       if (values.has('PASAR:oa')) throw new FluctuationIntegrityError(`${sourceCode} contains duplicate OA rows.`);
