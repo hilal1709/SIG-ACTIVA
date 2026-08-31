@@ -1,7 +1,7 @@
 'use client';
-import CalculationButton from '@/app/cost-structure/monthly/calculation-button';
+import Link from 'next/link';
 import type { MonthlyPeriod } from './types';
-import { canShowCalculationAction, displayGroupCodes } from './explorer-utils';
+import { canOpenProcess, displayGroupCodes } from './explorer-utils';
 import { StatusBadge } from './status-badge';
 
 export const money = (value: string | null | undefined) => {
@@ -14,10 +14,10 @@ export const money = (value: string | null | undefined) => {
 export default function PeriodDetail({ period }: { period: MonthlyPeriod }) {
   const run = period.run;
   const result = (code: string) => run?.results.find((item) => item.resultCode === `TOTAL_${code === 'TOTAL' ? 'COMPANY' : code}`)?.amount;
-  const eligible = canShowCalculationAction(period);
+  const processLink = canOpenProcess(period) && period.upload ? `/cost-structure/upload/${period.upload.id}` : null;
   return <div className="space-y-4 border-t bg-muted/10 p-4 sm:p-5">
-    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">Company {period.companyCode} · {period.fiscalYear}/{String(period.fiscalPeriod).padStart(2, '0')}</p><div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><StatusBadge status={period.status} /><span>Upload {period.upload ? `v${period.upload.version} (${period.upload.status})` : '—'}</span><span>Source reconciliation {['SOURCE_RECONCILED', 'CALCULATED', 'COST_STRUCTURE_RECONCILED', 'FINALIZED'].includes(period.status) ? 'RECONCILED' : 'PENDING'}</span></div></div>{eligible && <CalculationButton periodId={period.id} rerun={period.status === 'CALCULATED'} />}</div>
-    {run?.errorMessage && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><p className="font-semibold">Calculation blocked</p><p className="mt-1 break-words">{run.errorMessage}</p></div>}
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="font-semibold">Company {period.companyCode} · {period.fiscalYear}/{String(period.fiscalPeriod).padStart(2, '0')}</p><div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"><StatusBadge status={period.status} /><span>Upload {period.upload ? `v${period.upload.version} (${period.upload.status})` : '—'}</span><span>Source reconciliation {['SOURCE_RECONCILED', 'CALCULATED', 'COST_STRUCTURE_RECONCILED', 'FINALIZED'].includes(period.status) ? 'RECONCILED' : 'PENDING'}</span></div></div>{processLink && <Link href={processLink} className="rounded-md border border-primary px-3 py-2 text-sm font-medium text-primary hover:bg-primary/5">Buka proses</Link>}</div>
+    {run?.errorMessage && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><p className="font-semibold">Proses terakhir terhenti</p><p className="mt-1 break-words">{run.errorMessage}</p>{processLink && <Link href={processLink} className="mt-2 inline-block font-medium underline">Lihat tahap proses</Link>}</div>}
     {run && <>
       <div className={`grid min-w-0 gap-2 ${period.companyCode === '7000' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>{displayGroupCodes(period.companyCode).map((code) => <div key={code} className="min-w-0 rounded-lg border bg-card p-3"><p className="text-xs text-muted-foreground">{code}</p><p className="break-words font-semibold tabular-nums">Rp {money(result(code))}</p></div>)}</div>
       <p className="break-words text-xs text-muted-foreground">Run #{run.runNumber} · {run.status} · {run.ruleSetVersion} · {run.completedAt ?? 'RUNNING'} · {run.actualLineCount} lines</p>
