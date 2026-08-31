@@ -42,6 +42,19 @@ test('finalized, non-finalized, and invalid authoritative runs are distinguished
   assert.equal(jul.yoy.readiness, 'INVALID_ACTIVE_RUN');
 });
 
+test('non-finalized current period blocks comparison readiness even when history is authoritative', async () => {
+  const current = period(10, 1, '2000', 2026, 7, 'CALCULATED');
+  const june = period(9, 1, '2000', 2026, 6);
+  const prior = period(8, 1, '2000', 2025, 7);
+  const jul = (await createReadinessService({ findAll: async () => [current, june, prior] })()).periods[0];
+  assert.equal(jul.currentReadiness, 'NOT_FINALIZED');
+  assert.equal(jul.mom.required[0].readiness, 'AVAILABLE');
+  assert.equal(jul.yoy.required[0].readiness, 'AVAILABLE');
+  assert.equal(jul.mom.readiness, 'NOT_FINALIZED');
+  assert.equal(jul.yoy.readiness, 'NOT_FINALIZED');
+  assert.equal(jul.ytd.readiness, 'NOT_FINALIZED');
+});
+
 test('company 2000 and 7000 readiness state is independent', async () => {
   const rows = [period(1, 1, '2000', 2026, 7), period(2, 2, '7000', 2026, 7), period(3, 1, '2000', 2026, 6)];
   const result = await createReadinessService({ findAll: async () => rows })();
