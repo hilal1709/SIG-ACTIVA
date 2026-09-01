@@ -5,9 +5,9 @@ import {
 } from './company-2000-exact-data';
 import type {
   BlueprintCellStyle,
-  BlueprintWorksheetProperties,
   SheetStyleBlueprint,
   WorkbookStyleBlueprint,
+  WorksheetPropertiesBlueprint,
 } from './types';
 
 type ExtractedColumn = {
@@ -59,9 +59,9 @@ function columnLetter(column: number) {
   return result;
 }
 
-function worksheetProperties(value: Record<string, unknown> | undefined): BlueprintWorksheetProperties | undefined {
+function worksheetProperties(value: Record<string, unknown> | undefined): WorksheetPropertiesBlueprint | undefined {
   if (!value) return undefined;
-  const output: BlueprintWorksheetProperties = {};
+  const output: WorksheetPropertiesBlueprint = {};
   for (const key of ['defaultRowHeight', 'defaultColWidth', 'dyDescent', 'outlineLevelRow', 'outlineLevelCol'] as const) {
     const candidate = value[key];
     if (typeof candidate === 'number') output[key] = candidate;
@@ -139,7 +139,6 @@ function requireSheet(name: string) {
 
 export const company2000ExactStyleBlueprint: WorkbookStyleBlueprint = {
   companyCode: '2000',
-  sourceTemplatePeriod: '2026-07',
   templateVersion: 'company-2000-jul-2026-active-upload-v2-exact-style-v1',
   exactTemplateFidelity: true,
   sheets: {
