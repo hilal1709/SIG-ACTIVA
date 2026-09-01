@@ -1,6 +1,6 @@
 'use client';
 
-import { LayoutDashboard, FileText, TrendingUp, Clock, Users, ShieldCheck, X, ChevronRight, ChevronDown, Layers3 } from 'lucide-react';
+import { LayoutDashboard, FileText, TrendingUp, Clock, Users, ShieldCheck, X, ChevronRight, ChevronDown, Layers3, Settings } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -11,11 +11,21 @@ import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import { Badge } from './ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
+import {
+  costStructureAdminNavigation,
+  costStructureNavigation,
+  navigationContainsPath,
+  openNavigationIds,
+  visibleNavigationItems,
+  type CostNavigationItem,
+} from '@/lib/cost-structure/sidebar-navigation';
 
 interface SubMenuItem {
+  id?: string;
   label: string;
-  href: string;
+  href?: string;
   requireAdmin?: boolean;
+  children?: SubMenuItem[];
 }
 
 interface MenuItem {
@@ -43,24 +53,22 @@ const menuItems: MenuItem[] = [
   },
   {
     icon: Layers3,
-    label: 'Cost Structure & Fluktuasi Biaya',
+    label: 'Cost Structure & Fluktuasi',
     href: '/cost-structure',
     requireAdmin: false,
     badge: null,
-    children: [
-      { label: 'Dashboard Cost Structure', href: '/cost-structure' },
-      { label: 'Upload & Proses', href: '/cost-structure/upload' },
-      { label: 'Cost Structure Bulanan', href: '/cost-structure/monthly' },
-      { label: 'Analisis Fluktuasi', href: '/cost-fluctuation' },
-      { label: 'Commentary Fluktuasi', href: '/cost-fluctuation/commentary' },
-      { label: 'Review Analitis', href: '/cost-fluctuation/review' },
-      { label: 'Historical Readiness', href: '/cost-fluctuation/readiness' },
-      { label: 'Materiality Rules', href: '/cost-fluctuation/materiality-rules', requireAdmin: true },
-      { label: 'Riwayat Periode', href: '/cost-structure/periods' },
-    ],
+    children: costStructureNavigation,
   },
   { icon: TrendingUp, label: 'Monitoring Prepaid', href: '/monitoring-prepaid', requireAdmin: false, badge: null },
   { icon: Clock, label: 'Monitoring Accrual', href: '/monitoring-accrual', requireAdmin: false, badge: null },
+  ...costStructureAdminNavigation.map((item) => ({
+    icon: Settings,
+    label: item.label,
+    href: item.children?.[0]?.href ?? '/cost-structure',
+    requireAdmin: true,
+    badge: 'Admin',
+    children: item.children,
+  })),
   { icon: Users, label: 'User Management', href: '/user-management', requireAdmin: true, badge: 'Admin' },
   { icon: ShieldCheck, label: 'Security Status', href: '/security-status', requireAdmin: true, badge: 'Admin' },
 ];
@@ -78,32 +86,38 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const navRef = useRef<HTMLUListElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
 
-  const parentForPath = (path: string) => menuItems.find(
-    item => item.children?.some(child => child.href === path)
-  )?.href;
+  const menuKeysForPath = (path: string) => menuItems.flatMap((item) => {
+    if (!item.children?.some((child) => navigationContainsPath(child as CostNavigationItem, path))) return [];
+    return [item.href, ...openNavigationIds(item.children as CostNavigationItem[], path)];
+  });
   const [openMenus, setOpenMenus] = useState<Set<string>>(() => {
     if (typeof window !== 'undefined') {
-      const parentHref = parentForPath(window.location.pathname);
-      if (parentHref) return new Set([parentHref]);
+      return new Set(menuKeysForPath(window.location.pathname));
     }
     return new Set();
   });
 
   useEffect(() => {
-    const parentHref = parentForPath(pathname);
-    if (parentHref) setOpenMenus(prev => new Set([...prev, parentHref]));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const menuKeys = menuKeysForPath(pathname);
+    // Keep the active nested destination visible after client-side navigation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (menuKeys.length) setOpenMenus(prev => new Set([...prev, ...menuKeys]));
   }, [pathname]);
 
   const toggleMenu = (href: string) => {
     setOpenMenus(prev => {
       const next = new Set(prev);
-      next.has(href) ? next.delete(href) : next.add(href);
+      if (next.has(href)) next.delete(href);
+      else next.add(href);
       return next;
     });
   };
 
-  useEffect(() => { setUserRole(getCurrentUserRole()); }, []);
+  useEffect(() => {
+    // The role helper reads browser session state, so it is intentionally hydrated client-side.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setUserRole(getCurrentUserRole());
+  }, []);
 
   useEffect(() => {
     const ctx = gsap.context(() => {
@@ -121,15 +135,38 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     gsap.to(el, { x: entering ? 4 : 0, duration: 0.2, ease: 'power2.out' });
   };
 
-  const filteredMenuItems = menuItems.filter(item => {
-    if (item.requireAdmin && userRole) return isAdmin(userRole);
-    return true;
-  });
+  const admin = userRole !== null && isAdmin(userRole);
+  const filteredMenuItems = menuItems
+    .filter(item => !item.requireAdmin || admin)
+    .map(item => ({ ...item, children: item.children ? visibleNavigationItems(item.children as CostNavigationItem[], admin) : undefined }));
   const handleLinkClick = () => { if (onClose) onClose(); };
+
+  const renderChildren = (children: SubMenuItem[], depth = 0): React.ReactNode => (
+    <ul className={cn('mt-0.5 space-y-0.5 border-l border-sidebar-border', depth === 0 ? 'ml-4 pl-3' : 'ml-3 pl-2')}>
+      {children.map((child) => {
+        const key = child.id ?? child.href ?? child.label;
+        const childActive = navigationContainsPath(child as CostNavigationItem, pathname);
+        const descendantActive = child.children?.some((item) => navigationContainsPath(item as CostNavigationItem, pathname)) === true;
+        const childOpen = openMenus.has(key);
+        if (child.children?.length) {
+          return <li key={key}>
+            <button type="button" onClick={() => toggleMenu(key)} aria-expanded={childOpen} className={cn('flex w-full min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-semibold transition-colors', descendantActive ? 'text-sidebar-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
+              {childOpen ? <ChevronDown size={13} className="shrink-0" /> : <ChevronRight size={13} className="shrink-0" />}
+              <span className="min-w-0 flex-1 whitespace-normal break-words leading-tight">{child.label}</span>
+            </button>
+            {childOpen && renderChildren(child.children, depth + 1)}
+          </li>;
+        }
+        return <li key={key}><Link href={child.href!} onClick={handleLinkClick} aria-current={childActive ? 'page' : undefined} className={cn('group flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors relative', childActive ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
+          {childActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-primary rounded-r-full" />}<span className="w-1.5 h-1.5 rounded-full bg-current opacity-50 shrink-0" /><span className="min-w-0 flex-1 whitespace-normal break-words leading-tight">{child.label}</span>{childActive && <ChevronRight size={12} className="text-primary opacity-60 shrink-0" />}
+        </Link></li>;
+      })}
+    </ul>
+  );
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div ref={sidebarRef} className="w-64 h-screen bg-sidebar border-r border-sidebar-border flex flex-col shadow-sm relative">
+      <div ref={sidebarRef} data-state={isOpen ? 'open' : 'closed'} className="w-64 h-screen overflow-x-hidden bg-sidebar border-r border-sidebar-border flex flex-col shadow-sm relative">
         <button onClick={onClose} className="lg:hidden absolute top-4 right-4 p-1.5 hover:bg-accent rounded-lg z-10 transition-colors"><X size={18} className="text-muted-foreground" /></button>
         <div ref={logoRef} className="px-5 py-5 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
@@ -147,14 +184,14 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                 const isActive = pathname === item.href;
                 const hasChildren = !!item.children?.length;
                 const menuOpen = openMenus.has(item.href);
-                const isParentActive = isActive || (hasChildren && item.children!.some(c => pathname === c.href));
+                const isParentActive = isActive || (hasChildren && item.children!.some(c => navigationContainsPath(c as CostNavigationItem, pathname)));
                 return <li key={item.href}>
                   {hasChildren ? (
                     <div className={cn('group flex items-center rounded-lg transition-colors relative', isParentActive ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
                       {isParentActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />}
                       <Link href={item.href} onClick={() => { handleLinkClick(); setOpenMenus(prev => new Set([...prev, item.href])); }} onMouseEnter={e => handleItemHover(e.currentTarget as HTMLElement, true)} onMouseLeave={e => handleItemHover(e.currentTarget as HTMLElement, false)} className="flex items-center gap-3 px-3 py-2.5 flex-1 min-w-0 text-sm font-medium">
                         <Icon size={17} className={cn('shrink-0 transition-transform group-hover:scale-110', isParentActive ? 'text-primary' : '')} />
-                        <span className="flex-1 truncate">{item.label}</span>{item.badge && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">{item.badge}</Badge>}
+                        <span className="min-w-0 flex-1 whitespace-normal break-words leading-tight">{item.label}</span>{item.badge && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">{item.badge}</Badge>}
                       </Link>
                       <button type="button" onClick={() => toggleMenu(item.href)} className="px-2 py-2.5 shrink-0 opacity-60 hover:opacity-100 transition-opacity">{menuOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
                     </div>
@@ -163,14 +200,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                       {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />}<Icon size={17} className={cn('shrink-0 transition-transform group-hover:scale-110', isActive ? 'text-primary' : '')} /><span className="flex-1 truncate">{item.label}</span>{item.badge && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">{item.badge}</Badge>}{isActive && <ChevronRight size={14} className="text-primary opacity-60 shrink-0" />}
                     </Link></TooltipTrigger><TooltipContent side="right" className="text-xs">{item.label}</TooltipContent></Tooltip>
                   )}
-                  {hasChildren && menuOpen && <ul className="mt-0.5 ml-4 pl-3 border-l border-sidebar-border space-y-0.5">
-                    {item.children!.filter(child => !child.requireAdmin || (userRole !== null && isAdmin(userRole))).map(child => {
-                      const childActive = pathname === child.href;
-                      return <li key={child.href}><Link href={child.href} onClick={handleLinkClick} className={cn('group flex items-center gap-2 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors relative', childActive ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
-                        {childActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-primary rounded-r-full" />}<span className="w-1.5 h-1.5 rounded-full bg-current opacity-50 shrink-0" /><span className="flex-1 truncate">{child.label}</span>{childActive && <ChevronRight size={12} className="text-primary opacity-60 shrink-0" />}
-                      </Link></li>;
-                    })}
-                  </ul>}
+                  {hasChildren && menuOpen && renderChildren(item.children!)}
                 </li>;
               })}
             </ul>
