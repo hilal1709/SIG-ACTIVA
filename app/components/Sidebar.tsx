@@ -145,7 +145,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
     <ul className={cn('mt-0.5 space-y-0.5 border-l border-sidebar-border', depth === 0 ? 'ml-4 pl-3' : 'ml-3 pl-2')}>
       {children.map((child) => {
         const key = child.id ?? child.href ?? child.label;
-        const childActive = child.href === pathname;
+        const childActive = navigationContainsPath(child as CostNavigationItem, pathname);
         const descendantActive = child.children?.some((item) => navigationContainsPath(item as CostNavigationItem, pathname)) === true;
         const childOpen = openMenus.has(key);
         if (child.children?.length) {
