@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 export const MAX_WORKBOOK_BYTES = 50 * 1024 * 1024;
 export const COST_UPLOAD_STATUSES = {
   PENDING_UPLOAD: 'PENDING_UPLOAD', PROCESSING: 'PROCESSING', VALIDATED: 'VALIDATED',
-  VALIDATION_FAILED: 'VALIDATION_FAILED', FAILED: 'FAILED',
+  VALIDATION_FAILED: 'VALIDATION_FAILED', FAILED: 'FAILED', ARCHIVED: 'ARCHIVED',
 } as const;
 
 export type PendingUpload = { companyId: number; companyCode: string; fiscalYear: number; fiscalPeriod: number; fileName: string; fileSize: number; uploadNote?: string; objectKey: string; userId: number; expiresAt: number };

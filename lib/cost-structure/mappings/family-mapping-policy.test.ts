@@ -3,6 +3,8 @@ import { describe, it } from 'node:test';
 import {
   coaFamilyPrefix,
   coaFamilyPrefixes,
+  exactTargetsAgreeWithFamily,
+  historicalPredecessorValidTo,
   inferFamilyMappingTarget,
   inferHierarchicalFamilyMappingTarget,
   type FamilyMappingEvidence,
@@ -113,5 +115,34 @@ describe('COA family mapping policy', () => {
       },
     ], 1);
     assert.equal(value, null);
+  });
+
+  it('permits a predecessor only when all future exact targets agree with family', () => {
+    const inferred = {
+      mappingAction: 'INCLUDE' as const,
+      groupCode: 'ADUM',
+      natureCode: 'N07',
+    };
+    assert.equal(exactTargetsAgreeWithFamily([
+      { mappingAction: 'INCLUDE', groupCode: 'ADUM', natureCode: 'N07' },
+      { mappingAction: 'INCLUDE', groupCode: 'ADUM', natureCode: 'N07' },
+    ], inferred), true);
+    assert.equal(exactTargetsAgreeWithFamily([
+      { mappingAction: 'INCLUDE', groupCode: 'ADUM', natureCode: 'N08' },
+    ], inferred), false);
+    assert.equal(exactTargetsAgreeWithFamily([
+      { mappingAction: 'RECLASS', groupCode: 'ADUM', natureCode: 'N07' },
+    ], inferred), false);
+  });
+
+  it('stops historical predecessor before the earliest exact or FINALIZED boundary', () => {
+    const from = new Date('2025-02-01T00:00:00.000Z');
+    const validTo = historicalPredecessorValidTo(from, [
+      new Date('2026-07-01T00:00:00.000Z'),
+    ], [
+      new Date('2026-03-01T00:00:00.000Z'),
+    ]);
+    assert.equal(validTo?.toISOString(), '2026-02-28T00:00:00.000Z');
+    assert.equal(historicalPredecessorValidTo(from, [], []), null);
   });
 });

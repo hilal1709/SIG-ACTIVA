@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { isMappingBlockingAmount } from '@/lib/cost-structure/reconciliation/money';
 import {
   coaFamilyPrefixes,
+  exactTargetsAgreeWithFamily,
+  historicalPredecessorValidTo,
   inferHierarchicalFamilyMappingTarget,
   type FamilyMappingEvidence,
   type HierarchicalFamilyEvidenceLevel,
@@ -29,6 +31,13 @@ function candidateKey(source: string, coaCode: string) {
  * mappings for that same source/family agree on action + Cost Group code + Nature code.
  * The broader three-digit fallback additionally requires at least two distinct evidence
  * COAs in the selected scope.
+ *
+ * A future exact mapping no longer blocks historical recovery by itself. When there is
+ * no exact mapping effective for the current period, a predecessor may be created only
+ * when every existing exact interval agrees with the deterministic family target. The
+ * predecessor ends before the next exact interval and never crosses a FINALIZED period.
+ * This permits safe historical reuse without mutating finalized lineage or overriding a
+ * narrower authoritative mapping.
  *
  * Amounts within the Rp1 de-minimis tolerance are deliberately ignored here. They stay
  * visible for audit but do not justify creating a persistent business mapping.
@@ -175,10 +184,14 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
           coaId: coa.id,
           active: true,
         },
-        select: { id: true },
+        include: { costGroup: true, nature: true },
+        orderBy: { validFrom: 'asc' },
       });
-      // Any explicit exact-COA mapping, even a future interval, outranks family inference.
-      if (exactMappings.length) { skipped += 1; continue; }
+      const effectiveExact = exactMappings.some((mapping) =>
+        mapping.validFrom <= upload.period.periodStart &&
+        (!mapping.validTo || mapping.validTo >= upload.period.periodStart)
+      );
+      if (effectiveExact) { skipped += 1; continue; }
 
       const families = coaFamilyPrefixes(item.coaCode);
       if (!families.length) { skipped += 1; continue; }
@@ -192,6 +205,12 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
 
       const inferred = inferHierarchicalFamilyMappingTarget(levels, upload.period.companyId);
       if (!inferred) { skipped += 1; continue; }
+      const exactTargets = exactMappings.map((mapping) => ({
+        mappingAction: mapping.mappingAction,
+        groupCode: mapping.costGroup?.code ?? null,
+        natureCode: mapping.nature?.code ?? null,
+      }));
+      if (!exactTargetsAgreeWithFamily(exactTargets, inferred)) { skipped += 1; continue; }
 
       let costGroupId: number | null = null;
       let natureId: number | null = null;
@@ -218,6 +237,30 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
       }
 
       const validFrom = state?.earliest ?? upload.period.periodStart;
+      const futureExactStarts = exactMappings
+        .map((mapping) => mapping.validFrom)
+        .filter((value) => value > validFrom);
+      const nextExactStart = futureExactStarts.sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+      const finalizedPeriods = await tx.costPeriod.findMany({
+        where: {
+          companyId: upload.period.companyId,
+          status: CostPeriodStatus.FINALIZED,
+          periodStart: {
+            gt: validFrom,
+            ...(nextExactStart ? { lt: nextExactStart } : {}),
+          },
+        },
+        orderBy: { periodStart: 'asc' },
+        select: { periodStart: true },
+      });
+      const validTo = historicalPredecessorValidTo(
+        validFrom,
+        futureExactStarts,
+        finalizedPeriods.map((period) => period.periodStart)
+      );
+      if (validTo && validTo < validFrom) { skipped += 1; continue; }
+
+      const predecessor = exactMappings.length > 0;
       const mapping = await tx.costCoaMapping.create({
         data: {
           companyId: upload.period.companyId,
@@ -227,9 +270,11 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
           natureId,
           mappingAction: inferred.mappingAction === 'EXCLUDE' ? CostMappingAction.EXCLUDE : CostMappingAction.INCLUDE,
           validFrom,
-          validTo: null,
+          validTo,
           active: true,
-          note: `Auto family mapping ${inferred.familyPrefix} (${inferred.familyPrefix.length}-digit); ${inferred.scope}; ${inferred.evidenceCount} unanimous evidence row(s), ${inferred.evidenceCoaCount} distinct COA(s); ${inferred.mappingAction}:${inferred.groupCode ?? '-'}:${inferred.natureCode ?? '-'}`,
+          note: predecessor
+            ? `Auto historical family predecessor ${inferred.familyPrefix}; target agrees with all existing exact mapping intervals; ${inferred.scope}; ${inferred.mappingAction}:${inferred.groupCode ?? '-'}:${inferred.natureCode ?? '-'}`
+            : `Auto family mapping ${inferred.familyPrefix} (${inferred.familyPrefix.length}-digit); ${inferred.scope}; ${inferred.evidenceCount} unanimous evidence row(s), ${inferred.evidenceCoaCount} distinct COA(s); ${inferred.mappingAction}:${inferred.groupCode ?? '-'}:${inferred.natureCode ?? '-'}`,
           createdById: userId,
         },
       });
@@ -239,7 +284,7 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
         data: {
           userId,
           periodId: upload.periodId,
-          action: 'AUTO_FAMILY_COA_MAPPING',
+          action: predecessor ? 'AUTO_FAMILY_PREDECESSOR_MAPPING' : 'AUTO_FAMILY_COA_MAPPING',
           entityType: 'CostCoaMapping',
           entityId: String(mapping.id),
           newValueJson: {
@@ -250,15 +295,18 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
             evidenceScope: inferred.scope,
             evidenceCount: inferred.evidenceCount,
             evidenceCoaCount: inferred.evidenceCoaCount,
+            exactIntervalCount: exactMappings.length,
             mappingAction: inferred.mappingAction,
             costGroupId,
             natureId,
             groupCode: inferred.groupCode,
             natureCode: inferred.natureCode,
             validFrom: validFrom.toISOString(),
-            validTo: null,
+            validTo: validTo?.toISOString() ?? null,
           } as Prisma.InputJsonValue,
-          reason: 'Deterministic hierarchical COA family mapping (4-digit then guarded 3-digit); unanimous evidence only; de-minimis and ambiguous families excluded.',
+          reason: predecessor
+            ? 'Historical predecessor allowed only when deterministic family target agrees with every existing exact mapping interval; interval stops before the next exact mapping or FINALIZED period.'
+            : 'Deterministic hierarchical COA family mapping (4-digit then guarded 3-digit); unanimous evidence only; de-minimis and ambiguous families excluded.',
         },
       });
     }
