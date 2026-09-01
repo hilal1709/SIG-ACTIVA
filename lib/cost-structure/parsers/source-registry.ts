@@ -17,7 +17,11 @@ const definitions: Definition[] = [
   // adapts persisted Rincian/CC_DRV cells into calculation-support lineage. CC derivatif is
   // period-optional: historical periods before its introduction legitimately have no sheet.
   { code:'AUDIT_SI', companies:['2000'], required:false, aliases:['SI'] },
-  { code:'AUDIT_GHOPO', companies:['7000'], required:false, aliases:['GHOPO'] },
+  // Company 7000 used a single `SI` summary before the workbook was split into GHoPO + DERIV.
+  // Persist that historical predecessor under the stable AUDIT_GHOPO logical code so existing
+  // Company-7000 summary consumers can distinguish it later by originalSheetName without
+  // fabricating a DERIV source that did not exist in the period.
+  { code:'AUDIT_GHOPO', companies:['7000'], required:false, aliases:['GHOPO','SI'] },
   { code:'AUDIT_DERIV', companies:['7000'], required:false, aliases:['DERIV'] },
   { code:'AUDIT_RINCIAN', companies:['2000'], required:true, aliases:['RINCIAN BIAYA'] },
   { code:'AUDIT_RINCIAN', companies:['7000'], required:false, aliases:['RINCIAN BIAYA'] },
