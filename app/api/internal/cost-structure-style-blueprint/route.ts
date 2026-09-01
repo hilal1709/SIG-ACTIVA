@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { prisma } from '@/lib/prisma';
 import { costStructureStorage } from '@/lib/cost-structure/storage/supabase-storage';
 
+// Temporary preview-only extractor. Remove before opening the final PR.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
