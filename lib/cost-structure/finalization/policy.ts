@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { calculateMappingCompleteness, type MappingCompletenessRow } from '../reconciliation/mapping-completeness';
 
 const REQUIRED_TOTALS: Record<string, readonly string[]> = {
   '2000': ['TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'],
@@ -27,6 +28,11 @@ export type FinalizationSnapshot = {
 
 const isZero = (value: FinalizationSnapshot['results'][number]['reconciliationDifference']) =>
   value !== null && new Prisma.Decimal(value).equals(0);
+
+/** Uses the same per-source/COA aggregation and Rp1 de-minimis policy as Phase D. */
+export function mappingCompleteForReadiness(rows: MappingCompletenessRow[]): boolean {
+  return calculateMappingCompleteness(rows).unmappedCoaCount === 0;
+}
 
 /** Validates persisted Engine-1 results only. No accounting formula is executed here. */
 export function assertPersistedControlsReady(snapshot: FinalizationSnapshot, allowedStatuses: readonly string[]) {

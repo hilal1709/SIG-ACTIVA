@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Prisma } from '@prisma/client';
-import { assertFinalizationReady, assertReconciliationReady, type FinalizationSnapshot } from './policy';
+import { assertFinalizationReady, assertReconciliationReady, mappingCompleteForReadiness, type FinalizationSnapshot } from './policy';
 
 const control = (resultCode: string, difference = '0.00', status = 'RECONCILED') => ({ resultCode, resultType: 'CONTROL', reconciliationStatus: status, reconciliationDifference: new Prisma.Decimal(difference) });
 const total = (resultCode: string) => ({ resultCode, resultType: 'TOTAL', reconciliationStatus: null, reconciliationDifference: null });
@@ -25,3 +25,20 @@ test('unresolved validation error blocks', () => { const value = fixture(); valu
 test('source reconciliation and mapping completeness block independently', () => { const source = fixture(); source.sourceReconciled = false; assert.throws(() => assertReconciliationReady(source), /Source reconciliation/); const mapping = fixture(); mapping.mappingComplete = false; assert.throws(() => assertReconciliationReady(mapping), /Mapping completeness/); });
 test('finalized period is immutable', () => { const value = fixture(); value.periodStatus = 'FINALIZED'; assert.throws(() => assertReconciliationReady(value), /immutable/); });
 test('finalization cannot use a CALCULATED snapshot and reconciliation cannot use a reconciled snapshot', () => { assert.throws(() => assertFinalizationReady(fixture()), /COST_STRUCTURE_RECONCILED/); assert.throws(() => assertReconciliationReady(fixture('2000', 'COST_STRUCTURE_RECONCILED')), /CALCULATED/); });
+
+test('post-check/finalization mapping readiness accepts absolute Rp1 de-minimis rows', () => {
+  assert.equal(mappingCompleteForReadiness([
+    { logicalSourceCode: 'CC_ADUM', coaCodeRaw: '66250008', amount: '-1.00', mappingStatus: 'UNMAPPED' },
+    { logicalSourceCode: 'CC_PASAR', coaCodeRaw: '99999999', amount: '1.00', mappingStatus: 'UNMAPPED' },
+  ]), true);
+});
+
+test('post-check/finalization aggregates per COA before applying Rp1 threshold', () => {
+  assert.equal(mappingCompleteForReadiness([
+    { logicalSourceCode: 'CC_ADUM', coaCodeRaw: '099', amount: '0.60', mappingStatus: 'UNMAPPED' },
+    { logicalSourceCode: 'CC_ADUM', coaCodeRaw: '099', amount: '0.60', mappingStatus: 'UNMAPPED' },
+  ]), false);
+  assert.equal(mappingCompleteForReadiness([
+    { logicalSourceCode: 'CC_ADUM', coaCodeRaw: '100', amount: '1.01', mappingStatus: 'UNMAPPED' },
+  ]), false);
+});
