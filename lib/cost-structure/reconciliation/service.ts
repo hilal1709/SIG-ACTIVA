@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { classifySourceRow } from './source-control-registry';
 import { reconcileCcGroup } from './reconcile-cc-group';
 import { calculateMappingCompleteness } from './mapping-completeness';
+import { isMappingBlockingAmount } from './money';
 import {
   buildIssueBatch,
   MAPPING_ISSUE_CODES,
@@ -224,7 +225,8 @@ export async function runPhaseD(uploadId: number) {
 
         sourceRowMappings.push(...rowIds.map((id) => ({ id, coaId: coa?.id ?? null, mappingStatus: 'UNMAPPED' })));
 
-        const hasNonZero = coaRows.some((row) => row.amount && !row.amount.isZero());
+        const totalAmount = coaRows.reduce((sum, row) => sum.add(row.amount ?? 0), new Prisma.Decimal(0));
+        const isBlocking = isMappingBlockingAmount(totalAmount.toString());
         if (mappings.length > 1) {
           setMappingIssue(desiredIssues, firstRowId, context, 'MAPPING_AMBIGUOUS', 'ERROR', 'Lebih dari satu mapping efektif.');
         } else if (mappings.length === 1) {
@@ -235,8 +237,10 @@ export async function runPhaseD(uploadId: number) {
             firstRowId,
             context,
             'UNMAPPED_COA',
-            hasNonZero ? 'ERROR' : 'WARNING',
-            'COA belum memiliki disposition eksplisit.'
+            isBlocking ? 'ERROR' : 'WARNING',
+            isBlocking
+              ? 'COA belum memiliki disposition eksplisit.'
+              : 'COA belum memiliki disposition, tetapi total absolut <= Rp1 sehingga non-blocking (de minimis).'
           );
         }
       }
@@ -318,8 +322,8 @@ export async function getPhaseDReport(uploadId: number) {
 
   const blockers = [
     ...sources.filter((source) => source.status !== 'RECONCILED').map((source) => `${source.logicalSourceCode}: ${source.status}`),
-    ...(completeness.unmappedCoaCount ? [`${completeness.unmappedCoaCount} COA non-zero belum memiliki disposition.`] : []),
-    ...(completeness.difference !== '0.00' ? [`Mapping completeness difference ${completeness.difference}.`] : []),
+    ...(completeness.unmappedCoaCount ? [`${completeness.unmappedCoaCount} COA material belum memiliki disposition.`] : []),
+    ...(completeness.blockingDifference !== '0.00' ? [`Mapping completeness material difference ${completeness.blockingDifference}.`] : []),
     ...mappingErrors.map((issue) => issue.message),
     ...structuralErrors.map((issue) => issue.message),
   ];
