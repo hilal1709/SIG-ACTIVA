@@ -85,35 +85,59 @@ test('Company 7000 compatibility blueprint reproduces the pre-framework GHoPO/DE
   assert.equal(sheet.getCell('B55').numFmt, ACCOUNTING_FORMAT);
 });
 
-test('Company 2000 SI and rincian preserve only the known pre-framework layout', () => {
-  const workbook = new ExcelJS.Workbook();
-  const si = workbook.addWorksheet('SI'); si.getCell('A1').value = 'SI'; si.getCell('B1').value = 1;
-  const siLabelStyleBefore = structuredClone(si.getCell('A1').style);
-  const rincian = workbook.addWorksheet('rincian biaya'); rincian.getCell('B3').value = 'Header'; rincian.getCell('D4').value = 1;
-  const rincianFillBefore = structuredClone(rincian.getCell('B3').fill);
-  applyWorkbookStyleBlueprint(workbook, getWorkbookStyleBlueprint('2000'));
-  assert.deepEqual(si.getCell('A1').style, siLabelStyleBefore);
-  assert.equal(si.getColumn('A').width, 53); assert.equal(si.getColumn('B').width, 18); assert.equal(si.getCell('B1').numFmt, ACCOUNTING_FORMAT);
-  assert.equal(si.pageSetup.printArea, 'A1:B43');
-  assert.equal(rincian.getCell('B3').font.name, 'Calibri'); assert.equal(rincian.getCell('B3').font.size, 11); assert.equal(rincian.getCell('B3').font.bold, true);
-  assert.deepEqual(rincian.getCell('B3').fill, rincianFillBefore);
-  assert.equal(rincian.getCell('D4').numFmt, ACCOUNTING_FORMAT); assert.equal(rincian.autoFilter, 'B3:AA3');
+test('Company 2000 exact blueprint is frozen from authoritative Jul-2026 active upload v2', () => {
+  const blueprint = getWorkbookStyleBlueprint('2000');
+  assert.equal(blueprint.exactTemplateFidelity, true);
+  assert.equal(blueprint.sourceTemplatePeriod, '2026-07');
+  assert.match(blueprint.templateVersion, /active-upload-v2-exact-style/);
+  assert.deepEqual(Object.keys(blueprint.sheets), ['SI', 'rincian biaya', 'cc ADM', 'cc pasar']);
+
+  const si = blueprint.sheets.SI;
+  assert.equal(si.sourceTemplateName, 'SI');
+  assert.ok((si.ranges?.length ?? 0) > 0);
+  assert.ok((si.columns?.length ?? 0) > 0);
+
+  const rincian = blueprint.sheets['rincian biaya'];
+  assert.equal(rincian.sourceTemplateName, 'rincian biaya');
+  assert.ok((rincian.ranges?.length ?? 0) > 0);
+
+  const ccAdm = blueprint.sheets['cc ADM'];
+  assert.equal(ccAdm.sourceTemplateName, 'cc_adm');
+  assert.deepEqual(ccAdm.aliases, ['cc_adm', 'cc adm']);
+
+  const ccPasar = blueprint.sheets['cc pasar'];
+  assert.equal(ccPasar.sourceTemplateName, 'cc pasar');
+  assert.deepEqual(ccPasar.aliases, ['cc_pasar']);
 });
 
-test('CC placeholders and Formula Audit remain untouched until approved template styles land', () => {
+test('Company 2000 exact blueprint applies without changing DB-authored values', () => {
   const workbook = new ExcelJS.Workbook();
-  const cc = workbook.addWorksheet('cc ADM'); cc.getCell('A1').value = 'Header'; cc.getCell('A1').font = { italic: true };
+  const si = workbook.addWorksheet('SI');
+  const rincian = workbook.addWorksheet('rincian biaya');
+  const ccAdm = workbook.addWorksheet('cc ADM');
+  const ccPasar = workbook.addWorksheet('cc pasar');
+  si.getCell('B3').value = 123456789;
+  rincian.getCell('D4').value = -987654321;
+  ccAdm.getCell('A1').value = 'DB VALUE';
+  ccPasar.getCell('A1').value = 'DB VALUE';
+  const before = [si.getCell('B3').value, rincian.getCell('D4').value, ccAdm.getCell('A1').value, ccPasar.getCell('A1').value];
+  applyWorkbookStyleBlueprint(workbook, getWorkbookStyleBlueprint('2000'));
+  assert.deepEqual([si.getCell('B3').value, rincian.getCell('D4').value, ccAdm.getCell('A1').value, ccPasar.getCell('A1').value], before);
+});
+
+test('Formula Audit remains untouched by Company 7000 style blueprint', () => {
+  const workbook = new ExcelJS.Workbook();
   const audit = workbook.addWorksheet('Formula Audit'); audit.getCell('A1').value = 'system'; audit.getCell('A1').font = { bold: true };
-  const ccStyle = structuredClone(cc.getCell('A1').style); const auditStyle = structuredClone(audit.getCell('A1').style);
+  const auditStyle = structuredClone(audit.getCell('A1').style);
   applyWorkbookStyleBlueprint(workbook, getWorkbookStyleBlueprint('7000'));
-  assert.deepEqual(cc.getCell('A1').style, ccStyle); assert.deepEqual(audit.getCell('A1').style, auditStyle);
+  assert.deepEqual(audit.getCell('A1').style, auditStyle);
 });
 
 test('registry scope is locked and missing style roles fail closed', () => {
   const company2000 = getWorkbookStyleBlueprint('2000'); const company7000 = getWorkbookStyleBlueprint('7000');
   assert.deepEqual(Object.keys(company2000.sheets), ['SI', 'rincian biaya', 'cc ADM', 'cc pasar']);
   assert.deepEqual(Object.keys(company7000.sheets), ['GHoPO', 'DERIV', 'rincian biaya', 'cc_prod', 'cc_adm', 'cc pasar']);
-  assert.equal(company2000.exactTemplateFidelity, false); assert.match(company2000.templateVersion, /compatibility/);
+  assert.equal(company2000.exactTemplateFidelity, true);
   const workbook = new ExcelJS.Workbook(); const sheet = workbook.addWorksheet('Bad');
   assert.throws(() => applySheetStyleBlueprint(sheet, { styleCatalog: {}, ranges: [{ range: 'A1', styleRole: 'missing' }] }), /Unknown workbook style role/);
 });
