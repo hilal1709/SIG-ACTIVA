@@ -1,7 +1,6 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/readiness';
-import { hydrateAuditSnapshot } from '@/lib/cost-structure/audit-hydration/service';
 import { runCostStructureCalculation } from '@/lib/cost-structure/calculations/run-service';
 import { reconcileCostStructure } from '@/lib/cost-structure/finalization/service';
 import { getPhaseDReport, refreshPeriodReadiness, runPhaseD } from '@/lib/cost-structure/reconciliation/service';
@@ -27,6 +26,8 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
 
   const report = await getPhaseDReport(uploadId);
   if (!report) throw new CostStructureProcessNotFoundError('Upload tidak ditemukan.');
+  // Audit templates are reported for visibility only. They are export/downstream
+  // audit inputs, not prerequisites for Engine-1 calculation.
   const audit = await getAuditSnapshotReadiness(uploadId, upload.period.company.companyCode);
 
   // SOURCE_ROW_MISSING_COA is intentionally allowed to enter Phase D because
@@ -79,7 +80,6 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
 type AdvanceDependencies = {
   status(uploadId: number): Promise<CostStructureProcessStatus>;
   reconcile(uploadId: number): Promise<void>;
-  hydrate(periodId: number, uploadId: number, userId: number): Promise<void>;
   calculate(periodId: number, userId: number): Promise<void>;
   postCheck(periodId: number, userId: number): Promise<void>;
 };
@@ -87,17 +87,15 @@ type AdvanceDependencies = {
 const dependencies: AdvanceDependencies = {
   status: getCostStructureProcessStatus,
   reconcile: async (uploadId) => { await runPhaseD(uploadId); await refreshPeriodReadiness(uploadId); },
-  hydrate: async (periodId, uploadId, userId) => { await hydrateAuditSnapshot(periodId, userId, uploadId); },
   calculate: async (periodId, userId) => { await runCostStructureCalculation(periodId, userId); },
   postCheck: async (periodId, userId) => { await reconcileCostStructure(periodId, userId); },
 };
 
-/** Executes at most one persisted stage. FINALIZE is deliberately absent. */
+/** Executes at most one persisted Engine-1 stage. FINALIZE and audit hydration are deliberately absent. */
 export async function advanceCostStructureProcess(uploadId: number, userId: number, deps: AdvanceDependencies = dependencies) {
   const before = await deps.status(uploadId);
   return executeNextProcessStage(before, {
     RECONCILIATION: () => deps.reconcile(uploadId),
-    AUDIT_READINESS: () => deps.hydrate(before.periodId, uploadId, userId),
     CALCULATION: () => deps.calculate(before.periodId, userId),
     POST_CHECK: () => deps.postCheck(before.periodId, userId),
   }, () => deps.status(uploadId));
