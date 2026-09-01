@@ -39,8 +39,16 @@ export const costStructureAdminNavigation: CostNavigationItem[] = [
   },
 ];
 
+const exactOnlyRoutes = new Set(['/cost-structure', '/cost-fluctuation']);
+
+export function navigationPathMatches(href: string | undefined, pathname: string): boolean {
+  if (!href) return false;
+  if (href === pathname) return true;
+  return !exactOnlyRoutes.has(href) && pathname.startsWith(`${href}/`);
+}
+
 export function navigationContainsPath(item: CostNavigationItem, pathname: string): boolean {
-  return item.href === pathname || item.children?.some((child) => navigationContainsPath(child, pathname)) === true;
+  return navigationPathMatches(item.href, pathname) || item.children?.some((child) => navigationContainsPath(child, pathname)) === true;
 }
 
 export function openNavigationIds(items: CostNavigationItem[], pathname: string): string[] {
@@ -48,7 +56,7 @@ export function openNavigationIds(items: CostNavigationItem[], pathname: string)
   const visit = (item: CostNavigationItem): boolean => {
     const childContainsPath = item.children?.some(visit) === true;
     if (childContainsPath) openIds.push(item.id);
-    return item.href === pathname || childContainsPath;
+    return navigationPathMatches(item.href, pathname) || childContainsPath;
   };
   items.forEach(visit);
   return openIds;
