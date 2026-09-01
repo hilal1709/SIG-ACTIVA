@@ -26,6 +26,12 @@ export type HierarchicalInferredFamilyMapping = InferredFamilyMapping & {
   evidenceCoaCount: number;
 };
 
+export type ExistingExactMappingTarget = {
+  mappingAction: FamilyMappingAction;
+  groupCode: string | null;
+  natureCode: string | null;
+};
+
 export function coaFamilyPrefixes(coaCode: string): string[] {
   const normalized = coaCode.trim();
   if (!/^\d{4,}$/.test(normalized)) return [];
@@ -43,7 +49,7 @@ function usableEvidence(item: FamilyMappingEvidence) {
   return Boolean(item.groupCode && item.natureCode);
 }
 
-function signature(item: FamilyMappingEvidence) {
+function signature(item: ExistingExactMappingTarget) {
   return `${item.mappingAction}|${item.groupCode ?? ''}|${item.natureCode ?? ''}`;
 }
 
@@ -113,4 +119,28 @@ export function inferHierarchicalFamilyMappingTarget(
     };
   }
   return null;
+}
+
+/** A historical predecessor is allowed only when every exact interval agrees with family. */
+export function exactTargetsAgreeWithFamily(
+  exactTargets: ExistingExactMappingTarget[],
+  inferred: Pick<HierarchicalInferredFamilyMapping, 'mappingAction' | 'groupCode' | 'natureCode'>
+) {
+  const desired = signature(inferred);
+  return exactTargets.every((target) => target.mappingAction !== 'RECLASS' && signature(target) === desired);
+}
+
+/**
+ * Returns the inclusive predecessor validTo. The first future exact mapping or FINALIZED
+ * period is a hard boundary; null means the predecessor may remain open-ended.
+ */
+export function historicalPredecessorValidTo(
+  validFrom: Date,
+  futureExactStarts: Date[],
+  finalizedPeriodStarts: Date[]
+): Date | null {
+  const boundary = [...futureExactStarts, ...finalizedPeriodStarts]
+    .filter((value) => value > validFrom)
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  return boundary ? new Date(boundary.getTime() - 24 * 60 * 60 * 1000) : null;
 }

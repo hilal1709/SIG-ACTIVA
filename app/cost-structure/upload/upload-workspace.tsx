@@ -1,15 +1,30 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, Loader2, UploadCloud } from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { Archive, CheckCircle2, FileSpreadsheet, Loader2, Trash2, UploadCloud } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import CostModuleFrame from '@/app/components/CostModuleFrame';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import { getCurrentUserRole, isAdmin } from '@/app/utils/rolePermissions';
 
 type Company = { companyCode: string; name: string };
-type History = { id: number; companyCode: string; fiscalYear: number; fiscalPeriod: number; version: number; originalFileName: string; fileSizeBytes: string; status: string; uploadedAt: string };
+type Lifecycle = { canDelete: boolean; deleteReason: string | null; canArchive: boolean; archiveReason: string | null };
+type History = {
+  id: number;
+  companyCode: string;
+  fiscalYear: number;
+  fiscalPeriod: number;
+  version: number;
+  originalFileName: string;
+  fileSizeBytes: string;
+  status: string;
+  isActiveVersion: boolean;
+  uploadedAt: string;
+  lifecycle: Lifecycle;
+};
 type Result = { id: number; version: number; status: string; hash: string; rowCount: number; issueCount: number; sources: { code: string; sheetName: string; rowCount: number }[]; issues: { message: string; severity: string }[] };
+type LifecycleAction = { mode: 'DELETE' | 'ARCHIVE'; item: History };
 const steps = ['Metadata', 'Upload File', 'Verify File', 'Detect Sources', 'Normalize Data', 'Validation Result'];
 
 export default function UploadWorkspace({ companies }: { companies: Company[] }) {
@@ -20,12 +35,19 @@ export default function UploadWorkspace({ companies }: { companies: Company[] })
   const [error, setError] = useState('');
   const [result, setResult] = useState<Result | null>(null);
   const [history, setHistory] = useState<History[]>([]);
+  const [admin, setAdmin] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null);
 
-  const refresh = () => fetch('/api/cost-structure/uploads?limit=10')
+  const refresh = useCallback(() => fetch(`/api/cost-structure/uploads?limit=20${showArchived ? '&includeArchived=1' : ''}`)
     .then((response) => response.ok ? response.json() : null)
-    .then((data) => data && setHistory(data.uploads));
+    .then((data) => data && setHistory(data.uploads)), [showArchived]);
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    const role = getCurrentUserRole();
+    setAdmin(role !== null && isAdmin(role));
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,6 +110,31 @@ export default function UploadWorkspace({ companies }: { companies: Company[] })
     }
   }
 
+  async function applyLifecycleAction() {
+    if (!lifecycleAction) return;
+    setBusy(true);
+    setError('');
+    const { item, mode } = lifecycleAction;
+    try {
+      const response = await fetch(`/api/cost-structure/uploads/${item.id}`, {
+        method: mode === 'DELETE' ? 'DELETE' : 'PATCH',
+        headers: mode === 'ARCHIVE' ? { 'content-type': 'application/json' } : undefined,
+        body: mode === 'ARCHIVE' ? JSON.stringify({ action: 'ARCHIVE' }) : undefined,
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error ?? `${mode === 'DELETE' ? 'Delete' : 'Archive'} upload gagal.`);
+      setLifecycleAction(null);
+      await refresh();
+      if (mode === 'DELETE' && value.storageRemoved === false) {
+        setError('Record upload sudah dihapus, tetapi cleanup object storage gagal. Kejadian ini sudah dicatat di audit log untuk maintenance.');
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Perubahan lifecycle upload gagal.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <CostModuleFrame title="Upload & Proses" contentClassName="p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
@@ -119,10 +166,29 @@ export default function UploadWorkspace({ companies }: { companies: Company[] })
         {result && <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md"><CardHeader><CardTitle>Latest Upload Result</CardTitle></CardHeader><CardContent className="space-y-3"><div className="grid gap-3 sm:grid-cols-4"><Metric label="Status" value={result.status} /><Metric label="Version" value={`v${result.version}`} /><Metric label="SHA-256" value={`${result.hash.slice(0, 12)}…`} /><Metric label="Rows / Issues" value={`${result.rowCount} / ${result.issueCount}`} /></div><div className="flex flex-wrap gap-2">{result.sources.map((source) => <span className="rounded-full bg-muted px-3 py-1 text-xs" key={source.code}>{source.code}: {source.rowCount}</span>)}</div>{result.issues.length > 0 && <ul className="list-disc pl-5 text-sm text-destructive">{result.issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>}</CardContent></Card>}
 
         <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
-          <CardHeader><CardTitle>Recent Uploads</CardTitle></CardHeader>
-          <CardContent><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="p-2">Period</th><th>File</th><th>Version</th><th>Status</th><th>Size</th><th>Uploaded</th></tr></thead><tbody>{history.map((item) => <tr key={item.id} className="border-b transition-colors hover:bg-muted/30"><td className="p-2">{item.companyCode} · {item.fiscalYear}/{String(item.fiscalPeriod).padStart(2, '0')}</td><td><Link className="inline-flex items-center gap-1 font-medium text-primary hover:underline" href={`/cost-structure/upload/${item.id}`}><FileSpreadsheet className="h-4 w-4" />{item.originalFileName}</Link></td><td>v{item.version}</td><td>{item.status}</td><td>{(Number(item.fileSizeBytes) / 1024 / 1024).toFixed(2)} MB</td><td>{new Date(item.uploadedAt).toLocaleString('id-ID')}</td></tr>)}</tbody></table>{history.length === 0 && <p className="py-8 text-center text-muted-foreground">Belum ada riwayat upload.</p>}</div></CardContent>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><CardTitle>Recent Uploads</CardTitle><p className="mt-1 text-xs text-muted-foreground">Hard delete hanya tersedia sebelum mapping reusable/calculation terbentuk. Upload ber-lineage dipertahankan untuk audit dan hanya dapat diarsipkan setelah superseded.</p></div>
+              {admin && <label className="flex items-center gap-2 text-sm text-muted-foreground"><input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />Tampilkan arsip</label>}
+            </div>
+          </CardHeader>
+          <CardContent><div className="overflow-x-auto rounded-lg border"><table className="w-full text-left text-sm"><thead className="border-b bg-muted/40 text-muted-foreground"><tr><th className="p-2">Period</th><th>File</th><th>Version</th><th>Status</th><th>Size</th><th>Uploaded</th>{admin && <th className="pr-2">Aksi</th>}</tr></thead><tbody>{history.map((item) => <tr key={item.id} className="border-b transition-colors hover:bg-muted/30"><td className="p-2">{item.companyCode} · {item.fiscalYear}/{String(item.fiscalPeriod).padStart(2, '0')}</td><td><Link className="inline-flex items-center gap-1 font-medium text-primary hover:underline" href={`/cost-structure/upload/${item.id}`}><FileSpreadsheet className="h-4 w-4" />{item.originalFileName}</Link></td><td>v{item.version}</td><td><span>{item.status}</span>{item.isActiveVersion && <span className="ml-1 text-xs text-emerald-700">Active</span>}</td><td>{(Number(item.fileSizeBytes) / 1024 / 1024).toFixed(2)} MB</td><td>{new Date(item.uploadedAt).toLocaleString('id-ID')}</td>{admin && <td className="pr-2"><div className="flex min-w-32 flex-wrap gap-2">{item.lifecycle.canDelete && <button disabled={busy} onClick={() => setLifecycleAction({ mode: 'DELETE', item })} className="inline-flex items-center gap-1 font-medium text-destructive hover:underline disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Delete</button>}{item.lifecycle.canArchive && <button disabled={busy} onClick={() => setLifecycleAction({ mode: 'ARCHIVE', item })} className="inline-flex items-center gap-1 font-medium text-amber-700 hover:underline disabled:opacity-50"><Archive className="h-3.5 w-3.5" />Archive</button>}{!item.lifecycle.canDelete && !item.lifecycle.canArchive && <span className="text-xs text-muted-foreground" title={item.lifecycle.deleteReason ?? item.lifecycle.archiveReason ?? ''}>Terkunci</span>}</div></td>}</tr>)}</tbody></table>{history.length === 0 && <p className="py-8 text-center text-muted-foreground">Belum ada riwayat upload.</p>}</div></CardContent>
         </Card>
       </div>
+
+      {lifecycleAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Konfirmasi lifecycle upload">
+          <div className="w-full max-w-md rounded-xl bg-background p-5 shadow-xl">
+            <h2 className="text-lg font-semibold">{lifecycleAction.mode === 'DELETE' ? 'Hapus upload?' : 'Arsipkan upload?'}</h2>
+            <div className="mt-3 rounded-lg bg-muted/60 p-3 text-sm">
+              <p><strong>{lifecycleAction.item.companyCode} · {lifecycleAction.item.fiscalYear}/{String(lifecycleAction.item.fiscalPeriod).padStart(2, '0')} · v{lifecycleAction.item.version}</strong></p>
+              <p className="mt-1 break-all">{lifecycleAction.item.originalFileName}</p>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">{lifecycleAction.mode === 'DELETE' ? 'Database source rows/issues akan dihapus dan file private storage dibersihkan. Aksi ini hanya diizinkan sebelum mapping reusable atau calculation lineage terbentuk.' : 'Upload superseded akan disembunyikan dari daftar normal, tetapi workbook, source rows, dan seluruh lineage tetap dipertahankan untuk audit.'}</p>
+            <div className="mt-5 flex justify-end gap-2"><button disabled={busy} onClick={() => setLifecycleAction(null)} className="rounded-md border px-3 py-2 text-sm disabled:opacity-50">Batal</button><button disabled={busy} onClick={() => void applyLifecycleAction()} className={`rounded-md px-3 py-2 text-sm font-medium text-white disabled:opacity-50 ${lifecycleAction.mode === 'DELETE' ? 'bg-destructive' : 'bg-amber-700'}`}>{busy ? 'Memproses…' : lifecycleAction.mode === 'DELETE' ? 'Ya, hapus' : 'Ya, arsipkan'}</button></div>
+          </div>
+        </div>
+      )}
     </CostModuleFrame>
   );
 }
