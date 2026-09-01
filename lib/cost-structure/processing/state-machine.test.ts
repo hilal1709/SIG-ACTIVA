@@ -148,3 +148,17 @@ test('automatic pipeline leaves audit hydration outside Engine 1 and lets Phase 
   const producedSet = service.match(/const phaseDProducedIssueCodes = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
   assert.doesNotMatch(producedSet, /SOURCE_ROW_MISSING_COA/);
 });
+
+test('automatic calculation is serialized and skips an existing SUCCESS run for the same upload', () => {
+  const service = readFileSync('lib/cost-structure/processing/service.ts', 'utf8');
+  const automatic = readFileSync('lib/cost-structure/processing/automatic-calculation.ts', 'utf8');
+  const manualRoute = readFileSync('app/api/cost-structure/periods/[id]/calculate/route.ts', 'utf8');
+
+  assert.match(service, /runAutomaticCostStructureCalculation\(periodId, uploadId, userId\)/);
+  assert.match(service, /deps\.calculate\(before\.periodId, uploadId, userId\)/);
+  assert.match(automatic, /pg_advisory_xact_lock/);
+  assert.match(automatic, /activeRun\?\.status === 'SUCCESS' && activeRun\.uploadId === uploadId/);
+  assert.match(automatic, /upload\.periodId !== periodId \|\| !upload\.isActiveVersion/);
+  assert.match(manualRoute, /runCostStructureCalculation\(id, auth\.user\.uid\)/);
+  assert.doesNotMatch(manualRoute, /runAutomaticCostStructureCalculation/);
+});
