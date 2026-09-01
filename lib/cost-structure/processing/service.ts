@@ -2,6 +2,7 @@ import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/readiness';
 import { reconcileCostStructure } from '@/lib/cost-structure/finalization/service';
+import { backfillAuthoritativeBaselineMappings } from '@/lib/cost-structure/mappings/authoritative-baseline-backfill';
 import { getPhaseDReport, refreshPeriodReadiness, runPhaseD } from '@/lib/cost-structure/reconciliation/service';
 import { runAutomaticCostStructureCalculation } from './automatic-calculation';
 import { deriveProcessStatus, executeNextProcessStage, type CostStructureProcessStatus, type ProcessBlocker, type ProcessingSnapshot } from './state-machine';
@@ -79,14 +80,18 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
 
 type AdvanceDependencies = {
   status(uploadId: number): Promise<CostStructureProcessStatus>;
-  reconcile(uploadId: number): Promise<void>;
+  reconcile(uploadId: number, userId: number): Promise<void>;
   calculate(periodId: number, uploadId: number, userId: number): Promise<void>;
   postCheck(periodId: number, userId: number): Promise<void>;
 };
 
 const dependencies: AdvanceDependencies = {
   status: getCostStructureProcessStatus,
-  reconcile: async (uploadId) => { await runPhaseD(uploadId); await refreshPeriodReadiness(uploadId); },
+  reconcile: async (uploadId, userId) => {
+    await backfillAuthoritativeBaselineMappings(uploadId, userId);
+    await runPhaseD(uploadId);
+    await refreshPeriodReadiness(uploadId);
+  },
   calculate: async (periodId, uploadId, userId) => { await runAutomaticCostStructureCalculation(periodId, uploadId, userId); },
   postCheck: async (periodId, userId) => { await reconcileCostStructure(periodId, userId); },
 };
@@ -95,7 +100,7 @@ const dependencies: AdvanceDependencies = {
 export async function advanceCostStructureProcess(uploadId: number, userId: number, deps: AdvanceDependencies = dependencies) {
   const before = await deps.status(uploadId);
   return executeNextProcessStage(before, {
-    RECONCILIATION: () => deps.reconcile(uploadId),
+    RECONCILIATION: () => deps.reconcile(uploadId, userId),
     CALCULATION: () => deps.calculate(before.periodId, uploadId, userId),
     POST_CHECK: () => deps.postCheck(before.periodId, userId),
   }, () => deps.status(uploadId));
