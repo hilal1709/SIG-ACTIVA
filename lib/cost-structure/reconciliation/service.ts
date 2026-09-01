@@ -4,14 +4,21 @@ import { prisma } from '@/lib/prisma';
 import { classifySourceRow } from './source-control-registry';
 import { reconcileCcGroup } from './reconcile-cc-group';
 import { calculateMappingCompleteness } from './mapping-completeness';
+import {
+  buildIssueBatch,
+  MAPPING_ISSUE_CODES,
+  SOURCE_CONTROL_CODES,
+  type DesiredIssueMap,
+  type IssueSeverity,
+} from './issue-batch';
 
 const required = (company: string) => company === '7000'
   ? ['CC_PROD', 'CC_ADUM', 'CC_PASAR', 'CC_WHRPG']
   : ['CC_ADUM', 'CC_PASAR'];
 
-const sourceControlCodes = ['CC_GROUP_TOTAL_NOT_FOUND', 'CC_GROUP_TOTAL_AMBIGUOUS', 'CC_GROUP_NOT_RECONCILED'];
-const mappingIssueCodes = ['UNMAPPED_COA', 'MAPPING_AMBIGUOUS', 'MAPPING_OVERLAP', 'MAPPING_TARGET_INVALID'];
-const phaseDCodes = [...sourceControlCodes, ...mappingIssueCodes];
+const sourceControlCodes = [...SOURCE_CONTROL_CODES];
+const mappingIssueCodes = [...MAPPING_ISSUE_CODES];
+const phaseDCodes: string[] = [...sourceControlCodes, ...mappingIssueCodes];
 const mappingBlockingCodes = new Set(['MAPPING_AMBIGUOUS', 'MAPPING_OVERLAP', 'MAPPING_TARGET_INVALID']);
 
 // Phase D can legitimately touch hundreds of distinct COAs in one upload.
@@ -22,73 +29,85 @@ const reconciliationTransactionOptions = {
   timeout: 60_000,
 };
 
-async function syncSourceIssue(
-  tx: Prisma.TransactionClient,
-  uploadId: number,
+function setSourceIssue(
+  desired: DesiredIssueMap,
   source: string,
   code: string | null,
   message: string | null
 ) {
   const context = `[${source}]`;
-  const existing = await tx.costValidationIssue.findMany({
-    where: { uploadId, issueCode: { in: sourceControlCodes }, message: { startsWith: context }, resolved: false },
+  desired.set(context, {
+    sourceRowId: null,
+    issueCode: code,
+    severity: 'ERROR',
+    message: code && message ? `${context} ${message}` : null,
+    resolutionType: 'CONTROL_RERUN_RESOLVED',
+    updateMetadata: false,
   });
-
-  for (const issue of existing) {
-    if (issue.issueCode !== code) {
-      await tx.costValidationIssue.update({
-        where: { id: issue.id },
-        data: { resolved: true, resolutionType: 'CONTROL_RERUN_RESOLVED', resolvedAt: new Date() },
-      });
-    }
-  }
-  if (!code || !message) return;
-
-  const same = existing.find((issue) => issue.issueCode === code);
-  if (same) {
-    await tx.costValidationIssue.update({ where: { id: same.id }, data: { message: `${context} ${message}` } });
-  } else {
-    await tx.costValidationIssue.create({
-      data: { uploadId, issueCode: code, severity: 'ERROR', message: `${context} ${message}` },
-    });
-  }
 }
 
-async function syncMappingIssue(
-  tx: Prisma.TransactionClient,
-  uploadId: number,
+function setMappingIssue(
+  desired: DesiredIssueMap,
   sourceRowId: number,
   context: string,
   code: string | null,
-  severity: 'ERROR' | 'WARNING' = 'ERROR',
+  severity: IssueSeverity = 'ERROR',
   message?: string
 ) {
-  const existing = await tx.costValidationIssue.findMany({
-    where: { uploadId, issueCode: { in: mappingIssueCodes }, message: { startsWith: context }, resolved: false },
+  desired.set(context, {
+    sourceRowId,
+    issueCode: code,
+    severity,
+    message: code ? `${context} ${message ?? 'Mapping source memerlukan resolusi.'}` : null,
+    resolutionType: 'MAPPING_RERUN_RESOLVED',
+    updateMetadata: true,
   });
+}
 
-  for (const issue of existing) {
-    if (issue.issueCode !== code) {
-      await tx.costValidationIssue.update({
-        where: { id: issue.id },
-        data: { resolved: true, resolutionType: 'MAPPING_RERUN_RESOLVED', resolvedAt: new Date() },
+async function persistIssueBatch(tx: Prisma.TransactionClient, uploadId: number, desired: DesiredIssueMap) {
+  const existing = await tx.costValidationIssue.findMany({
+    where: { uploadId, issueCode: { in: phaseDCodes }, resolved: false },
+    select: { id: true, sourceRowId: true, issueCode: true, severity: true, message: true },
+  });
+  const batch = buildIssueBatch(uploadId, existing, desired);
+  const resolvedAt = new Date();
+  for (const [resolutionType, ids] of batch.resolve) {
+    if (ids.length) {
+      await tx.costValidationIssue.updateMany({
+        where: { id: { in: ids } },
+        data: { resolved: true, resolutionType, resolvedAt },
       });
     }
   }
-  if (!code) return;
-
-  const fullMessage = `${context} ${message ?? 'Mapping source memerlukan resolusi.'}`;
-  const same = existing.find((issue) => issue.issueCode === code);
-  if (same) {
-    await tx.costValidationIssue.update({
-      where: { id: same.id },
-      data: { sourceRowId, severity, message: fullMessage },
-    });
-  } else {
-    await tx.costValidationIssue.create({
-      data: { uploadId, sourceRowId, issueCode: code, severity, message: fullMessage },
-    });
+  if (batch.create.length) await tx.costValidationIssue.createMany({ data: batch.create });
+  if (batch.update.length) {
+    await tx.$executeRaw`
+      UPDATE "cost_validation_issues" AS issue
+      SET "sourceRowId" = desired."sourceRowId",
+          "severity" = desired."severity"::"CostValidationSeverity",
+          "message" = desired."message",
+          "updatedAt" = NOW()
+      FROM (VALUES ${Prisma.join(batch.update.map((issue) => Prisma.sql`(${issue.id}::integer, ${issue.sourceRowId}::integer, ${issue.severity}::text, ${issue.message}::text)`) )})
+        AS desired("id", "sourceRowId", "severity", "message")
+      WHERE issue."id" = desired."id"
+    `;
   }
+}
+
+async function persistSourceRowMappings(
+  tx: Prisma.TransactionClient,
+  rows: Array<{ id: number; coaId: number | null; mappingStatus: string }>
+) {
+  if (!rows.length) return;
+  await tx.$executeRaw`
+    UPDATE "cost_source_rows" AS row
+    SET "coaId" = desired."coaId",
+        "mappingStatus" = desired."mappingStatus",
+        "updatedAt" = NOW()
+    FROM (VALUES ${Prisma.join(rows.map((row) => Prisma.sql`(${row.id}::integer, ${row.coaId}::integer, ${row.mappingStatus}::text)`) )})
+      AS desired("id", "coaId", "mappingStatus")
+    WHERE row."id" = desired."id"
+  `;
 }
 
 function targetIsValid(
@@ -124,6 +143,8 @@ export async function runPhaseD(uploadId: number) {
     if (upload.period.status === CostPeriodStatus.FINALIZED) throw new Error('Periode FINALIZED tidak dapat diubah.');
 
     const results = [];
+    const desiredIssues: DesiredIssueMap = new Map();
+    const sourceRowMappings: Array<{ id: number; coaId: number | null; mappingStatus: string }> = [];
     for (const source of required(upload.period.company.companyCode)) {
       const rows = upload.sourceRows.filter((row) => row.logicalSourceCode === source);
       const result = reconcileCcGroup(rows.map((row) => ({
@@ -196,28 +217,21 @@ export async function runPhaseD(uploadId: number) {
             : mapping.mappingAction === 'EXCLUDE'
               ? 'EXCLUDED'
               : 'RECLASSIFIED';
-          await tx.costSourceRow.updateMany({
-            where: { id: { in: rowIds } },
-            data: { coaId: coa?.id ?? null, mappingStatus: status },
-          });
-          await syncMappingIssue(tx, uploadId, firstRowId, context, null);
+          sourceRowMappings.push(...rowIds.map((id) => ({ id, coaId: coa?.id ?? null, mappingStatus: status })));
+          setMappingIssue(desiredIssues, firstRowId, context, null);
           continue;
         }
 
-        await tx.costSourceRow.updateMany({
-          where: { id: { in: rowIds } },
-          data: { coaId: coa?.id ?? null, mappingStatus: 'UNMAPPED' },
-        });
+        sourceRowMappings.push(...rowIds.map((id) => ({ id, coaId: coa?.id ?? null, mappingStatus: 'UNMAPPED' })));
 
         const hasNonZero = coaRows.some((row) => row.amount && !row.amount.isZero());
         if (mappings.length > 1) {
-          await syncMappingIssue(tx, uploadId, firstRowId, context, 'MAPPING_AMBIGUOUS', 'ERROR', 'Lebih dari satu mapping efektif.');
+          setMappingIssue(desiredIssues, firstRowId, context, 'MAPPING_AMBIGUOUS', 'ERROR', 'Lebih dari satu mapping efektif.');
         } else if (mappings.length === 1) {
-          await syncMappingIssue(tx, uploadId, firstRowId, context, 'MAPPING_TARGET_INVALID', 'ERROR', 'Target mapping tidak lagi aktif/valid atau bukan Nature MAPPED.');
+          setMappingIssue(desiredIssues, firstRowId, context, 'MAPPING_TARGET_INVALID', 'ERROR', 'Target mapping tidak lagi aktif/valid atau bukan Nature MAPPED.');
         } else {
-          await syncMappingIssue(
-            tx,
-            uploadId,
+          setMappingIssue(
+            desiredIssues,
             firstRowId,
             context,
             'UNMAPPED_COA',
@@ -234,8 +248,11 @@ export async function runPhaseD(uploadId: number) {
           : result.issueCode
             ? `Detail ${result.detailAmount} tidak sama dengan reported ${result.reportedAmount}; selisih ${result.difference}.`
             : null;
-      await syncSourceIssue(tx, uploadId, source, result.issueCode, message);
+      setSourceIssue(desiredIssues, source, result.issueCode, message);
     }
+
+    await persistSourceRowMappings(tx, sourceRowMappings);
+    await persistIssueBatch(tx, uploadId, desiredIssues);
 
     const supportRows = upload.sourceRows.filter(
       (row) => !required(upload.period.company.companyCode).includes(row.logicalSourceCode)
