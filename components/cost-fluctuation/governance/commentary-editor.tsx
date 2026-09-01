@@ -3,14 +3,16 @@ import { useState } from 'react';
 import { commentaryActions, type GovernancePermissions } from '@/lib/cost-fluctuation/governance/presentation';
 import { CommentaryStatusBadge } from './commentary-status-badge';
 
-export type CommentaryView = { id: number; analysisKey: string; status: string; reason: string; reviewerNote?: string | null; preparedBy?: { id: number; name: string }; reviewedBy?: { id: number; name: string }; history?: Array<{ id: number; version: number; status: string; reason: string; reviewerNote?: string | null; createdAt?: string }> };
+export type CommentaryView = { id: number; analysisKey: string; status: string; reason: string; generatedText?: string | null; reviewerNote?: string | null; preparedBy?: { id: number; name: string }; reviewedBy?: { id: number; name: string }; history?: Array<{ id: number; version: number; status: string; reason: string; reviewerNote?: string | null; createdAt?: string }> };
 
-export function CommentaryEditor({ analysisKey, commentary, permissions, currentUserId, busy, onAction }: { analysisKey: string; commentary?: CommentaryView; permissions: GovernancePermissions; currentUserId?: number; busy: boolean; onAction: (action: 'draft'|'submit'|'return'|'review', payload?: string) => Promise<void> }) {
-  const [reason, setReason] = useState(commentary?.reason ?? '');
+export function CommentaryEditor({ analysisKey, commentary, suggestedText, context, permissions, currentUserId, busy, onAction }: { analysisKey: string; commentary?: CommentaryView; suggestedText?: string; context?: React.ReactNode; permissions: GovernancePermissions; currentUserId?: number; busy: boolean; onAction: (action: 'draft'|'submit'|'return'|'review', payload?: string) => Promise<void> }) {
+  const [reason, setReason] = useState(commentary?.reason ?? suggestedText ?? '');
   const [note, setNote] = useState('');
   const actions = commentaryActions(commentary?.status, permissions, commentary?.preparedBy?.id, currentUserId);
   return <aside className="space-y-4 rounded-xl border bg-white p-5" aria-label="Commentary workflow">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-medium uppercase text-slate-500">Exact analytical target</p><p className="break-all font-medium">{analysisKey}</p></div><CommentaryStatusBadge status={commentary?.status} /></div>
+    {context}
+    {(commentary?.generatedText || suggestedText) && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm"><strong>Penjelasan kuantitatif sistem</strong><p className="mt-1 whitespace-pre-wrap text-slate-700">{commentary?.generatedText ?? suggestedText}</p><p className="mt-2 text-xs text-blue-800">Baseline sistem menjelaskan apa yang berubah, bukan justifikasi bisnis. Baseline tersimpan secara terpisah saat draft pertama disimpan.</p></div>}
     {commentary?.status === 'RETURNED' && <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm"><strong>Returned by checker.</strong><p>{commentary.reviewerNote}</p><p className="mt-1 text-xs">Edit and save to return this item to DRAFT before submitting again.</p></div>}
     {actions.immutable && <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm">Reviewed commentary is immutable. Its approved explanation remains audit-visible.</div>}
     {actions.makerCheckerBlocked && <div className="rounded border border-blue-200 bg-blue-50 p-3 text-sm">Maker/checker control: the preparer cannot return or review the same submitted commentary.</div>}

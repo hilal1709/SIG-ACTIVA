@@ -36,7 +36,8 @@ export function filterTree(nodes: AnalysisNode[], filters: Filters, commentaries
     const children = node.children?.map((child) => visit(child, nextGroup, nextNature)).filter((child): child is AnalysisNode => child !== null);
     const inScope = (!filters.group || nextGroup === filters.group) && (!filters.nature || nextNature === filters.nature);
     const material = !filters.materialOnly || node.materialityStatus === 'REQUIRES_EXPLANATION';
-    const needsCommentary = !filters.needsCommentary || (node.materialityStatus === 'REQUIRES_EXPLANATION' && statuses.get(node.key) !== 'REVIEWED');
+    const workflowIncomplete = ['DRAFT', 'RETURNED', 'SUBMITTED'].includes(statuses.get(node.key) ?? '');
+    const needsCommentary = !filters.needsCommentary || ((node.materialityStatus === 'REQUIRES_EXPLANATION' && statuses.get(node.key) !== 'REVIEWED') || workflowIncomplete);
     if ((inScope && material && needsCommentary) || children?.length) return { ...node, children };
     return null;
   };
