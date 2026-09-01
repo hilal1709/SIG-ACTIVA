@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { financial, ZERO } from './math';
-import type { AnalysisBasisCode, AnalyticalSnapshot, PersistedPeriod, PersistedSourceRow, SnapshotBasis, SnapshotGroup, SnapshotItem, SnapshotNature } from './types';
+import type { AnalysisBasisCode, AnalyticalSnapshot, Lineage, PersistedPeriod, PersistedSourceRow, SnapshotBasis, SnapshotGroup, SnapshotItem, SnapshotNature } from './types';
 
 export class FluctuationIntegrityError extends Error { constructor(message: string) { super(message); this.name = 'FluctuationIntegrityError'; } }
 const CANONICAL: Record<string, readonly string[]> = { '2000': ['TOTAL_ADUM', 'TOTAL_PASAR'], '7000': ['TOTAL_HPP', 'TOTAL_ADUM', 'TOTAL_PASAR'] };
@@ -87,28 +87,43 @@ function engineGroups(period: PersistedPeriod, basisCode: AnalysisBasisCode): Sn
 }
 
 const natureSemantic = (nature: SnapshotNature) => canonicalLabel(nature.label);
-function assertEngineParity(groups: SnapshotGroup[], audit: ParsedAudit, sourceCode: string) {
-  for (const group of groups) for (const nature of group.natures) {
-    const key = `${group.code}:${natureSemantic(nature)}`;
-    const expected = audit.values.get(key);
-    if (expected === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required Nature ${group.code}/${nature.code}.`);
-    if (!financial(nature.amount).equals(expected)) throw new FluctuationIntegrityError(`${sourceCode} parity failed for ${group.code}/${nature.code}.`);
+const auditGroupValues = (audit: ParsedAudit, groupCode: string) => [...audit.values.entries()].filter(([key]) => key.startsWith(`${groupCode}:`));
+function assertPrimaryAuditIntegrity(groups: SnapshotGroup[], audit: ParsedAudit, sourceCode: string) {
+  const groupCodes = new Set(groups.map((group) => group.code));
+  for (const [key, amount] of audit.values) {
+    const groupCode = key.split(':', 1)[0];
+    if (!groupCodes.has(groupCode) && !amount.isZero()) throw new FluctuationIntegrityError(`${sourceCode} contains unexpected non-zero ${groupCode} Nature data.`);
   }
+  for (const [key, amount] of audit.totals) {
+    const groupCode = key === 'PASAR_REGULAR' || key === 'PASAR_TOTAL' ? 'PASAR' : key;
+    if (!groupCodes.has(groupCode) && !amount.isZero()) throw new FluctuationIntegrityError(`${sourceCode} contains unexpected non-zero Total ${groupCode}.`);
+  }
+
   for (const group of groups) {
-    let total = audit.totals.get(group.code);
+    for (const nature of group.natures) {
+      const key = `${group.code}:${natureSemantic(nature)}`;
+      if (!audit.values.has(key)) throw new FluctuationIntegrityError(`${sourceCode} is missing required Nature ${group.code}/${nature.code}.`);
+    }
+
+    const values = auditGroupValues(audit, group.code);
     if (group.code === 'PASAR') {
       const regular = audit.totals.get('PASAR_REGULAR');
       if (regular === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required PASAR regular total.`);
+      const regularLeaves = values.filter(([key]) => key !== 'PASAR:oa').reduce((sum, [, amount]) => sum.add(amount), ZERO);
+      if (!financial(regularLeaves).equals(financial(regular))) throw new FluctuationIntegrityError(`${sourceCode} PASAR leaf sum does not match its persisted regular total control.`);
       if (sourceCode === 'AUDIT_GHOPO') {
         const oa = audit.values.get('PASAR:oa');
         if (oa === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required OA source.`);
-        total = regular.add(oa);
         const persistedTotal = audit.totals.get('PASAR_TOTAL');
-        if (persistedTotal !== undefined && !financial(persistedTotal).equals(financial(total))) throw new FluctuationIntegrityError(`${sourceCode} PASAR total does not equal regular plus OA.`);
-      } else total = regular;
+        if (persistedTotal !== undefined && !financial(regular.add(oa)).equals(financial(persistedTotal))) throw new FluctuationIntegrityError(`${sourceCode} PASAR total does not equal regular plus OA.`);
+      }
+      continue;
     }
+
+    const total = audit.totals.get(group.code);
     if (total === undefined) throw new FluctuationIntegrityError(`${sourceCode} is missing required Total ${group.code}.`);
-    if (!financial(group.amount).equals(financial(total))) throw new FluctuationIntegrityError(`${sourceCode} parity failed for Total ${group.code}.`);
+    const leaves = values.reduce((sum, [, amount]) => sum.add(amount), ZERO);
+    if (!financial(leaves).equals(financial(total))) throw new FluctuationIntegrityError(`${sourceCode} ${group.code} leaf sum does not match its persisted total control.`);
   }
 }
 
@@ -142,7 +157,7 @@ export function assertSnapshotReconciles(snapshot: AnalyticalSnapshot) {
   for (const basis of snapshot.bases) {
     if (!basis.groups.reduce((s, g) => s.add(g.amount), ZERO).equals(basis.amount)) throw new FluctuationIntegrityError(`Analysis Basis ${basis.code} does not reconcile to its Cost Groups.`);
     for (const group of basis.groups) {
-    if (!group.natures.reduce((s, n) => s.add(n.amount), ZERO).equals(group.amount)) throw new FluctuationIntegrityError(`Cost Group ${basis.code}/${group.code} does not reconcile to its Natures.`);
+      if (!group.natures.reduce((s, n) => s.add(n.amount), ZERO).equals(group.amount)) throw new FluctuationIntegrityError(`Cost Group ${basis.code}/${group.code} does not reconcile to its Natures.`);
       for (const nature of group.natures) if (!nature.items.reduce((s, i) => s.add(i.amount), ZERO).equals(nature.amount)) throw new FluctuationIntegrityError(`Nature ${basis.code}/${group.code}/${nature.code} does not reconcile to its analytical items.`);
     }
   }
@@ -159,12 +174,21 @@ export function buildFinalizedMonthlySnapshot(period: PersistedPeriod | null): A
   if (!financial(totals[0].amount).equals(financial(engineTotal))) throw new FluctuationIntegrityError(`TOTAL_COMPANY does not reconcile to canonical Cost Groups for Company ${period.companyCode}.`);
   const labels = new Set(groups.flatMap((g) => g.natures.map(natureSemantic)));
   const sourceRows = run.sourceRows.filter((row) => row.uploadId === run.uploadId);
-  const audit = parseAudit(sourceRows, basisCode === 'SI' ? 'AUDIT_SI' : 'AUDIT_GHOPO', labels, true); assertEngineParity(groups, audit, `AUDIT_${basisCode}`);
+  const primarySourceCode = basisCode === 'SI' ? 'AUDIT_SI' : 'AUDIT_GHOPO';
+  const audit = parseAudit(sourceRows, primarySourceCode, labels, true);
+  assertPrimaryAuditIntegrity(groups, audit, primarySourceCode);
+
   const bases: SnapshotBasis[] = [{ key: `basis:${basisCode}`, id: null, basisCode, code: basisCode, label: basisCode === 'GHOPO' ? 'GHoPO' : 'SI', amount: totals[0].amount, order: 1, groups }];
+  const lineage: Lineage[] = [{ periodId: period.id, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, runId: run.id, ruleSetVersion: run.ruleSetVersion, uploadId: run.uploadId, basisCode }];
   if (basisCode === 'GHOPO') {
     const derivRows = sourceRows.filter((row) => row.logicalSourceCode === 'AUDIT_DERIV');
-    bases.push(derivRows.length ? derivBasis(groups, parseAudit(sourceRows, 'AUDIT_DERIV', labels, true)) : zeroDerivBasis(groups));
+    if (derivRows.length) {
+      bases.push(derivBasis(groups, parseAudit(sourceRows, 'AUDIT_DERIV', labels, true)));
+      lineage.push({ periodId: period.id, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, runId: run.id, ruleSetVersion: run.ruleSetVersion, uploadId: run.uploadId, basisCode: 'DERIV' });
+    } else {
+      bases.push(zeroDerivBasis(groups));
+    }
   }
-  const snapshot: AnalyticalSnapshot = { companyId: period.companyId, companyCode: period.companyCode, amount: bases.reduce((s, b) => s.add(b.amount), ZERO), bases, lineage: bases.map((b) => ({ periodId: period.id, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, runId: run.id, ruleSetVersion: run.ruleSetVersion, uploadId: run.uploadId, basisCode: b.basisCode })) };
+  const snapshot: AnalyticalSnapshot = { companyId: period.companyId, companyCode: period.companyCode, amount: bases.reduce((s, b) => s.add(b.amount), ZERO), bases, lineage };
   assertSnapshotReconciles(snapshot); return snapshot;
 }

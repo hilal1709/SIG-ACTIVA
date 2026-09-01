@@ -25,3 +25,9 @@ export function validToBeforeNext(effectiveDate: Date, intervals: Interval[]) {
     .sort((left, right) => left.validFrom.getTime() - right.validFrom.getTime())[0];
   return next ? previousDay(next.validFrom) : null;
 }
+
+export function boundBeforeProtectedPeriod(candidateValidTo: Date | null, protectedPeriodStart: Date | null) {
+  if (!protectedPeriodStart) return candidateValidTo;
+  const protectedCutoff = previousDay(protectedPeriodStart);
+  return candidateValidTo === null || protectedCutoff < candidateValidTo ? protectedCutoff : candidateValidTo;
+}

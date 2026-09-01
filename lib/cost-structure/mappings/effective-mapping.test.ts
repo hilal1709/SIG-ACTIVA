@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { appliesAt, overlapping, previousDay, validToBeforeNext } from './effective-mapping';
+import { appliesAt, boundBeforeProtectedPeriod, overlapping, previousDay, validToBeforeNext } from './effective-mapping';
 
 describe('effective-dated source mapping', () => {
   it('M-003 selects an inclusive interval', () => {
@@ -29,5 +29,12 @@ describe('effective-dated source mapping', () => {
       { validFrom: new Date('2026-07-01'), validTo },
       { validFrom: new Date('2027-01-01'), validTo: null },
     ]), false);
+  });
+
+  it('automatically stops a new mapping before the first FINALIZED period', () => {
+    const candidate = new Date('2026-06-30');
+    const bounded = boundBeforeProtectedPeriod(candidate, new Date('2026-03-01'));
+    assert.equal(bounded?.toISOString().slice(0, 10), '2026-02-28');
+    assert.equal(boundBeforeProtectedPeriod(candidate, null)?.toISOString().slice(0, 10), '2026-06-30');
   });
 });
