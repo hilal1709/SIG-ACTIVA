@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs';
+import { Prisma } from '@prisma/client';
 import type { ComparedNode, ComparisonType } from '../analysis/types';
 
 type Commentary = {
@@ -13,21 +14,44 @@ type Commentary = {
   preparedBy?: { name: string } | null;
   reviewedBy?: { name: string } | null;
 };
-type SuggestedDriver = { key: string; rank: number; grossImpactShare: string };
+type SuggestedDriver = {
+  key: string;
+  rank: number;
+  grossImpactShare: string;
+  varianceAmount: string;
+  direction: 'PRIMARY' | 'OFFSET' | 'NEUTRAL';
+};
 type Node = ComparedNode & {
   materialityStatus?: string;
   suggestedCommentary?: { text: string; drivers: SuggestedDriver[] };
 };
+type PeriodRef = { fiscalYear: number; fiscalPeriod: number };
 type ExportData = {
   hierarchy: Node[];
   companyCode?: string;
   comparisonLabel: string;
   analysisLineageKey: string;
   commentaries: Commentary[];
+  current: { periods: PeriodRef[] };
+  comparison: { periods: PeriodRef[] };
 };
 
 const safe = (value: string | null | undefined) => value && /^[=+\-@]/.test(value) ? `'${value}` : value ?? '';
-const num = (value: string | null) => value === null ? null : Number(value);
+const excelNumber = (value: string | null | undefined) => {
+  if (value === null || value === undefined) return null;
+  const decimal = new Prisma.Decimal(value);
+  const number = decimal.toNumber();
+  if (!Number.isFinite(number) || !new Prisma.Decimal(number.toString()).eq(decimal)) {
+    throw new Error(`Financial value cannot be represented safely in Excel numeric format: ${value}`);
+  }
+  return number;
+};
+const periodLabel = (period: PeriodRef) => `${period.fiscalYear}-P${String(period.fiscalPeriod).padStart(2, '0')}`;
+const periodRangeLabel = (periods: PeriodRef[]) => {
+  if (!periods.length) return '';
+  if (periods.length === 1) return periodLabel(periods[0]);
+  return `${periodLabel(periods[0])} s.d. ${periodLabel(periods[periods.length - 1])}`;
+};
 
 export async function buildFluctuationWorkbook(data: ExportData, comparisonType: ComparisonType, generatedAt = new Date()) {
   const workbook = new ExcelJS.Workbook();
@@ -37,30 +61,37 @@ export async function buildFluctuationWorkbook(data: ExportData, comparisonType:
   const root = data.hierarchy[0];
   const comments = new Map(data.commentaries.map((row) => [row.analysisKey, row]));
   const allNodes = flatten(data.hierarchy);
+  const currentPeriod = periodRangeLabel(data.current.periods);
+  const comparisonPeriod = periodRangeLabel(data.comparison.periods);
 
   const summary = workbook.addWorksheet('Summary', { views: [{ state: 'frozen', ySplit: 1 }] });
   summary.addRow(['Analisis Fluktuasi SIG ACTIVA', 'Nilai']);
-  [
+  const summaryRows: Array<[string, ExcelJS.CellValue]> = [
     ['Company Code', root?.code ?? data.companyCode ?? ''],
     ['Comparison Type', comparisonType],
+    ['Current Period/Range', currentPeriod],
+    ['Comparison Period/Range', comparisonPeriod],
     ['Comparison Label', data.comparisonLabel],
     ['Generated At', generatedAt],
     ['Analysis Lineage Key', data.analysisLineageKey],
-    ['Current Total', num(root?.currentAmount ?? '0')],
-    ['Comparison Total', num(root?.comparisonAmount ?? '0')],
-    ['Variance', num(root?.varianceAmount ?? '0')],
-    ['Variance %', root?.variancePercent === null ? null : Number(root?.variancePercent ?? 0) / 100],
+    ['Current Total', excelNumber(root?.currentAmount ?? '0')],
+    ['Comparison Total', excelNumber(root?.comparisonAmount ?? '0')],
+    ['Variance', excelNumber(root?.varianceAmount ?? '0')],
+    ['Variance %', root?.variancePercent === null ? null : excelNumber(root?.variancePercent ?? '0')! / 100],
     ['Requires Commentary', allNodes.filter((node) => node.materialityStatus === 'REQUIRES_EXPLANATION').length],
-  ].forEach((row) => summary.addRow(row));
+  ];
+  summaryRows.forEach((row) => summary.addRow(row));
 
   allNodes
-    .filter((node) => ['COST_GROUP', 'NATURE'].includes(node.nodeType) && Number(node.varianceAmount) !== 0)
-    .sort((a, b) => Math.abs(Number(b.varianceAmount)) - Math.abs(Number(a.varianceAmount)) || a.key.localeCompare(b.key))
+    .filter((node) => ['COST_GROUP', 'NATURE'].includes(node.nodeType) && !new Prisma.Decimal(node.varianceAmount).isZero())
+    .sort((a, b) => new Prisma.Decimal(b.varianceAmount).abs().cmp(new Prisma.Decimal(a.varianceAmount).abs()) || a.key.localeCompare(b.key))
     .slice(0, 10)
     .forEach((node, index) => summary.addRow([`Major Driver ${index + 1}`, `${node.nodeType} · ${node.code} · ${node.label} · ${node.varianceAmount}`]));
   summary.getColumn(1).width = 28;
   summary.getColumn(2).width = 80;
-  summary.getColumn(2).numFmt = '#,##0.00;[Red]-#,##0.00';
+  summary.getCell('B7').numFmt = 'yyyy-mm-dd hh:mm:ss';
+  for (const row of [9, 10, 11]) summary.getCell(row, 2).numFmt = '#,##0.00;[Red]-#,##0.00';
+  summary.getCell(12, 2).numFmt = '0.00%';
   style(summary, 1);
 
   const detail = workbook.addWorksheet('Detail Analysis', { views: [{ state: 'frozen', ySplit: 1 }] });
@@ -71,24 +102,24 @@ export async function buildFluctuationWorkbook(data: ExportData, comparisonType:
     const driver = row.parent?.suggestedCommentary?.drivers.find((candidate) => candidate.key === row.node.key);
     detail.addRow([
       root?.code ?? '',
-      data.comparisonLabel.split(' vs ')[0] ?? '',
+      currentPeriod,
       comparisonType,
-      data.comparisonLabel,
+      comparisonPeriod,
       row.basis,
       row.node.nodeType,
       row.group,
       row.nature,
       row.item,
-      row.node.label,
-      num(row.node.currentAmount),
-      num(row.node.comparisonAmount),
-      num(row.node.varianceAmount),
-      row.node.variancePercent === null ? null : Number(row.node.variancePercent) / 100,
+      safe(row.node.label),
+      excelNumber(row.node.currentAmount),
+      excelNumber(row.node.comparisonAmount),
+      excelNumber(row.node.varianceAmount),
+      row.node.variancePercent === null ? null : excelNumber(row.node.variancePercent)! / 100,
       row.node.variancePercentStatus,
-      row.node.contribution === null ? null : Number(row.node.contribution) / 100,
+      row.node.contribution === null ? null : excelNumber(row.node.contribution)! / 100,
       row.node.contributionBasis,
       driver?.rank ?? null,
-      driver ? Number(driver.grossImpactShare) : null,
+      driver ? excelNumber(driver.grossImpactShare) : null,
       row.node.materialityStatus ?? '',
       comment?.status ?? '',
       safe(comment?.reason),
@@ -104,16 +135,16 @@ export async function buildFluctuationWorkbook(data: ExportData, comparisonType:
   for (const row of allNodes.filter((node) => !['COMPANY', 'ANALYSIS_BASIS'].includes(node.nodeType))) {
     const commentary = comments.get(row.key);
     governance.addRow([
-      row.label,
+      safe(row.label),
       row.nodeType,
       row.materialityStatus ?? '',
       safe(commentary?.generatedText ?? row.suggestedCommentary?.text),
       safe(commentary?.reason),
       commentary?.status ?? 'OPEN',
-      commentary?.preparedBy?.name ?? '',
+      safe(commentary?.preparedBy?.name),
       commentary?.preparedAt ?? null,
       commentary?.submittedAt ?? null,
-      commentary?.reviewedBy?.name ?? '',
+      safe(commentary?.reviewedBy?.name),
       safe(commentary?.reviewerNote),
       commentary?.reviewedAt ?? null,
       data.analysisLineageKey,
@@ -157,7 +188,7 @@ function formatTable(sheet: ExcelJS.Worksheet, count: number) {
     sheet.getColumn(index).width = Math.min(50, Math.max(14, String(sheet.getCell(1, index).value).length + 2));
   }
   for (const index of [11, 12, 13, 14, 16, 19]) {
-    sheet.getColumn(index).numFmt = index === 14 || index === 19 ? '0.00%' : '#,##0.00;[Red]-#,##0.00';
+    sheet.getColumn(index).numFmt = [14, 16, 19].includes(index) ? '0.00%' : '#,##0.00;[Red]-#,##0.00';
   }
   sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: sheet.rowCount, column: count } };
 }
