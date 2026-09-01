@@ -26,6 +26,26 @@ test('CC_DRV uses eight-digit details only, ignores subtotals, and reconciles De
   assert.equal(parsed.difference.toString(), '0');
 });
 
+test('CC_DRV keeps header/meta rows audit-visible without parsing their text as Decimal', () => {
+  const parsed = parseCompany2000Derivative([
+    row(1,'AUDIT_CC_DRV',{COLUMN_29:'Row Labels',COLUMN_30:'Sum of Act. Costs'}),
+    row(2,'AUDIT_CC_DRV',{COLUMN_29:'621',COLUMN_30:'26690003'}),
+    row(3,'AUDIT_CC_DRV',{COLUMN_29:'62140002 GASOLINE CONSUMPT',COLUMN_30:'26690003'}),
+    row(4,'AUDIT_CC_DRV',{COLUMN_29:'Grand Total',COLUMN_30:'26690003'}),
+  ]);
+  assert.deepEqual(parsed.details.map((item)=>item.coaCode), ['62140002']);
+  assert.equal(parsed.detailTotal.toString(), '26690003');
+  assert.equal(parsed.controlTotal.toString(), '26690003');
+  assert.equal(parsed.difference.toString(), '0');
+});
+
+test('CC_DRV still rejects malformed Decimal on a real eight-digit detail row', () => {
+  assert.throws(() => parseCompany2000Derivative([
+    row(1,'AUDIT_CC_DRV',{COLUMN_29:'62140002 GASOLINE CONSUMPT',COLUMN_30:'not-an-amount'}),
+    row(2,'AUDIT_CC_DRV',{COLUMN_29:'Grand Total',COLUMN_30:'0'}),
+  ]), /Invalid Decimal amount at AUDIT_CC_DRV row 1/);
+});
+
 test('CC_DRV is optional and missing historical source has zero semantics', () => {
   const parsed = parseCompany2000Derivative([
     row(1, 'AUDIT_RINCIAN', { COLUMN_2: 'G/L acc', COLUMN_5: 'ADM', COLUMN_6: 'PASAR' }),
