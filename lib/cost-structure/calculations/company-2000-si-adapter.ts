@@ -70,6 +70,12 @@ export function parseCompany2000Rincian(rows: PersistedSupportRow[]): { ADUM: Si
  * Parses eight-digit CC_DRV details and reconciles them to the persisted Grand Total when the
  * source contributes. CC derivatif is period-optional: no persisted rows, or a present sheet with
  * only blank/zero amounts, has Excel-style zero semantics and does not alter final SI.
+ *
+ * Persisted AUDIT_CC_DRV intentionally retains workbook header, subtotal, and blank rows for
+ * lineage. Only an eight-digit COA row or Grand Total row is financial evidence, so classify the
+ * row before parsing COLUMN_30. This keeps labels such as "Sum of Act. Costs" audit-visible
+ * without ever treating them as Decimal amounts, while malformed amounts on real data/control
+ * rows still fail loudly.
  */
 export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { details: SiSupportAmount[]; detailTotal: Prisma.Decimal; controlTotal: Prisma.Decimal; difference: Prisma.Decimal } {
   const derivativeRows = rows.filter((item) => item.logicalSourceCode === 'AUDIT_CC_DRV');
@@ -79,14 +85,16 @@ export function parseCompany2000Derivative(rows: PersistedSupportRow[]): { detai
   let controlTotal: Prisma.Decimal | null = null;
   let hasNonZeroAmount = false;
   for (const row of derivativeRows) {
-    const amountValue = cell(row, 30);
-    const amount = decimal(amountValue, `AUDIT_CC_DRV row ${row.sourceRowNumber}`);
-    if (!amount.isZero()) hasNonZeroAmount = true;
-
     const label = String(cell(row, 29) ?? '').trim();
     const coaCode = label.match(/^\s*(\d{8})(?:\s|$)/)?.[1];
+    const isGrandTotal = normalized(label) === 'GRAND TOTAL';
+    if (!coaCode && !isGrandTotal) continue;
+
+    const amount = decimal(cell(row, 30), `AUDIT_CC_DRV row ${row.sourceRowNumber}`);
+    if (!amount.isZero()) hasNonZeroAmount = true;
+
     if (coaCode) details.push({ sourceRowId: row.id, sourceRowNumber: row.sourceRowNumber, coaCode, amount });
-    else if (normalized(label) === 'GRAND TOTAL') controlTotal = amount;
+    else controlTotal = amount;
   }
 
   const detailTotal = details.reduce((sum, item) => sum.add(item.amount), zero());
