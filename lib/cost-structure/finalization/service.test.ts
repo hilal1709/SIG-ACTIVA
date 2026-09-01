@@ -6,7 +6,7 @@ import { assertFinalizationReady, assertReconciliationReady, type FinalizationSn
 const control = (resultCode: string, difference = '0.00', status = 'RECONCILED') => ({ resultCode, resultType: 'CONTROL', reconciliationStatus: status, reconciliationDifference: new Prisma.Decimal(difference) });
 const total = (resultCode: string) => ({ resultCode, resultType: 'TOTAL', reconciliationStatus: null, reconciliationDifference: null });
 const fixture = (companyCode = '2000', periodStatus = 'CALCULATED'): FinalizationSnapshot => ({
-  companyCode, periodStatus, run: { id: 9, status: 'SUCCESS', isActive: true }, unresolvedErrors: 0, sourceReconciled: true, mappingComplete: true,
+  companyCode, periodStatus, run: { id: 9, status: 'SUCCESS', isActive: true, uploadIsActiveVersion: true }, unresolvedErrors: 0, sourceReconciled: true, mappingComplete: true,
   results: companyCode === '7000'
     ? [...['HPP_NATURE_RECONCILIATION', 'ADUM_NATURE_RECONCILIATION', 'PASAR_NATURE_RECONCILIATION'].map((code) => control(code)), ...['TOTAL_HPP', 'TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'].map(total)]
     : [control('ADUM_NATURE_RECONCILIATION'), control('PASAR_NATURE_RECONCILIATION'), ...['TOTAL_ADUM', 'TOTAL_PASAR', 'TOTAL_COMPANY'].map(total)],
@@ -20,6 +20,7 @@ test('missing Company 2000 total blocks', () => { const value = fixture(); value
 test('missing Company 2000 control blocks', () => { const value = fixture(); value.results = value.results.filter((item) => item.resultCode !== 'PASAR_NATURE_RECONCILIATION'); assert.throws(() => assertReconciliationReady(value), /PASAR_NATURE/); });
 test('missing Company 7000 control blocks', () => { const value = fixture('7000'); value.results = value.results.filter((item) => item.resultCode !== 'HPP_NATURE_RECONCILIATION'); assert.throws(() => assertReconciliationReady(value), /HPP_NATURE/); });
 test('failed or inactive run blocks both reconcile and finalize', () => { const failed = fixture(); failed.run!.status = 'FAILED'; assert.throws(() => assertReconciliationReady(failed), /SUCCESS/); const inactive = fixture('7000', 'COST_STRUCTURE_RECONCILED'); inactive.run!.isActive = false; assert.throws(() => assertFinalizationReady(inactive), /tidak aktif/); });
+test('stale upload version blocks reconcile and finalize', () => { const stale = fixture(); stale.run!.uploadIsActiveVersion = false; assert.throws(() => assertReconciliationReady(stale), /upload versi lama/); const staleFinal = fixture('7000', 'COST_STRUCTURE_RECONCILED'); staleFinal.run!.uploadIsActiveVersion = false; assert.throws(() => assertFinalizationReady(staleFinal), /upload versi lama/); });
 test('unresolved validation error blocks', () => { const value = fixture(); value.unresolvedErrors = 1; assert.throws(() => assertReconciliationReady(value), /validation ERROR/); });
 test('source reconciliation and mapping completeness block independently', () => { const source = fixture(); source.sourceReconciled = false; assert.throws(() => assertReconciliationReady(source), /Source reconciliation/); const mapping = fixture(); mapping.mappingComplete = false; assert.throws(() => assertReconciliationReady(mapping), /Mapping completeness/); });
 test('finalized period is immutable', () => { const value = fixture(); value.periodStatus = 'FINALIZED'; assert.throws(() => assertReconciliationReady(value), /immutable/); });

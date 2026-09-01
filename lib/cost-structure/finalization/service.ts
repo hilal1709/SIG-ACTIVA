@@ -15,7 +15,7 @@ async function loadSnapshot(periodId: number, db: SnapshotDb = prisma): Promise<
     where: { id: periodId },
     include: {
       company: { select: { companyCode: true } },
-      activeCalculationRun: { select: { id: true, status: true, isActive: true, uploadId: true } },
+      activeCalculationRun: { select: { id: true, status: true, isActive: true, uploadId: true, upload: { select: { isActiveVersion: true } } } },
     },
   });
   if (!period) return null;
@@ -35,7 +35,12 @@ async function loadSnapshot(periodId: number, db: SnapshotDb = prisma): Promise<
   return {
     companyCode: period.company.companyCode,
     periodStatus: period.status,
-    run: period.activeCalculationRun,
+    run: period.activeCalculationRun ? {
+      id: period.activeCalculationRun.id,
+      status: period.activeCalculationRun.status,
+      isActive: period.activeCalculationRun.isActive,
+      uploadIsActiveVersion: period.activeCalculationRun.upload.isActiveVersion,
+    } : null,
     unresolvedErrors,
     sourceReconciled: reconciliationErrors === 0,
     mappingComplete: unmappedRows === 0,

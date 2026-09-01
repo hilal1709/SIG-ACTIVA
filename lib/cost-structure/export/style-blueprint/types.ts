@@ -40,6 +40,14 @@ export interface RepeatingRangeBlueprint {
   styleRole: StyleRole;
 }
 
+export interface WorksheetPropertiesBlueprint {
+  defaultRowHeight?: number;
+  defaultColWidth?: number;
+  dyDescent?: number;
+  outlineLevelRow?: number;
+  outlineLevelCol?: number;
+}
+
 export interface SheetStyleBlueprint {
   sourceTemplateName?: string;
   aliases?: readonly string[];
@@ -51,6 +59,7 @@ export interface SheetStyleBlueprint {
   autoFilterMinRowCount?: number;
   pageSetup?: Partial<ExcelJS.PageSetup>;
   headerFooter?: Partial<ExcelJS.HeaderFooter>;
+  properties?: WorksheetPropertiesBlueprint;
   state?: ExcelJS.WorksheetState;
   styleCatalog: Readonly<Record<StyleRole, BlueprintCellStyle>>;
   repeatingRanges?: readonly RepeatingRangeBlueprint[];

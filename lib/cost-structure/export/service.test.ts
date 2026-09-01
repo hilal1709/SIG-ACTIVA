@@ -22,17 +22,29 @@ test('Company 7000 export contract contains official and manual-audit sheets', a
   }
 });
 
-test('export fails explicitly when mandatory persisted audit templates are absent', async () => {
+test('mandatory persisted audit templates remain fail-closed', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /requireAuditRows/);
   assert.match(source, /Audit snapshot .* belum dipersist/);
+  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_RINCIAN'/);
 });
 
-test('AUDIT_CC_DRV is period-optional in export while other mandatory audit snapshots remain fail-closed', async () => {
+test('absent historical DERIV is rendered as zero and does not require SI2000_DRV', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /const derivRows = rowsByCode\(allRows, 'AUDIT_DERIV'\)/);
+  assert.match(source, /else writeZeroDerivSheet\(workbook, run\)/);
+  assert.match(source, /if \(hasDeriv\) addSourceSheet\(workbook, 'SI2000_DRV'/);
+  assert.doesNotMatch(source, /writeRawMatrix\(deriv, requireAuditRows\(allRows, 'AUDIT_DERIV'/);
+});
+
+test('AUDIT_CC_DRV remains period-optional', async () => {
   const source = await readFile(servicePath, 'utf8');
   assert.match(source, /addSourceSheet\(workbook, 'cc_drv', rowsByCode\(allRows, 'AUDIT_CC_DRV'\)\)/);
   assert.doesNotMatch(source, /requireAuditRows\(allRows, 'AUDIT_CC_DRV'/);
-  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_DERIV'/);
-  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_RINCIAN'/);
-  assert.match(source, /requireAuditRows\(allRows, 'AUDIT_SI2000_DRV'/);
+});
+
+test('export rejects a SUCCESS run tied to an inactive upload version', async () => {
+  const source = await readFile(servicePath, 'utf8');
+  assert.match(source, /upload\.isActiveVersion/);
+  assert.match(source, /upload versi lama/);
 });
