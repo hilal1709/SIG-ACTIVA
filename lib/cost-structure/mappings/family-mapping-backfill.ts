@@ -2,7 +2,12 @@ import 'server-only';
 import { CostMappingAction, CostPeriodStatus, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { isMappingBlockingAmount } from '@/lib/cost-structure/reconciliation/money';
-import { coaFamilyPrefix, inferFamilyMappingTarget, type FamilyMappingEvidence } from './family-mapping-policy';
+import {
+  coaFamilyPrefixes,
+  inferHierarchicalFamilyMappingTarget,
+  type FamilyMappingEvidence,
+  type HierarchicalFamilyEvidenceLevel,
+} from './family-mapping-policy';
 
 const SOURCES_BY_COMPANY: Record<string, string[]> = {
   '2000': ['CC_ADUM', 'CC_PASAR'],
@@ -14,10 +19,16 @@ function candidateKey(source: string, coaCode: string) {
 }
 
 /**
- * Creates an exact COA mapping only when its four-digit family has a single,
- * deterministic disposition. Same-company evidence wins. Cross-company evidence is
- * allowed only when the current company has no family evidence and all usable mappings
- * for that same source/family agree on action + Cost Group code + Nature code.
+ * Creates an exact COA mapping only when its family has a single deterministic
+ * disposition. Family matching is hierarchical: four digits first, then a guarded
+ * three-digit fallback. A conflicting narrower family fails closed and the broader
+ * family is never used to hide that ambiguity.
+ *
+ * Same-company evidence wins inside each family level. Cross-company evidence is
+ * allowed only when the current company has no usable family evidence and all usable
+ * mappings for that same source/family agree on action + Cost Group code + Nature code.
+ * The broader three-digit fallback additionally requires at least two distinct evidence
+ * COAs in the selected scope.
  *
  * Amounts within the Rp1 de-minimis tolerance are deliberately ignored here. They stay
  * visible for audit but do not justify creating a persistent business mapping.
@@ -46,8 +57,7 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
 
     for (const row of upload.sourceRows) {
       if (!sources.includes(row.logicalSourceCode) || !row.coaCodeRaw) continue;
-      const family = coaFamilyPrefix(row.coaCodeRaw);
-      if (!family) continue;
+      if (!coaFamilyPrefixes(row.coaCodeRaw).length) continue;
       const key = candidateKey(row.logicalSourceCode, row.coaCodeRaw);
       const existing = candidates.get(key) ?? {
         source: row.logicalSourceCode,
@@ -107,6 +117,46 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
     const createdIds: number[] = [];
     let skipped = 0;
 
+    async function loadFamilyEvidence(source: string, familyPrefix: string) {
+      const familyCacheKey = `${source}\u0000${familyPrefix}`;
+      let evidence = familyEvidenceCache.get(familyCacheKey);
+      if (evidence) return evidence;
+
+      const mappings = await tx.costCoaMapping.findMany({
+        where: {
+          sourceLogicalCode: source,
+          active: true,
+          coa: { coaCode: { startsWith: familyPrefix } },
+        },
+        include: {
+          coa: { select: { coaCode: true } },
+          costGroup: true,
+          nature: true,
+        },
+      });
+      evidence = mappings
+        .filter((mapping) => {
+          if (mapping.mappingAction === CostMappingAction.EXCLUDE) return true;
+          if (mapping.mappingAction !== CostMappingAction.INCLUDE) return false;
+          return Boolean(
+            mapping.costGroup?.active &&
+            mapping.costGroup.companyId === mapping.companyId &&
+            mapping.nature?.active &&
+            mapping.nature.calculationType === 'MAPPED' &&
+            mapping.nature.costGroupId === mapping.costGroupId
+          );
+        })
+        .map((mapping) => ({
+          companyId: mapping.companyId,
+          coaCode: mapping.coa.coaCode,
+          mappingAction: mapping.mappingAction,
+          groupCode: mapping.costGroup?.code ?? null,
+          natureCode: mapping.nature?.code ?? null,
+        }));
+      familyEvidenceCache.set(familyCacheKey, evidence);
+      return evidence;
+    }
+
     for (const [key, item] of candidates) {
       const state = occurrence.get(key);
       if (state?.touchesFinalized) { skipped += 1; continue; }
@@ -130,46 +180,17 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
       // Any explicit exact-COA mapping, even a future interval, outranks family inference.
       if (exactMappings.length) { skipped += 1; continue; }
 
-      const family = coaFamilyPrefix(item.coaCode);
-      if (!family) { skipped += 1; continue; }
-      const familyCacheKey = `${item.source}\u0000${family}`;
-      let evidence = familyEvidenceCache.get(familyCacheKey);
-      if (!evidence) {
-        const mappings = await tx.costCoaMapping.findMany({
-          where: {
-            sourceLogicalCode: item.source,
-            active: true,
-            coa: { coaCode: { startsWith: family } },
-          },
-          include: {
-            coa: { select: { coaCode: true } },
-            costGroup: true,
-            nature: true,
-          },
+      const families = coaFamilyPrefixes(item.coaCode);
+      if (!families.length) { skipped += 1; continue; }
+      const levels: HierarchicalFamilyEvidenceLevel[] = [];
+      for (const familyPrefix of families) {
+        levels.push({
+          familyPrefix,
+          evidence: await loadFamilyEvidence(item.source, familyPrefix),
         });
-        evidence = mappings
-          .filter((mapping) => {
-            if (mapping.mappingAction === CostMappingAction.EXCLUDE) return true;
-            if (mapping.mappingAction !== CostMappingAction.INCLUDE) return false;
-            return Boolean(
-              mapping.costGroup?.active &&
-              mapping.costGroup.companyId === mapping.companyId &&
-              mapping.nature?.active &&
-              mapping.nature.calculationType === 'MAPPED' &&
-              mapping.nature.costGroupId === mapping.costGroupId
-            );
-          })
-          .map((mapping) => ({
-            companyId: mapping.companyId,
-            coaCode: mapping.coa.coaCode,
-            mappingAction: mapping.mappingAction,
-            groupCode: mapping.costGroup?.code ?? null,
-            natureCode: mapping.nature?.code ?? null,
-          }));
-        familyEvidenceCache.set(familyCacheKey, evidence);
       }
 
-      const inferred = inferFamilyMappingTarget(evidence, upload.period.companyId);
+      const inferred = inferHierarchicalFamilyMappingTarget(levels, upload.period.companyId);
       if (!inferred) { skipped += 1; continue; }
 
       let costGroupId: number | null = null;
@@ -208,7 +229,7 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
           validFrom,
           validTo: null,
           active: true,
-          note: `Auto family mapping ${family}; ${inferred.scope}; ${inferred.evidenceCount} unanimous evidence row(s); ${inferred.mappingAction}:${inferred.groupCode ?? '-'}:${inferred.natureCode ?? '-'}`,
+          note: `Auto family mapping ${inferred.familyPrefix} (${inferred.familyPrefix.length}-digit); ${inferred.scope}; ${inferred.evidenceCount} unanimous evidence row(s), ${inferred.evidenceCoaCount} distinct COA(s); ${inferred.mappingAction}:${inferred.groupCode ?? '-'}:${inferred.natureCode ?? '-'}`,
           createdById: userId,
         },
       });
@@ -224,9 +245,11 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
           newValueJson: {
             sourceLogicalCode: item.source,
             coaCode: item.coaCode,
-            familyPrefix: family,
+            familyPrefix: inferred.familyPrefix,
+            familyDigits: inferred.familyPrefix.length,
             evidenceScope: inferred.scope,
             evidenceCount: inferred.evidenceCount,
+            evidenceCoaCount: inferred.evidenceCoaCount,
             mappingAction: inferred.mappingAction,
             costGroupId,
             natureId,
@@ -235,7 +258,7 @@ export async function backfillDeterministicFamilyMappings(uploadId: number, user
             validFrom: validFrom.toISOString(),
             validTo: null,
           } as Prisma.InputJsonValue,
-          reason: 'Deterministic four-digit COA family mapping; unanimous evidence only; de-minimis and ambiguous families excluded.',
+          reason: 'Deterministic hierarchical COA family mapping (4-digit then guarded 3-digit); unanimous evidence only; de-minimis and ambiguous families excluded.',
         },
       });
     }
