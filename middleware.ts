@@ -8,7 +8,6 @@ const PUBLIC_API_PATHS = [
   '/api/auth/verify-email',
   '/api/auth/logout',
   '/api/users/check',
-  '/api/internal/cost-structure-style-blueprint', // preview-only extractor; removed before merge
 ];
 const ADMIN_PAGE_PATHS = ['/user-management', '/security-status', '/debug-user'];
 const FINANCE_API_PREFIXES = ['/api/accrual', '/api/prepaid', '/api/fluktuasi', '/api/material-data'];
