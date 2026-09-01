@@ -130,7 +130,11 @@ test('source parity fails closed for missing, unknown, duplicate, and mismatched
     p => { (p.activeRun!.sourceRows.find(r => r.logicalSourceCode === 'AUDIT_SI' && (r.rawDataJson as Record<string,string>).COLUMN_1 === 'Bahan Penolong')!.rawDataJson as Record<string,string>).COLUMN_2 = '1'; },
   ];
   for (const mutate of mutations) { const raw = period('2000'); mutate(raw); assert.throws(() => buildFinalizedMonthlySnapshot(raw), FluctuationIntegrityError); }
-  const missingDeriv = period('7000'); missingDeriv.activeRun!.sourceRows = missingDeriv.activeRun!.sourceRows.filter(r => r.logicalSourceCode !== 'AUDIT_DERIV'); assert.throws(() => buildFinalizedMonthlySnapshot(missingDeriv), /AUDIT_DERIV source is missing/);
+  const missingDeriv = period('7000');
+  missingDeriv.activeRun!.sourceRows = missingDeriv.activeRun!.sourceRows.filter(r => r.logicalSourceCode !== 'AUDIT_DERIV');
+  const historical = buildFinalizedMonthlySnapshot(missingDeriv)!;
+  assert.deepEqual(historical.bases.map((basis) => [basis.code, basis.amount.toFixed(2)]), [['GHOPO', '506478693855.00'], ['DERIV', '0.00']]);
+  assert.deepEqual(historical.lineage.map((line) => line.basisCode), ['GHOPO']);
 });
 
 test('audit parsing accepts only locked headers, controls, and zero unknown rows', () => {
