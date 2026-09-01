@@ -1,9 +1,9 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/readiness';
-import { runCostStructureCalculation } from '@/lib/cost-structure/calculations/run-service';
 import { reconcileCostStructure } from '@/lib/cost-structure/finalization/service';
 import { getPhaseDReport, refreshPeriodReadiness, runPhaseD } from '@/lib/cost-structure/reconciliation/service';
+import { runAutomaticCostStructureCalculation } from './automatic-calculation';
 import { deriveProcessStatus, executeNextProcessStage, type CostStructureProcessStatus, type ProcessBlocker, type ProcessingSnapshot } from './state-machine';
 
 export class CostStructureProcessNotFoundError extends Error {}
@@ -80,14 +80,14 @@ export async function getCostStructureProcessStatus(uploadId: number): Promise<C
 type AdvanceDependencies = {
   status(uploadId: number): Promise<CostStructureProcessStatus>;
   reconcile(uploadId: number): Promise<void>;
-  calculate(periodId: number, userId: number): Promise<void>;
+  calculate(periodId: number, uploadId: number, userId: number): Promise<void>;
   postCheck(periodId: number, userId: number): Promise<void>;
 };
 
 const dependencies: AdvanceDependencies = {
   status: getCostStructureProcessStatus,
   reconcile: async (uploadId) => { await runPhaseD(uploadId); await refreshPeriodReadiness(uploadId); },
-  calculate: async (periodId, userId) => { await runCostStructureCalculation(periodId, userId); },
+  calculate: async (periodId, uploadId, userId) => { await runAutomaticCostStructureCalculation(periodId, uploadId, userId); },
   postCheck: async (periodId, userId) => { await reconcileCostStructure(periodId, userId); },
 };
 
@@ -96,7 +96,7 @@ export async function advanceCostStructureProcess(uploadId: number, userId: numb
   const before = await deps.status(uploadId);
   return executeNextProcessStage(before, {
     RECONCILIATION: () => deps.reconcile(uploadId),
-    CALCULATION: () => deps.calculate(before.periodId, userId),
+    CALCULATION: () => deps.calculate(before.periodId, uploadId, userId),
     POST_CHECK: () => deps.postCheck(before.periodId, userId),
   }, () => deps.status(uploadId));
 }
