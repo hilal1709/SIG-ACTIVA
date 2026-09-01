@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { gzipSync } from 'node:zlib';
 import ExcelJS from 'exceljs';
 import { prisma } from '@/lib/prisma';
 import { costStructureStorage } from '@/lib/cost-structure/storage/supabase-storage';
@@ -83,25 +84,55 @@ function extractSheet(sheet: ExcelJS.Worksheet) {
     const row = sheet.getRow(rowNumber);
     if (row.height !== undefined || row.hidden || row.outlineLevel) rows.push({ row: rowNumber, height: row.height, hidden: row.hidden || undefined, outlineLevel: row.outlineLevel || undefined });
   }
-  const model = sheet.model as unknown as { merges?: string[]; pageMargins?: unknown; properties?: unknown };
-  return { name: sheet.name, state: sheet.state, rowCount: sheet.rowCount, columnCount: sheet.columnCount, views: normalize(sheet.views), pageSetup: normalize(sheet.pageSetup), pageMargins: normalize(model.pageMargins), headerFooter: normalize(sheet.headerFooter), properties: normalize(model.properties), merges: model.merges ?? [], columns, rows, styles, runs };
+  const model = sheet.model as unknown as { merges?: string[]; properties?: unknown };
+  return {
+    name: sheet.name,
+    state: sheet.state,
+    rowCount: sheet.rowCount,
+    columnCount: sheet.columnCount,
+    views: normalize(sheet.views),
+    pageSetup: normalize(sheet.pageSetup),
+    headerFooter: normalize(sheet.headerFooter),
+    properties: normalize(model.properties),
+    merges: model.merges ?? [],
+    autoFilter: normalize(sheet.autoFilter),
+    columns,
+    rows,
+    styles,
+    runs,
+  };
 }
 
 export async function GET(request: NextRequest) {
   if (process.env.VERCEL_ENV === 'production') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   const target = request.nextUrl.searchParams.get('target');
   const [targetPeriod, ...targetSheetParts] = target?.split(':') ?? [];
+  const compressed = targetSheetParts.at(-1)?.toLowerCase() === 'gzip';
+  if (compressed) targetSheetParts.pop();
   const periodId = Number(target ? targetPeriod : request.nextUrl.searchParams.get('periodId'));
   const requestedSheet = target ? targetSheetParts.join(':') || null : request.nextUrl.searchParams.get('sheet');
   if (!Number.isInteger(periodId) || periodId <= 0) return NextResponse.json({ error: 'periodId is required' }, { status: 400 });
-  const period = await prisma.costPeriod.findUnique({ where: { id: periodId }, include: { company: true, activeCalculationRun: { include: { upload: true } } } });
-  const run = period?.activeCalculationRun;
-  if (!period || !run || run.status !== 'SUCCESS' || !run.isActive) return NextResponse.json({ error: 'Active SUCCESS run is required' }, { status: 409 });
-  const bytes = await costStructureStorage.download(run.upload.storageKey);
+
+  const period = await prisma.costPeriod.findUnique({
+    where: { id: periodId },
+    include: {
+      company: true,
+      uploads: { where: { isActiveVersion: true }, orderBy: { version: 'desc' }, take: 1 },
+    },
+  });
+  const upload = period?.uploads[0];
+  if (!period || !upload) return NextResponse.json({ error: 'Active upload is required' }, { status: 409 });
+
+  const bytes = await costStructureStorage.download(upload.storageKey);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as never);
-  if (!requestedSheet) return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: run.upload.originalFileName, sheets: workbook.worksheets.map((sheet) => ({ name: sheet.name, rowCount: sheet.rowCount, columnCount: sheet.columnCount, state: sheet.state })) });
+  if (!requestedSheet) return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: upload.originalFileName, uploadId: upload.id, uploadVersion: upload.version, sheets: workbook.worksheets.map((sheet) => ({ name: sheet.name, rowCount: sheet.rowCount, columnCount: sheet.columnCount, state: sheet.state })) });
   const sheet = workbook.worksheets.find((item) => item.name.trim().toLocaleLowerCase() === requestedSheet.trim().toLocaleLowerCase());
   if (!sheet) return NextResponse.json({ error: `Sheet ${requestedSheet} not found` }, { status: 404 });
-  return NextResponse.json({ companyCode: period.company.companyCode, sheet: extractSheet(sheet) });
+  const extracted = extractSheet(sheet);
+  if (compressed) {
+    const data = gzipSync(Buffer.from(JSON.stringify(extracted), 'utf8'), { level: 9 }).toString('base64');
+    return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: upload.originalFileName, uploadId: upload.id, uploadVersion: upload.version, sheetName: sheet.name, encoding: 'gzip-base64', data });
+  }
+  return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: upload.originalFileName, uploadId: upload.id, uploadVersion: upload.version, sheet: extracted });
 }
