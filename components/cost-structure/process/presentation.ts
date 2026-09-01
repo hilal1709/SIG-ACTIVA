@@ -5,6 +5,10 @@ export function blockerText(blocker: ProcessBlocker): string {
 }
 
 export function blockedActionLabel(stage: ProcessStage): string {
+  // Mapping remediation belongs only to reconciliation. A downstream stage may
+  // mention "mapping" in its persisted error message, but it must retry that
+  // stage rather than send the user back to a now-clean mapping work queue.
+  if (stage.key !== 'RECONCILIATION') return 'Retry proses';
   const haystack = [stage.errorCode, stage.message, ...(stage.blockers ?? []).map(blockerText)].join(' ').toUpperCase();
   return /MAPPING|UNMAPPED|COA/.test(haystack) ? 'Perbaiki mapping' : 'Retry proses';
 }
