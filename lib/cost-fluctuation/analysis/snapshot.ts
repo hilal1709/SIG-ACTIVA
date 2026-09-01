@@ -128,6 +128,15 @@ function derivBasis(template: SnapshotGroup[], audit: ParsedAudit): SnapshotBasi
   return { key: 'basis:DERIV', id: null, basisCode: 'DERIV', code: 'DERIV', label: 'DERIV', amount: groups.reduce((s, g) => s.add(g.amount), ZERO), order: 2, groups };
 }
 
+function zeroDerivBasis(template: SnapshotGroup[]): SnapshotBasis {
+  const groups = template.map((group): SnapshotGroup => {
+    const groupKey = `basis:DERIV:group:${group.id}`;
+    const natures = group.natures.map((nature): SnapshotNature => ({ ...nature, key: `${groupKey}:nature:${nature.id}`, amount: ZERO, items: [] }));
+    return { ...group, key: groupKey, amount: ZERO, natures };
+  });
+  return { key: 'basis:DERIV', id: null, basisCode: 'DERIV', code: 'DERIV', label: 'DERIV', amount: ZERO, order: 2, groups };
+}
+
 export function assertSnapshotReconciles(snapshot: AnalyticalSnapshot) {
   if (!snapshot.bases.reduce((s, b) => s.add(b.amount), ZERO).equals(snapshot.amount)) throw new FluctuationIntegrityError(`Company ${snapshot.companyCode} snapshot does not reconcile to its Analysis Bases.`);
   for (const basis of snapshot.bases) {
@@ -141,7 +150,7 @@ export function assertSnapshotReconciles(snapshot: AnalyticalSnapshot) {
 
 export function buildFinalizedMonthlySnapshot(period: PersistedPeriod | null): AnalyticalSnapshot | null {
   if (!period || period.status !== 'FINALIZED') return null; const run = period.activeRun;
-  if (!run || period.activeCalculationRunId !== run.id || run.periodId !== period.id || run.status !== 'SUCCESS' || !run.isActive) throw new FluctuationIntegrityError(`Finalized period ${period.id} has invalid active calculation-run lineage.`);
+  if (!run || period.activeCalculationRunId !== run.id || run.periodId !== period.id || run.status !== 'SUCCESS' || !run.isActive || !run.uploadIsActiveVersion) throw new FluctuationIntegrityError(`Finalized period ${period.id} has invalid active calculation-run/upload lineage.`);
   if (!CANONICAL[period.companyCode]) throw new FluctuationIntegrityError(`Company ${period.companyCode} is outside the Engine 2 scope.`);
   const totals = run.results.filter((r) => r.resultType === 'TOTAL' && r.resultCode === 'TOTAL_COMPANY'); if (totals.length !== 1) throw new FluctuationIntegrityError(`Finalized period ${period.id} must have exactly one TOTAL_COMPANY result.`);
   const basisCode: AnalysisBasisCode = period.companyCode === '2000' ? 'SI' : 'GHOPO'; const groups = engineGroups(period, basisCode);
@@ -152,7 +161,10 @@ export function buildFinalizedMonthlySnapshot(period: PersistedPeriod | null): A
   const sourceRows = run.sourceRows.filter((row) => row.uploadId === run.uploadId);
   const audit = parseAudit(sourceRows, basisCode === 'SI' ? 'AUDIT_SI' : 'AUDIT_GHOPO', labels, true); assertEngineParity(groups, audit, `AUDIT_${basisCode}`);
   const bases: SnapshotBasis[] = [{ key: `basis:${basisCode}`, id: null, basisCode, code: basisCode, label: basisCode === 'GHOPO' ? 'GHoPO' : 'SI', amount: totals[0].amount, order: 1, groups }];
-  if (basisCode === 'GHOPO') bases.push(derivBasis(groups, parseAudit(sourceRows, 'AUDIT_DERIV', labels, true)));
+  if (basisCode === 'GHOPO') {
+    const derivRows = sourceRows.filter((row) => row.logicalSourceCode === 'AUDIT_DERIV');
+    bases.push(derivRows.length ? derivBasis(groups, parseAudit(sourceRows, 'AUDIT_DERIV', labels, true)) : zeroDerivBasis(groups));
+  }
   const snapshot: AnalyticalSnapshot = { companyId: period.companyId, companyCode: period.companyCode, amount: bases.reduce((s, b) => s.add(b.amount), ZERO), bases, lineage: bases.map((b) => ({ periodId: period.id, fiscalYear: period.fiscalYear, fiscalPeriod: period.fiscalPeriod, runId: run.id, ruleSetVersion: run.ruleSetVersion, uploadId: run.uploadId, basisCode: b.basisCode })) };
   assertSnapshotReconciles(snapshot); return snapshot;
 }
