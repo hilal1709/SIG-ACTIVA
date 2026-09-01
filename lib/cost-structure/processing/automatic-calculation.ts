@@ -11,7 +11,12 @@ const AUTOMATIC_CALCULATION_LOCK_NAMESPACE = 0x534947; // "SIG"
  */
 export async function runAutomaticCostStructureCalculation(periodId: number, uploadId: number, userId: number) {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${AUTOMATIC_CALCULATION_LOCK_NAMESPACE}::integer, ${periodId}::integer)`;
+    await tx.$queryRaw`
+      SELECT 1 AS "locked"
+      FROM (
+        SELECT pg_advisory_xact_lock(${AUTOMATIC_CALCULATION_LOCK_NAMESPACE}::integer, ${periodId}::integer)
+      ) AS advisory_lock
+    `;
 
     const upload = await tx.costUpload.findUnique({
       where: { id: uploadId },
