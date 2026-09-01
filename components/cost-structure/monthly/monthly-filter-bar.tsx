@@ -1,7 +1,7 @@
 'use client';
 
 type Props = { companies: string[]; years: number[]; company: string; year: number | null; status: string; onCompany: (value: string) => void; onYear: (value: number) => void; onStatus: (value: string) => void };
-const statuses = ['ALL', 'SOURCE_VALIDATION', 'SOURCE_RECONCILED', 'CALCULATED', 'FINALIZED'];
+const statuses = ['ALL', 'SOURCE_VALIDATION', 'SOURCE_RECONCILED', 'CALCULATED', 'COST_STRUCTURE_RECONCILED', 'FINALIZED'];
 
 export default function MonthlyFilterBar(props: Props) {
   const control = 'min-h-11 w-full rounded-lg border bg-background px-3 py-2 text-sm sm:w-auto';
