@@ -35,6 +35,14 @@ test('Pareto has one driver and deterministic key tie order', () => {
   assert.deepEqual(selectParetoDrivers(p).map((x) => x.key), ['a', 'm', 'z']);
 });
 
+test('Pareto ordering remains exact beyond JavaScript safe integer precision', () => {
+  const p = node('n', '18014398509481985', {
+    nodeType: 'NATURE',
+    children: [node('a-smaller', '9007199254740992'), node('z-larger', '9007199254740993')],
+  });
+  assert.deepEqual(selectParetoDrivers(p).map((x) => x.key), ['z-larger', 'a-smaller']);
+});
+
 test('distributed movement is stated without pretending one driver dominates', () => {
   const p = node('n', '5', { nodeType: 'NATURE', comparisonAmount: '5', currentAmount: '10', variancePercent: '100', variancePercentStatus: 'AVAILABLE', children: [node('a', '1.9'), node('b', '1.8'), node('c', '1.3')] });
   assert.match(generateCommentary(p, 'MOM', 'Juli vs Juni', 'line')!.text, /tersebar pada beberapa driver/);
