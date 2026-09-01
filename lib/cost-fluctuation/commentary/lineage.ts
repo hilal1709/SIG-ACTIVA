@@ -15,11 +15,12 @@ type LockedLineage = {
   runStatus: string | null;
   isActive: boolean | null;
   ruleSetVersion: string | null;
+  hasDeriv: boolean;
 };
 
 const stale = () => new Error('Commentary lineage is stale.');
 
-/** Locks every represented Cost Period and validates the complete Engine 2 V2 basis lineage at commit time. */
+/** Locks every represented Cost Period and validates the source-backed Engine 2 basis lineage at commit time. */
 export async function assertCurrentLineage(
   tx: Tx,
   comparisonType: ComparisonType,
@@ -34,7 +35,11 @@ export async function assertCurrentLineage(
   await tx.$queryRaw(Prisma.sql`SELECT id FROM cost_periods WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`);
   const rows = await tx.$queryRaw<LockedLineage[]>(Prisma.sql`
     SELECT p.id, c."companyCode", p."fiscalYear", p."fiscalPeriod", p.status::text, p."activeCalculationRunId",
-           r.id AS "runId", r."uploadId", r.status::text AS "runStatus", r."isActive", r."ruleSetVersion"
+           r.id AS "runId", r."uploadId", r.status::text AS "runStatus", r."isActive", r."ruleSetVersion",
+           EXISTS (
+             SELECT 1 FROM cost_source_rows sr
+             WHERE sr."uploadId" = r."uploadId" AND sr."logicalSourceCode" = 'AUDIT_DERIV'
+           ) AS "hasDeriv"
     FROM cost_periods p
     JOIN cost_companies c ON c.id = p."companyId"
     LEFT JOIN cost_calculation_runs r ON r.id = p."activeCalculationRunId"
@@ -64,7 +69,11 @@ export async function assertCurrentLineage(
     const periodLines = expected.filter((line) => line.periodId === periodId);
     const actualBases = periodLines.map((line) => line.basisCode).sort();
     if (new Set(actualBases).size !== actualBases.length) throw stale();
-    const requiredBases = row.companyCode === '2000' ? ['SI'] : row.companyCode === '7000' ? ['DERIV', 'GHOPO'] : null;
+    const requiredBases = row.companyCode === '2000'
+      ? ['SI']
+      : row.companyCode === '7000'
+        ? (row.hasDeriv ? ['DERIV', 'GHOPO'] : ['GHOPO'])
+        : null;
     if (!requiredBases || actualBases.length !== requiredBases.length || actualBases.some((basis, index) => basis !== requiredBases[index])) throw stale();
   }
 

@@ -1,7 +1,7 @@
 import 'server-only';
 import { CostMappingAction, Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { overlapping, previousDay, validToBeforeNext } from './effective-mapping';
+import { boundBeforeProtectedPeriod, overlapping, previousDay, validToBeforeNext } from './effective-mapping';
 import { refreshPeriodReadiness, runPhaseD } from '../reconciliation/service';
 
 export type ResolveMappingInput = {
@@ -69,20 +69,20 @@ export async function resolveSourceMapping(input: ResolveMappingInput, userId: n
       throw new Error('MAPPING_OVERLAP: mapping pada tanggal efektif ini sudah ada.');
     }
 
-    const validTo = validToBeforeNext(effective, existing);
-    const finalized = await tx.costPeriod.findFirst({
+    const candidateValidTo = validToBeforeNext(effective, existing);
+    const firstFinalized = await tx.costPeriod.findFirst({
       where: {
         companyId: upload.period.companyId,
         status: 'FINALIZED',
         periodStart: {
-          gte: effective,
-          ...(validTo ? { lte: validTo } : {}),
+          gt: effective,
+          ...(candidateValidTo ? { lte: candidateValidTo } : {}),
         },
       },
+      orderBy: { periodStart: 'asc' },
+      select: { periodStart: true },
     });
-    if (finalized) {
-      throw new Error('Mapping interval dapat mengubah periode FINALIZED. Buat interval yang tidak mencakup periode tersebut.');
-    }
+    const validTo = boundBeforeProtectedPeriod(candidateValidTo, firstFinalized?.periodStart ?? null);
 
     const covering = existing.find(
       (item) => item.validFrom < effective && (item.validTo === null || item.validTo >= effective)
@@ -159,6 +159,7 @@ export async function resolveSourceMapping(input: ResolveMappingInput, userId: n
           mappingAction: action,
           validFrom: effective.toISOString(),
           validTo: validTo?.toISOString() ?? null,
+          protectedFinalizedPeriodStart: firstFinalized?.periodStart.toISOString() ?? null,
         } as Prisma.InputJsonValue,
         reason: reason || null,
       },
