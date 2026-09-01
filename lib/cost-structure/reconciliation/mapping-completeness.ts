@@ -1,4 +1,4 @@
-import { fromMinor, toMinor } from './money';
+import { fromMinor, isMappingBlockingAmount, toMinor } from './money';
 
 export type MappingCompletenessRow = {
   logicalSourceCode: string;
@@ -21,11 +21,16 @@ export function calculateMappingCompleteness(rows: MappingCompletenessRow[]) {
   const unmapped = total('UNMAPPED');
   const difference = validated - mapped - excluded - reclassified;
 
-  const undisposedNonZero = new Set(
-    rows
-      .filter((row) => !DISPOSED.has(row.mappingStatus) && toMinor(row.amount) !== BigInt(0))
-      .map((row) => `${row.logicalSourceCode}:${row.coaCodeRaw ?? '<missing>'}`)
-  );
+  const undisposedByCoa = new Map<string, bigint>();
+  for (const row of rows) {
+    if (DISPOSED.has(row.mappingStatus)) continue;
+    const key = `${row.logicalSourceCode}:${row.coaCodeRaw ?? '<missing>'}`;
+    undisposedByCoa.set(key, (undisposedByCoa.get(key) ?? BigInt(0)) + toMinor(row.amount));
+  }
+
+  const blocking = [...undisposedByCoa.entries()].filter(([, amount]) => isMappingBlockingAmount(fromMinor(amount)));
+  const deMinimis = [...undisposedByCoa.entries()].filter(([, amount]) => !isMappingBlockingAmount(fromMinor(amount)) && amount !== BigInt(0));
+  const blockingDifference = blocking.reduce((sum, [, amount]) => sum + amount, BigInt(0));
 
   return {
     mappedAmount: fromMinor(mapped),
@@ -33,6 +38,8 @@ export function calculateMappingCompleteness(rows: MappingCompletenessRow[]) {
     reclassifiedAmount: fromMinor(reclassified),
     unmappedAmount: fromMinor(unmapped),
     difference: fromMinor(difference),
-    unmappedCoaCount: undisposedNonZero.size,
+    blockingDifference: fromMinor(blockingDifference),
+    unmappedCoaCount: blocking.length,
+    deMinimisUnmappedCoaCount: deMinimis.length,
   };
 }

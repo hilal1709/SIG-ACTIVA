@@ -20,9 +20,19 @@ type Group = {
   natures: { id: number; code: string; name: string }[];
 };
 
-function isZeroAmount(value: string): boolean {
-  const normalized = value.trim().replace(/^[+-]/, '').replace(/[.,]/g, '');
-  return normalized.length > 0 && /^0+$/.test(normalized);
+type MappingAction = 'INCLUDE' | 'EXCLUDE' | 'RECLASS';
+
+type MappingDialogState = {
+  item: Item;
+  action: MappingAction;
+  groupId: string;
+  natureId: string;
+  reason: string;
+};
+
+function amountIsBlocking(value: string): boolean {
+  const amount = Number(value);
+  return Number.isFinite(amount) && Math.abs(amount) > 1;
 }
 
 export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
@@ -31,6 +41,7 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [rec, setRec] = useState<Record<string, unknown> | null>(null);
   const [map, setMap] = useState<{ items: Item[]; groups: Group[] } | null>(null);
+  const [mappingDialog, setMappingDialog] = useState<MappingDialogState | null>(null);
 
   const load = useCallback(async () => {
     const [a, b, c] = await Promise.all([
@@ -58,18 +69,42 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
     setBusy(false);
   }
 
-  async function resolve(item: Item, action: string) {
-    const groupId = action === 'EXCLUDE' ? undefined : Number(prompt('Cost Group ID:'));
-    const group = map?.groups.find((g) => g.id === groupId);
-    const natureId = action === 'EXCLUDE'
-      ? undefined
-      : Number(prompt(`Nature ID (${group?.natures.map((n) => `${n.id}:${n.name}`).join(', ')}):`));
-    const reason = action === 'INCLUDE'
-      ? prompt('Catatan (opsional):') || ''
-      : prompt(`Alasan ${action} (wajib):`) || '';
-    if (action !== 'INCLUDE' && !reason) return;
+  function openMappingDialog(item: Item, action: MappingAction) {
+    const firstGroup = action === 'EXCLUDE' ? null : map?.groups[0] ?? null;
+    setMappingDialog({
+      item,
+      action,
+      groupId: firstGroup ? String(firstGroup.id) : '',
+      natureId: firstGroup?.natures[0] ? String(firstGroup.natures[0].id) : '',
+      reason: '',
+    });
+    setError('');
+  }
+
+  function updateDialogGroup(groupId: string) {
+    if (!mappingDialog) return;
+    const group = map?.groups.find((item) => String(item.id) === groupId);
+    setMappingDialog({
+      ...mappingDialog,
+      groupId,
+      natureId: group?.natures[0] ? String(group.natures[0].id) : '',
+    });
+  }
+
+  async function submitMapping() {
+    if (!mappingDialog) return;
+    const { item, action, groupId, natureId, reason } = mappingDialog;
+    if (action !== 'EXCLUDE' && (!groupId || !natureId)) {
+      setError('Cost Group dan Nature wajib dipilih.');
+      return;
+    }
+    if ((action === 'EXCLUDE' || action === 'RECLASS') && !reason.trim()) {
+      setError(`Alasan ${action === 'EXCLUDE' ? 'exclude' : 'reclassify'} wajib diisi.`);
+      return;
+    }
 
     setBusy(true);
+    setError('');
     const response = await fetch(`/api/cost-structure/uploads/${uploadId}/mapping/resolve`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -77,16 +112,25 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
         logicalSourceCode: item.logicalSourceCode,
         coaCodeRaw: item.coaCodeRaw,
         mappingAction: action,
-        costGroupId: groupId,
-        natureId,
-        reason,
-        note: reason,
+        costGroupId: action === 'EXCLUDE' ? undefined : Number(groupId),
+        natureId: action === 'EXCLUDE' ? undefined : Number(natureId),
+        reason: reason.trim(),
+        note: reason.trim(),
       }),
     });
     const value = await response.json();
-    if (!response.ok) setError(value.error);
+    if (!response.ok) {
+      setError(value.error ?? 'Resolusi mapping gagal.');
+      setBusy(false);
+      return;
+    }
+
+    setMappingDialog(null);
     await load();
     setBusy(false);
+    // Refresh the process tracker so a newly-ready upload can continue through the
+    // normal automatic stages. FINALIZE remains explicit/manual.
+    window.location.reload();
   }
 
   const upload = (data?.upload ?? {}) as Record<string, unknown>;
@@ -102,13 +146,17 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
     [map]
   );
   const blockingUnmapped = useMemo(
-    () => unmappedItems.filter((item) => !isZeroAmount(item.totalAmount)),
+    () => unmappedItems.filter((item) => amountIsBlocking(item.totalAmount)),
     [unmappedItems]
   );
-  const zeroUnmapped = useMemo(
-    () => unmappedItems.filter((item) => isZeroAmount(item.totalAmount)),
+  const nonBlockingUnmapped = useMemo(
+    () => unmappedItems.filter((item) => !amountIsBlocking(item.totalAmount)),
     [unmappedItems]
   );
+
+  const selectedGroup = mappingDialog && mappingDialog.action !== 'EXCLUDE'
+    ? map?.groups.find((item) => String(item.id) === mappingDialog.groupId) ?? null
+    : null;
 
   return (
     <CostModuleFrame title="Source Reconciliation & Mapping" subtitle="Cost Structure Phase D" contentClassName="p-4 sm:p-6 lg:p-8">
@@ -127,7 +175,15 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
 
         <ProcessWorkflow uploadId={uploadId} />
 
-        <details data-cost-motion className="group min-w-0 rounded-xl border bg-card" open={false}>
+        {blockingUnmapped.length > 0 && (
+          <div data-cost-motion className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+            <div className="font-semibold">Mapping manual diperlukan untuk {blockingUnmapped.length} COA.</div>
+            <p className="mt-1">Sistem sudah mencoba exact mapping dan family COA deterministik. Item yang tersisa harus dikonfirmasi agar mapping baru menjadi reusable untuk periode berikutnya.</p>
+            <a href="#mapping-detail" className="mt-3 inline-flex rounded-md bg-amber-900 px-3 py-2 font-medium text-white">Buka mapping manual</a>
+          </div>
+        )}
+
+        <details data-cost-motion className="group min-w-0 rounded-xl border bg-card" open={blockingUnmapped.length > 0}>
           <summary className="cursor-pointer list-none p-4 font-semibold sm:p-6">Detail proses <span className="ml-1 text-sm font-normal text-muted-foreground group-open:hidden">(tampilkan)</span></summary>
           <div className="min-w-0 space-y-6 px-4 pb-4 sm:px-6 sm:pb-6">
             <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
@@ -137,14 +193,14 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
 
             <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
               <CardHeader><CardTitle>Mapping completeness</CardTitle></CardHeader>
-              <CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{['mappedAmount', 'excludedAmount', 'reclassifiedAmount', 'unmappedAmount', 'unmappedCoaCount', 'difference'].map((key) => <Metric key={key} label={key} value={String(completeness[key] ?? '—')} />)}</div></CardContent>
+              <CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{['mappedAmount', 'excludedAmount', 'reclassifiedAmount', 'unmappedAmount', 'unmappedCoaCount', 'blockingDifference'].map((key) => <Metric key={key} label={key} value={String(completeness[key] ?? '—')} />)}</div></CardContent>
             </Card>
 
             <Card id="mapping-detail" data-cost-hover className="min-w-0 scroll-mt-4 transition-shadow hover:shadow-md">
               <CardHeader><CardTitle>Unmapped COA work queue</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {blockingUnmapped.length === 0 && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Tidak ada COA non-zero yang membutuhkan mapping. Work queue bersih.</div>}
-                {zeroUnmapped.length > 0 && <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">{zeroUnmapped.length} COA masih berstatus UNMAPPED dengan amount 0. Ini non-blocking dan tidak perlu dimapping sampai memiliki nilai.</div>}
+                {blockingUnmapped.length === 0 && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Tidak ada COA material yang membutuhkan mapping. Work queue bersih.</div>}
+                {nonBlockingUnmapped.length > 0 && <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">{nonBlockingUnmapped.length} COA masih UNMAPPED dengan total absolut ≤ Rp1. Item de-minimis ini tetap tercatat untuk audit tetapi tidak memblokir rekonsiliasi.</div>}
                 <Table headers={['Source', 'COA', 'Description', 'Rows', 'Amount', 'Status', 'Action']} rows={blockingUnmapped.map((item) => [
                   item.logicalSourceCode,
                   item.coaCodeRaw,
@@ -153,9 +209,9 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
                   item.totalAmount,
                   item.mappingStatus,
                   <span className="flex flex-wrap gap-2" key={`${item.logicalSourceCode}:${item.coaCodeRaw}`}>
-                    <button onClick={() => resolve(item, 'INCLUDE')} className="font-medium text-primary hover:underline">Map</button>
-                    <button onClick={() => resolve(item, 'EXCLUDE')} className="font-medium text-primary hover:underline">Exclude</button>
-                    <button onClick={() => resolve(item, 'RECLASS')} className="font-medium text-primary hover:underline">Reclassify</button>
+                    <button disabled={busy} onClick={() => openMappingDialog(item, 'INCLUDE')} className="font-medium text-primary hover:underline disabled:opacity-50">Map</button>
+                    <button disabled={busy} onClick={() => openMappingDialog(item, 'EXCLUDE')} className="font-medium text-primary hover:underline disabled:opacity-50">Exclude</button>
+                    <button disabled={busy} onClick={() => openMappingDialog(item, 'RECLASS')} className="font-medium text-primary hover:underline disabled:opacity-50">Reclassify</button>
                   </span>,
                 ])} />
               </CardContent>
@@ -173,6 +229,71 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
           </div>
         </details>
       </div>
+
+      {mappingDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-label="Konfirmasi mapping manual">
+          <div className="w-full max-w-lg rounded-xl bg-background p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold">Konfirmasi mapping manual</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{mappingDialog.item.logicalSourceCode} · COA {mappingDialog.item.coaCodeRaw} · {mappingDialog.item.description ?? '—'}</p>
+                <p className="mt-1 text-sm font-medium">Amount: {mappingDialog.item.totalAmount}</p>
+              </div>
+              <button disabled={busy} onClick={() => setMappingDialog(null)} className="rounded-md border px-2 py-1 text-sm disabled:opacity-50">Tutup</button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium">Action</label>
+                <select
+                  value={mappingDialog.action}
+                  onChange={(event) => {
+                    const action = event.target.value as MappingAction;
+                    const firstGroup = action === 'EXCLUDE' ? null : map?.groups[0] ?? null;
+                    setMappingDialog({ ...mappingDialog, action, groupId: firstGroup ? String(firstGroup.id) : '', natureId: firstGroup?.natures[0] ? String(firstGroup.natures[0].id) : '' });
+                  }}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="INCLUDE">Map / Include</option>
+                  <option value="EXCLUDE">Exclude</option>
+                  <option value="RECLASS">Reclassify</option>
+                </select>
+              </div>
+
+              {mappingDialog.action !== 'EXCLUDE' && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Cost Group</label>
+                    <select value={mappingDialog.groupId} onChange={(event) => updateDialogGroup(event.target.value)} className="w-full rounded-md border bg-background px-3 py-2 text-sm">
+                      {(map?.groups ?? []).map((group) => <option key={group.id} value={group.id}>{group.code}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium">Nature</label>
+                    <select value={mappingDialog.natureId} onChange={(event) => setMappingDialog({ ...mappingDialog, natureId: event.target.value })} className="w-full rounded-md border bg-background px-3 py-2 text-sm">
+                      {(selectedGroup?.natures ?? []).map((nature) => <option key={nature.id} value={nature.id}>{nature.code} · {nature.name}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">Catatan / alasan {mappingDialog.action === 'INCLUDE' ? '(opsional)' : '(wajib)'}</label>
+                <textarea value={mappingDialog.reason} onChange={(event) => setMappingDialog({ ...mappingDialog, reason: event.target.value })} rows={3} className="w-full rounded-md border bg-background px-3 py-2 text-sm" placeholder="Jelaskan dasar mapping jika diperlukan." />
+              </div>
+
+              <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
+                Setelah dikonfirmasi, sistem membuat mapping effective-dated untuk Company + Source + COA ini, mencatat audit trail, lalu menjalankan ulang Phase D. Mapping tidak boleh mengubah periode FINALIZED.
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button disabled={busy} onClick={() => setMappingDialog(null)} className="rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50">Batal</button>
+              <button disabled={busy} onClick={submitMapping} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">{busy ? 'Menyimpan…' : 'Konfirmasi & Simpan'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </CostModuleFrame>
   );
 }
