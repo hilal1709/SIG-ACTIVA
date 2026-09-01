@@ -4,6 +4,7 @@ import {
   costStructureAdminNavigation,
   costStructureNavigation,
   navigationContainsPath,
+  navigationPathMatches,
   openNavigationIds,
   visibleNavigationItems,
 } from './sidebar-navigation';
@@ -32,6 +33,13 @@ test('analysis pages activate and expand both navigation levels', () => {
   const pathname = '/cost-fluctuation/commentary';
   assert.equal(navigationContainsPath({ id: 'cost', label: 'Cost', children: costStructureNavigation }, pathname), true);
   assert.deepEqual(openNavigationIds(costStructureNavigation, pathname), ['cost-analysis-review']);
+});
+
+test('dynamic upload detail keeps Upload & Proses active without activating dashboard root', () => {
+  const pathname = '/cost-structure/upload/6';
+  assert.equal(navigationPathMatches('/cost-structure/upload', pathname), true);
+  assert.equal(navigationPathMatches('/cost-structure', pathname), false);
+  assert.equal(navigationContainsPath(costStructureNavigation.find((item) => item.id === 'cost-upload')!, pathname), true);
 });
 
 test('Materiality Rules is hidden from non-admin navigation and visible to admins', () => {
