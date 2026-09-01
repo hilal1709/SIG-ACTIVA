@@ -117,11 +117,22 @@ export function deriveProcessStatus(snapshot: ProcessingSnapshot): CostStructure
   }
   completed.push({ key: 'RECONCILIATION', title: titles.RECONCILIATION, status: 'COMPLETED' });
 
-  if (!snapshot.auditReady) {
-    const blockers = snapshot.auditMissing.map((code) => ({ code: 'MISSING_AUDIT_SOURCE', message: `Audit source ${code} belum tersedia.` }));
-    return result('AUDIT_READINESS', { key: 'AUDIT_READINESS', title: titles.AUDIT_READINESS, status: 'WAITING', message: blockers[0]?.message, blockers }, waitingStages('CALCULATION'));
+  // Audit template snapshots such as GHOPO/DERIV/SI2000_DRV support export and
+  // downstream analytical audit. They are not Engine-1 calculation inputs and
+  // therefore must never block calculation/post-check/finalization readiness.
+  if (snapshot.auditReady) {
+    completed.push({ key: 'AUDIT_READINESS', title: titles.AUDIT_READINESS, status: 'COMPLETED' });
+  } else {
+    const missing = snapshot.auditMissing.join(', ');
+    completed.push({
+      key: 'AUDIT_READINESS',
+      title: titles.AUDIT_READINESS,
+      status: 'NOT_APPLICABLE',
+      message: missing
+        ? `Snapshot audit tambahan belum lengkap (${missing}); tidak memblokir Engine 1 dan tetap divalidasi terpisah saat diperlukan.`
+        : 'Snapshot audit tambahan tidak memblokir Engine 1 dan tetap divalidasi terpisah saat diperlukan.',
+    });
   }
-  completed.push({ key: 'AUDIT_READINESS', title: titles.AUDIT_READINESS, status: 'COMPLETED' });
 
   if (!snapshot.calculation || !snapshot.calculation.belongsToUpload) {
     return result('CALCULATION', { key: 'CALCULATION', title: titles.CALCULATION, status: 'WAITING', message: 'Calculation siap dijalankan.' }, waitingStages('POST_CHECK'));
