@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import CostModuleFrame from '@/app/components/CostModuleFrame';
 import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
+import ProcessWorkflow from '@/components/cost-structure/process/process-workflow';
 
 type Item = {
   logicalSourceCode: string;
@@ -46,16 +47,6 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
   useEffect(() => {
     load().catch((e) => setError(e.message));
   }, [load]);
-
-  async function run() {
-    setBusy(true);
-    setError('');
-    const response = await fetch(`/api/cost-structure/uploads/${uploadId}/reconciliation/run`, { method: 'POST' });
-    const value = await response.json();
-    if (!response.ok) setError(value.error);
-    await load();
-    setBusy(false);
-  }
 
   async function revalidate() {
     setBusy(true);
@@ -128,55 +119,59 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
             <p className="text-muted-foreground">{String(company.companyCode ?? '')} · {String(period.fiscalYear ?? '')}/{String(period.fiscalPeriod ?? '')} · v{String(upload.version ?? '')} · {String(upload.originalFileName ?? '')}</p>
             <p className="mt-1 text-sm text-muted-foreground">{upload.isActiveVersion ? 'Active' : 'Superseded'} · {String(upload.status ?? '')} · Period {String(rec?.periodStatus ?? '')}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {canRevalidate && <button disabled={busy} onClick={revalidate} className="rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">{busy ? 'Processing…' : 'Revalidate file'}</button>}
-            <button disabled={busy || !upload.isActiveVersion} onClick={run} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">{busy ? 'Running…' : 'Run reconciliation'}</button>
-          </div>
+          {canRevalidate && <button disabled={busy} onClick={revalidate} className="rounded-md border border-primary px-4 py-2 text-sm font-medium text-primary transition-transform hover:-translate-y-0.5 disabled:opacity-50 disabled:hover:translate-y-0">{busy ? 'Processing…' : 'Revalidate file'}</button>}
         </div>
 
         {canRevalidate && <p data-cost-motion className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">File ini gagal validasi dengan rule sebelumnya. Revalidate menjalankan ulang parser terbaru pada file/hash yang sama tanpa membuat upload version duplikat.</p>}
         {error && <p data-cost-motion className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
-          <CardHeader><CardTitle>Source reconciliation</CardTitle></CardHeader>
-          <CardContent><Table headers={['Source', 'Detail Rows', 'Detail Amount', 'Reported Amount', 'Difference', 'Status']} rows={sources.map((s) => [s.logicalSourceCode, s.detailRowCount, s.detailAmount, s.reportedAmount ?? '—', s.difference ?? '—', s.status])} /></CardContent>
-        </Card>
+        <ProcessWorkflow uploadId={uploadId} />
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
-          <CardHeader><CardTitle>Mapping completeness</CardTitle></CardHeader>
-          <CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{['mappedAmount', 'excludedAmount', 'reclassifiedAmount', 'unmappedAmount', 'unmappedCoaCount', 'difference'].map((key) => <Metric key={key} label={key} value={String(completeness[key] ?? '—')} />)}</div></CardContent>
-        </Card>
+        <details data-cost-motion className="group min-w-0 rounded-xl border bg-card" open={false}>
+          <summary className="cursor-pointer list-none p-4 font-semibold sm:p-6">Detail proses <span className="ml-1 text-sm font-normal text-muted-foreground group-open:hidden">(tampilkan)</span></summary>
+          <div className="min-w-0 space-y-6 px-4 pb-4 sm:px-6 sm:pb-6">
+            <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
+              <CardHeader><CardTitle>Source reconciliation</CardTitle></CardHeader>
+              <CardContent><Table headers={['Source', 'Detail Rows', 'Detail Amount', 'Reported Amount', 'Difference', 'Status']} rows={sources.map((s) => [s.logicalSourceCode, s.detailRowCount, s.detailAmount, s.reportedAmount ?? '—', s.difference ?? '—', s.status])} /></CardContent>
+            </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
-          <CardHeader><CardTitle>Unmapped COA work queue</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            {blockingUnmapped.length === 0 && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Tidak ada COA non-zero yang membutuhkan mapping. Work queue bersih.</div>}
-            {zeroUnmapped.length > 0 && <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">{zeroUnmapped.length} COA masih berstatus UNMAPPED dengan amount 0. Ini non-blocking dan tidak perlu dimapping sampai memiliki nilai.</div>}
-            <Table headers={['Source', 'COA', 'Description', 'Rows', 'Amount', 'Status', 'Action']} rows={blockingUnmapped.map((item) => [
-              item.logicalSourceCode,
-              item.coaCodeRaw,
-              item.description ?? '—',
-              item.rowCount,
-              item.totalAmount,
-              item.mappingStatus,
-              <span className="flex flex-wrap gap-2" key={`${item.logicalSourceCode}:${item.coaCodeRaw}`}>
-                <button onClick={() => resolve(item, 'INCLUDE')} className="font-medium text-primary hover:underline">Map</button>
-                <button onClick={() => resolve(item, 'EXCLUDE')} className="font-medium text-primary hover:underline">Exclude</button>
-                <button onClick={() => resolve(item, 'RECLASS')} className="font-medium text-primary hover:underline">Reclassify</button>
-              </span>,
-            ])} />
-          </CardContent>
-        </Card>
+            <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
+              <CardHeader><CardTitle>Mapping completeness</CardTitle></CardHeader>
+              <CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{['mappedAmount', 'excludedAmount', 'reclassifiedAmount', 'unmappedAmount', 'unmappedCoaCount', 'difference'].map((key) => <Metric key={key} label={key} value={String(completeness[key] ?? '—')} />)}</div></CardContent>
+            </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
-          <CardHeader><CardTitle>Validation issues</CardTitle></CardHeader>
-          <CardContent><Table headers={['State', 'Severity', 'Code', 'Message']} rows={issues.map((issue) => [issue.resolved ? 'Resolved' : 'Open', issue.severity, issue.issueCode, issue.message])} /></CardContent>
-        </Card>
+            <Card id="mapping-detail" data-cost-hover className="min-w-0 scroll-mt-4 transition-shadow hover:shadow-md">
+              <CardHeader><CardTitle>Unmapped COA work queue</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {blockingUnmapped.length === 0 && <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Tidak ada COA non-zero yang membutuhkan mapping. Work queue bersih.</div>}
+                {zeroUnmapped.length > 0 && <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">{zeroUnmapped.length} COA masih berstatus UNMAPPED dengan amount 0. Ini non-blocking dan tidak perlu dimapping sampai memiliki nilai.</div>}
+                <Table headers={['Source', 'COA', 'Description', 'Rows', 'Amount', 'Status', 'Action']} rows={blockingUnmapped.map((item) => [
+                  item.logicalSourceCode,
+                  item.coaCodeRaw,
+                  item.description ?? '—',
+                  item.rowCount,
+                  item.totalAmount,
+                  item.mappingStatus,
+                  <span className="flex flex-wrap gap-2" key={`${item.logicalSourceCode}:${item.coaCodeRaw}`}>
+                    <button onClick={() => resolve(item, 'INCLUDE')} className="font-medium text-primary hover:underline">Map</button>
+                    <button onClick={() => resolve(item, 'EXCLUDE')} className="font-medium text-primary hover:underline">Exclude</button>
+                    <button onClick={() => resolve(item, 'RECLASS')} className="font-medium text-primary hover:underline">Reclassify</button>
+                  </span>,
+                ])} />
+              </CardContent>
+            </Card>
 
-        <Card data-cost-motion data-cost-hover className="transition-shadow hover:shadow-md">
-          <CardHeader><CardTitle>Readiness</CardTitle></CardHeader>
-          <CardContent><p className="font-semibold">{rec?.ready ? 'SOURCE_RECONCILED' : 'SOURCE_VALIDATION'}</p><ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">{((rec?.blockers ?? []) as string[]).map((x) => <li key={x}>{x}</li>)}</ul></CardContent>
-        </Card>
+            <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
+              <CardHeader><CardTitle>Validation issues</CardTitle></CardHeader>
+              <CardContent><Table headers={['State', 'Severity', 'Code', 'Message']} rows={issues.map((issue) => [issue.resolved ? 'Resolved' : 'Open', issue.severity, issue.issueCode, issue.message])} /></CardContent>
+            </Card>
+
+            <Card data-cost-hover className="min-w-0 transition-shadow hover:shadow-md">
+              <CardHeader><CardTitle>Readiness</CardTitle></CardHeader>
+              <CardContent><p className="font-semibold">{rec?.ready ? 'SOURCE_RECONCILED' : 'SOURCE_VALIDATION'}</p><ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">{((rec?.blockers ?? []) as string[]).map((x) => <li key={x}>{x}</li>)}</ul></CardContent>
+            </Card>
+          </div>
+        </details>
       </div>
     </CostModuleFrame>
   );
@@ -184,10 +179,10 @@ export default function PhaseDWorkspace({ uploadId }: { uploadId: number }) {
 
 function Table({ headers, rows }: { headers: string[]; rows: (unknown | React.ReactNode)[][] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <table className="w-full text-left text-sm">
+    <div className="max-w-full overflow-x-auto rounded-lg border overscroll-x-contain">
+      <table className="w-full min-w-max text-left text-xs sm:text-sm">
         <thead className="bg-muted/40"><tr className="border-b">{headers.map((header) => <th className="p-2 font-medium" key={header}>{header}</th>)}</tr></thead>
-        <tbody>{rows.map((row, i) => <tr className="border-b transition-colors hover:bg-muted/30" key={i}>{row.map((value, j) => <td className="p-2" key={j}>{value as React.ReactNode}</td>)}</tr>)}</tbody>
+        <tbody>{rows.map((row, i) => <tr className="border-b transition-colors hover:bg-muted/30" key={i}>{row.map((value, j) => <td className="max-w-56 whitespace-nowrap p-2 tabular-nums" key={j}>{value as React.ReactNode}</td>)}</tr>)}</tbody>
       </table>
     </div>
   );
