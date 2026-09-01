@@ -116,6 +116,7 @@ async function loadExportRun(periodId: number) {
     },
   });
   if (!period?.activeCalculationRun || period.activeCalculationRun.status !== 'SUCCESS' || !period.activeCalculationRun.isActive) return null;
+  if (!period.activeCalculationRun.upload.isActiveVersion) throw new Error('Active calculation run masih terikat ke upload versi lama. Proses upload aktif terlebih dahulu sebelum export.');
   return { period, ...period.activeCalculationRun };
 }
 
@@ -134,6 +135,30 @@ function writeCompany7000Ghopo(workbook: ExcelJS.Workbook, run: NonNullable<Awai
   sheet.getCell(19, 2).value = decimalToDisplay(totalHpp.amount, 1000);
   sheet.getCell(32, 2).value = decimalToDisplay(totalAdum.amount, 1000);
   sheet.getCell(45, 2).value = decimalToDisplay(oa.amount, 1000);
+}
+
+function writeZeroDerivSheet(workbook: ExcelJS.Workbook, run: NonNullable<Awaited<ReturnType<typeof loadExportRun>>>) {
+  const sheet = workbook.addWorksheet('DERIV');
+  const sections: Array<{ headerRow: number; header: string; group: string; codes: string[]; startRow: number; totalRow: number }> = [
+    { headerRow: 2, header: 'Beban Pokok Penjualan', group: 'HPP', codes: Array.from({ length: 16 }, (_, i) => `H${String(i + 1).padStart(2, '0')}`), startRow: 3, totalRow: 19 },
+    { headerRow: 22, header: 'UMUM & ADMINISTRASI', group: 'ADUM', codes: Array.from({ length: 9 }, (_, i) => `N${String(i + 1).padStart(2, '0')}`), startRow: 23, totalRow: 32 },
+    { headerRow: 34, header: 'PEMASARAN', group: 'PASAR', codes: Array.from({ length: 9 }, (_, i) => `N${String(i + 1).padStart(2, '0')}`), startRow: 35, totalRow: 44 },
+  ];
+  for (const section of sections) {
+    sheet.getCell(section.headerRow, 1).value = section.header;
+    section.codes.forEach((code, index) => {
+      const nature = findNature(run, section.group, code);
+      sheet.getCell(section.startRow + index, 1).value = nature?.nature?.name ?? code;
+      sheet.getCell(section.startRow + index, 2).value = 0;
+    });
+    sheet.getCell(section.totalRow, 1).value = section.group === 'HPP' ? 'Total HPP' : section.group === 'ADUM' ? 'Total Adum' : 'Total Perniagaan';
+    sheet.getCell(section.totalRow, 2).value = 0;
+  }
+  const oa = findNature(run, 'PASAR', 'OA');
+  sheet.getCell(45, 1).value = oa?.nature?.name ?? 'OA';
+  sheet.getCell(45, 2).value = 0;
+  sheet.getCell(46, 1).value = 'Total Pemasaran';
+  sheet.getCell(46, 2).value = 0;
 }
 
 function writeCompany2000Si(workbook: ExcelJS.Workbook, run: NonNullable<Awaited<ReturnType<typeof loadExportRun>>>) {
@@ -198,15 +223,19 @@ export async function buildCostStructureExport(periodId: number) {
 
   if (run.period.company.companyCode === '7000') {
     writeCompany7000Ghopo(workbook, run);
-    const deriv = workbook.addWorksheet('DERIV'); writeRawMatrix(deriv, requireAuditRows(allRows, 'AUDIT_DERIV', 'DERIV'));
+    const derivRows = rowsByCode(allRows, 'AUDIT_DERIV');
+    const hasDeriv = derivRows.length > 0;
+    if (hasDeriv) { const deriv = workbook.addWorksheet('DERIV'); writeRawMatrix(deriv, derivRows); }
+    else writeZeroDerivSheet(workbook, run);
     const rincian = workbook.addWorksheet('rincian biaya'); writeRawMatrix(rincian, requireAuditRows(allRows, 'AUDIT_RINCIAN', 'rincian biaya'));
     addSourceSheet(workbook, 'tb', rowsByCode(allRows, 'TB'), true);
     addSourceSheet(workbook, 'cc_prod', rowsByCode(allRows, 'CC_PROD'), true);
     addSourceSheet(workbook, 'cc_adm', rowsByCode(allRows, 'CC_ADUM'), true);
     addSourceSheet(workbook, 'cc pasar', rowsByCode(allRows, 'CC_PASAR'), true);
-    // Historical periods can legitimately predate CC Derivatif; absent source means no cc_drv sheet.
     addSourceSheet(workbook, 'cc_drv', rowsByCode(allRows, 'AUDIT_CC_DRV'));
-    addSourceSheet(workbook, 'SI2000_DRV', requireAuditRows(allRows, 'AUDIT_SI2000_DRV', 'SI2000_DRV'), true);
+    const si2000DrvRows = rowsByCode(allRows, 'AUDIT_SI2000_DRV');
+    if (hasDeriv) addSourceSheet(workbook, 'SI2000_DRV', requireAuditRows(allRows, 'AUDIT_SI2000_DRV', 'SI2000_DRV'), true);
+    else addSourceSheet(workbook, 'SI2000_DRV', si2000DrvRows);
     addSourceSheet(workbook, 'WHRPG', rowsByCode(allRows, 'CC_WHRPG'), true);
     addSourceSheet(workbook, 'Batu bara', rowsByCode(allRows, 'COAL'), true);
     addSourceSheet(workbook, 'statistical pasar', rowsByCode(allRows, 'OA_STAT'), true);
