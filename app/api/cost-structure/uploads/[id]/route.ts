@@ -33,7 +33,7 @@ const lifecycleInclude = {
     auditLogs:{where:{action:{in:[...UPLOAD_LINEAGE_MAPPING_ACTIONS]}},select:{id:true}},
   }},
   _count:{select:{adjustments:true}},
-} as const;
+};
 
 export async function GET(request:NextRequest,{params}:{params:Promise<{id:string}>}){
   const auth=await requireCostStructureRead(request);if('error'in auth)return auth.error;
