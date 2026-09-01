@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getAuditSnapshotReadiness } from '@/lib/cost-structure/audit-hydration/readiness';
 import { reconcileCostStructure } from '@/lib/cost-structure/finalization/service';
 import { backfillAuthoritativeBaselineMappings } from '@/lib/cost-structure/mappings/authoritative-baseline-backfill';
+import { backfillDeterministicFamilyMappings } from '@/lib/cost-structure/mappings/family-mapping-backfill';
 import { getPhaseDReport, refreshPeriodReadiness, runPhaseD } from '@/lib/cost-structure/reconciliation/service';
 import { runAutomaticCostStructureCalculation } from './automatic-calculation';
 import { deriveProcessStatus, executeNextProcessStage, type CostStructureProcessStatus, type ProcessBlocker, type ProcessingSnapshot } from './state-machine';
@@ -88,7 +89,11 @@ type AdvanceDependencies = {
 const dependencies: AdvanceDependencies = {
   status: getCostStructureProcessStatus,
   reconcile: async (uploadId, userId) => {
+    // Exact authoritative COA mappings always outrank family inference.
     await backfillAuthoritativeBaselineMappings(uploadId, userId);
+    // A new COA may inherit an existing four-digit family only when the family target
+    // is unanimous. Ambiguous/new families remain explicit manual mapping work.
+    await backfillDeterministicFamilyMappings(uploadId, userId);
     await runPhaseD(uploadId);
     await refreshPeriodReadiness(uploadId);
   },
