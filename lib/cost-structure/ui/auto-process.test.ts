@@ -30,11 +30,24 @@ test('runner prevents duplicate advance and offers bounded network retry', () =>
   assert.match(source, /onRetry=\{advance\}/);
 });
 
-test('business blocker response updates process state instead of entering network retry loop', () => {
+test('business 409 updates authoritative state and hard-stops automatic no-progress retries', () => {
   const api = readFileSync('components/cost-structure/process/api.ts', 'utf8');
   const runner = readFileSync('components/cost-structure/process/process-workflow.tsx', 'utf8');
   assert.match(api, /if \(process\)[\s\S]*retryable/);
-  assert.match(runner, /if \(e\.process\) \{[\s\S]*update\(e\.process\)[\s\S]*networkAttempt\.current = 0/);
+  assert.match(runner, /if \(e\.process\) \{[\s\S]*update\(e\.process\)[\s\S]*networkAttempt\.current = NETWORK_BACKOFF_MS\.length/);
+  assert.match(runner, /Tahap proses belum dapat dilanjutkan/);
+});
+
+test('admin historical audit maintenance uses the approved route and exact upload guard', () => {
+  const runner = readFileSync('components/cost-structure/process/process-workflow.tsx', 'utf8');
+  const route = readFileSync('app/api/cost-structure/periods/[id]/hydrate-audit/route.ts', 'utf8');
+  assert.match(runner, /isAdmin\(role\)/);
+  assert.match(runner, /stage\.key === 'AUDIT_READINESS'/);
+  assert.match(runner, /stage\?\.status === 'NOT_APPLICABLE'/);
+  assert.match(runner, /Siapkan audit export/);
+  assert.match(runner, /JSON\.stringify\(\{ expectedUploadId: uploadId \}\)/);
+  assert.match(route, /expectedUploadId/);
+  assert.match(route, /hydrateAuditSnapshot\(Number\(\(await params\)\.id\), auth\.user\.uid, expectedUploadId\)/);
 });
 
 test('automatic workflow is primary; manual reconciliation is not exposed as a normal action', () => {
