@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
   if (!period || !run || run.status !== 'SUCCESS' || !run.isActive) return NextResponse.json({ error: 'Active SUCCESS run is required' }, { status: 409 });
   const bytes = await costStructureStorage.download(run.upload.storageKey);
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(bytes as unknown as Buffer);
+  await workbook.xlsx.load(bytes as never);
   const requestedSheet = request.nextUrl.searchParams.get('sheet');
   if (!requestedSheet) return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: run.upload.originalFileName, sheets: workbook.worksheets.map((sheet) => ({ name: sheet.name, rowCount: sheet.rowCount, columnCount: sheet.columnCount, state: sheet.state })) });
   const sheet = workbook.worksheets.find((item) => item.name.trim().toLocaleLowerCase() === requestedSheet.trim().toLocaleLowerCase());
