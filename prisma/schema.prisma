@@ -18,109 +18,687 @@ enum UserRole {
 }
 
 model User {
-  id                 Int      @id @default(autoincrement())
-  username           String   @unique
-  email              String   @unique
-  password           String
-  name               String
-  role               UserRole @default(STAFF_ACCOUNTING)
-  isApproved         Boolean  @default(false)
-  emailVerified      Boolean  @default(false)
-  verificationToken  String?  @unique
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  username          String   @unique
+  email             String   @unique
+  password          String
+  name              String
+  role              UserRole @default(STAFF_ACCOUNTING)
+  isApproved        Boolean  @default(false)
+  emailVerified     Boolean  @default(false)
+  verificationToken String?  @unique
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  costMappingsCreated          CostCoaMapping[]        @relation("CostMappingCreatedBy")
+  costUploads                  CostUpload[]            @relation("CostUploadUploadedBy")
+  costValidationIssuesResolved CostValidationIssue[]   @relation("CostValidationIssueResolvedBy")
+  costAdjustmentsCreated       CostAdjustment[]        @relation("CostAdjustmentCreatedBy")
+  costCalculationRunsStarted   CostCalculationRun[]    @relation("CostCalculationRunStartedBy")
+  costPeriodsFinalized         CostPeriod[]            @relation("CostPeriodFinalizedBy")
+  costPeriodsReopened          CostPeriod[]            @relation("CostPeriodReopenedBy")
+  costAuditLogs                CostAuditLog[]
+  costMaterialityRulesCreated  CostMaterialityRule[]   @relation("CostMaterialityRuleCreatedBy")
+  costCommentariesPrepared     CostCommentary[]        @relation("CostCommentaryPreparedBy")
+  costCommentariesReviewed     CostCommentary[]        @relation("CostCommentaryReviewedBy")
+  costCommentaryChanges        CostCommentaryHistory[] @relation("CostCommentaryHistoryChangedBy")
+  costPeriodReviews            CostPeriodReview[]      @relation("CostPeriodReviewReviewedBy")
 
   @@map("users")
 }
-model MaterialData {
+
+enum CostNatureCalculationType {
+  MAPPED
+  FORMULA
+  RESIDUAL
+}
+
+enum CostMappingAction {
+  INCLUDE
+  EXCLUDE
+  RECLASS
+}
+
+enum CostPeriodStatus {
+  NOT_STARTED
+  UPLOADED
+  SOURCE_VALIDATION
+  SOURCE_RECONCILED
+  CALCULATED
+  COST_STRUCTURE_RECONCILED
+  FINALIZED
+}
+
+enum CostValidationSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum CostCalculationRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum CostActualLineType {
+  COA
+  FORMULA
+  RESIDUAL
+  ADJUSTMENT
+}
+
+enum CostCalculationResultType {
+  TOTAL
+  NATURE
+  CONTROL
+}
+
+enum CostFluctuationComparisonType {
+  MOM
+  YOY
+  YTD
+}
+
+enum CostMaterialityOperator {
+  AND
+  OR
+}
+
+enum CostCommentaryAnalysisLevel {
+  COST_GROUP
+  NATURE
+  COA
+  CALCULATED_ITEM
+}
+
+enum CostCommentaryStatus {
+  DRAFT
+  SUBMITTED
+  RETURNED
+  REVIEWED
+}
+
+enum CostPeriodReviewStatus {
+  OPEN
+  COMPLETED
+}
+
+model CostCompany {
+  id          Int      @id @default(autoincrement())
+  companyCode String   @unique
+  companyName String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  groups           CostGroup[]
+  periods          CostPeriod[]
+  mappings         CostCoaMapping[]
+  materialityRules CostMaterialityRule[]
+
+  @@map("cost_companies")
+}
+
+model CostGroup {
   id           Int      @id @default(autoincrement())
+  companyId    Int
+  code         String
+  name         String
+  displayOrder Int
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company            CostCompany             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  natures            CostNature[]
+  mappings           CostCoaMapping[]
+  adjustments        CostAdjustment[]
+  actualLines        CostActualLine[]
+  calculationResults CostCalculationResult[]
+  materialityRules   CostMaterialityRule[]
+  commentaries       CostCommentary[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([companyId, displayOrder])
+  @@map("cost_groups")
+}
+
+model CostNature {
+  id              Int                       @id @default(autoincrement())
+  costGroupId     Int
+  code            String
+  name            String
+  calculationType CostNatureCalculationType
+  ruleCode        String?
+  displayOrder    Int
+  active          Boolean                   @default(true)
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  costGroup          CostGroup               @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  mappings           CostCoaMapping[]
+  adjustments        CostAdjustment[]
+  actualLines        CostActualLine[]
+  commentaries       CostCommentary[]
+  calculationResults CostCalculationResult[]
+
+  @@unique([costGroupId, code])
+  @@index([costGroupId])
+  @@index([costGroupId, displayOrder])
+  @@map("cost_natures")
+}
+
+model CostCoa {
+  id             Int      @id @default(autoincrement())
+  coaCode        String   @unique
+  coaDescription String
+  accountGroup   String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  mappings     CostCoaMapping[]
+  sourceRows   CostSourceRow[]
+  adjustments  CostAdjustment[]
+  actualLines  CostActualLine[]
+  commentaries CostCommentary[]
+
+  @@index([accountGroup])
+  @@map("cost_coas")
+}
+
+model CostCoaMapping {
+  id                Int               @id @default(autoincrement())
+  companyId         Int
+  sourceLogicalCode String
+  costGroupId       Int?
+  natureId          Int?
+  coaId             Int
+  mappingAction     CostMappingAction
+  validFrom         DateTime
+  validTo           DateTime?
+  note              String?
+  active            Boolean           @default(true)
+  createdById       Int
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company   CostCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  costGroup CostGroup?  @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  nature    CostNature? @relation(fields: [natureId], references: [id], onDelete: Restrict)
+  coa       CostCoa     @relation(fields: [coaId], references: [id], onDelete: Restrict)
+  createdBy User        @relation("CostMappingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([companyId, costGroupId, coaId])
+  @@index([companyId, sourceLogicalCode, coaId, validFrom, validTo])
+  @@index([natureId])
+  @@index([coaId])
+  @@index([validFrom])
+  @@index([validTo])
+  @@map("cost_coa_mappings")
+}
+
+model CostPeriod {
+  id                     Int              @id @default(autoincrement())
+  companyId              Int
+  fiscalYear             Int
+  fiscalPeriod           Int
+  periodStart            DateTime
+  periodEnd              DateTime
+  status                 CostPeriodStatus @default(NOT_STARTED)
+  activeCalculationRunId Int?             @unique
+  finalizedAt            DateTime?
+  finalizedById          Int?
+  reopenedAt             DateTime?
+  reopenedById           Int?
+  reopenReason           String?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  company              CostCompany             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  activeCalculationRun CostCalculationRun?     @relation("ActiveCalculationRun", fields: [activeCalculationRunId], references: [id], onDelete: Restrict)
+  finalizedBy          User?                   @relation("CostPeriodFinalizedBy", fields: [finalizedById], references: [id], onDelete: SetNull)
+  reopenedBy           User?                   @relation("CostPeriodReopenedBy", fields: [reopenedById], references: [id], onDelete: SetNull)
+  uploads              CostUpload[]
+  adjustments          CostAdjustment[]
+  calculationRuns      CostCalculationRun[]    @relation("CostPeriodCalculationRuns")
+  actualLines          CostActualLine[]
+  calculationResults   CostCalculationResult[]
+  auditLogs            CostAuditLog[]
+  commentaries         CostCommentary[]
+  fluctuationReview    CostPeriodReview?
+
+  @@unique([companyId, fiscalYear, fiscalPeriod])
+  @@index([companyId])
+  @@index([fiscalYear, fiscalPeriod])
+  @@index([status])
+  @@map("cost_periods")
+}
+
+model CostUpload {
+  id               Int       @id @default(autoincrement())
+  periodId         Int
+  version          Int
+  originalFileName String
+  fileHashSha256   String
+  fileSizeBytes    BigInt
+  storageProvider  String
+  storageKey       String
+  uploadNote       String?
+  status           String    @default("UPLOADED")
+  isActiveVersion  Boolean   @default(true)
+  uploadedById     Int
+  uploadedAt       DateTime  @default(now())
+  validatedAt      DateTime?
+  supersededAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  period           CostPeriod            @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  uploadedBy       User                  @relation("CostUploadUploadedBy", fields: [uploadedById], references: [id], onDelete: Restrict)
+  sourceRows       CostSourceRow[]
+  validationIssues CostValidationIssue[]
+  adjustments      CostAdjustment[]
+  calculationRuns  CostCalculationRun[]
+
+  @@unique([periodId, version])
+  @@unique([periodId, fileHashSha256])
+  @@index([periodId])
+  @@index([uploadedById])
+  @@index([status])
+  @@index([fileHashSha256])
+  @@map("cost_uploads")
+}
+
+model CostSourceRow {
+  id                Int      @id @default(autoincrement())
+  uploadId          Int
+  logicalSourceCode String
+  originalSheetName String
+  sourceRowNumber   Int
+  coaCodeRaw        String?
+  coaId             Int?
+  descriptionRaw    String?
+  amountRaw         String?
+  amount            Decimal? @db.Decimal(20, 2)
+  sourceGroupRaw    String?
+  rawDataJson       Json?
+  mappingStatus     String   @default("UNMAPPED")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  upload           CostUpload            @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  coa              CostCoa?              @relation(fields: [coaId], references: [id], onDelete: Restrict)
+  validationIssues CostValidationIssue[]
+  actualLines      CostActualLine[]
+
+  @@index([uploadId])
+  @@index([logicalSourceCode])
+  @@index([coaId])
+  @@index([mappingStatus])
+  @@index([uploadId, logicalSourceCode])
+  @@map("cost_source_rows")
+}
+
+model CostValidationIssue {
+  id             Int                    @id @default(autoincrement())
+  uploadId       Int
+  sourceRowId    Int?
+  issueCode      String
+  severity       CostValidationSeverity
+  message        String
+  resolved       Boolean                @default(false)
+  resolutionType String?
+  resolutionNote String?
+  resolvedById   Int?
+  resolvedAt     DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  upload     CostUpload     @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  sourceRow  CostSourceRow? @relation(fields: [sourceRowId], references: [id], onDelete: Cascade)
+  resolvedBy User?          @relation("CostValidationIssueResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([uploadId])
+  @@index([sourceRowId])
+  @@index([severity])
+  @@index([resolved])
+  @@index([issueCode])
+  @@map("cost_validation_issues")
+}
+
+model CostAdjustment {
+  id          Int      @id @default(autoincrement())
+  periodId    Int
+  uploadId    Int?
+  costGroupId Int
+  natureId    Int
+  coaId       Int?
+  amount      Decimal  @db.Decimal(20, 2)
+  reason      String
+  reference   String?
+  createdById Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  period    CostPeriod  @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  upload    CostUpload? @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+  costGroup CostGroup   @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  nature    CostNature  @relation(fields: [natureId], references: [id], onDelete: Restrict)
+  coa       CostCoa?    @relation(fields: [coaId], references: [id], onDelete: Restrict)
+  createdBy User        @relation("CostAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([periodId])
+  @@index([costGroupId])
+  @@index([natureId])
+  @@index([coaId])
+  @@map("cost_adjustments")
+}
+
+model CostCalculationRun {
+  id                  Int                      @id @default(autoincrement())
+  periodId            Int
+  runNumber           Int
+  uploadId            Int
+  status              CostCalculationRunStatus
+  ruleSetVersion      String
+  sourceSnapshotJson  Json
+  mappingSnapshotJson Json?
+  startedById         Int
+  startedAt           DateTime                 @default(now())
+  completedAt         DateTime?
+  isActive            Boolean                  @default(false)
+  errorMessage        String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  period          CostPeriod              @relation("CostPeriodCalculationRuns", fields: [periodId], references: [id], onDelete: Restrict)
+  upload          CostUpload              @relation(fields: [uploadId], references: [id], onDelete: Restrict)
+  startedBy       User                    @relation("CostCalculationRunStartedBy", fields: [startedById], references: [id], onDelete: Restrict)
+  activeForPeriod CostPeriod?             @relation("ActiveCalculationRun")
+  actualLines     CostActualLine[]
+  results         CostCalculationResult[]
+
+  @@unique([periodId, runNumber])
+  @@index([periodId])
+  @@index([uploadId])
+  @@index([status])
+  @@index([isActive])
+  @@map("cost_calculation_runs")
+}
+
+model CostActualLine {
+  id                  Int                @id @default(autoincrement())
+  calculationRunId    Int
+  periodId            Int
+  costGroupId         Int
+  natureId            Int
+  coaId               Int?
+  lineType            CostActualLineType
+  sourceAmount        Decimal?           @db.Decimal(20, 2)
+  adjustmentAmount    Decimal            @default(0) @db.Decimal(20, 2)
+  finalAmount         Decimal            @db.Decimal(20, 2)
+  ruleCode            String?
+  sourceRowId         Int?
+  sourceReferenceJson Json?
+  createdAt           DateTime           @default(now())
+
+  calculationRun CostCalculationRun @relation(fields: [calculationRunId], references: [id], onDelete: Restrict)
+  period         CostPeriod         @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  costGroup      CostGroup          @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  nature         CostNature         @relation(fields: [natureId], references: [id], onDelete: Restrict)
+  coa            CostCoa?           @relation(fields: [coaId], references: [id], onDelete: Restrict)
+  sourceRow      CostSourceRow?     @relation(fields: [sourceRowId], references: [id], onDelete: Restrict)
+
+  @@index([calculationRunId])
+  @@index([periodId])
+  @@index([costGroupId])
+  @@index([natureId])
+  @@index([coaId])
+  @@index([sourceRowId])
+  @@index([periodId, costGroupId, natureId])
+  @@map("cost_actual_lines")
+}
+
+model CostCalculationResult {
+  id                       Int                       @id @default(autoincrement())
+  calculationRunId         Int
+  periodId                 Int
+  costGroupId              Int?
+  natureId                 Int?
+  resultCode               String
+  resultType               CostCalculationResultType
+  amount                   Decimal                   @db.Decimal(20, 2)
+  ruleCode                 String?
+  reconciliationDifference Decimal?                  @db.Decimal(20, 2)
+  reconciliationStatus     String?
+  calculationDetailJson    Json?
+  createdAt                DateTime                  @default(now())
+
+  calculationRun CostCalculationRun @relation(fields: [calculationRunId], references: [id], onDelete: Restrict)
+  period         CostPeriod         @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  costGroup      CostGroup?         @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  nature         CostNature?        @relation(fields: [natureId], references: [id], onDelete: Restrict)
+
+  @@index([calculationRunId])
+  @@index([periodId])
+  @@index([resultCode])
+  @@index([costGroupId])
+  @@index([natureId])
+  @@map("cost_calculation_results")
+}
+
+model CostAuditLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  periodId     Int?
+  action       String
+  entityType   String
+  entityId     String?
+  oldValueJson Json?
+  newValueJson Json?
+  reason       String?
+  createdAt    DateTime @default(now())
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  period CostPeriod? @relation(fields: [periodId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([periodId])
+  @@index([action])
+  @@index([entityType])
+  @@index([createdAt])
+  @@map("cost_audit_logs")
+}
+
+model CostMaterialityRule {
+  id               Int                           @id @default(autoincrement())
+  companyId        Int
+  costGroupId      Int?
+  comparisonType   CostFluctuationComparisonType
+  amountThreshold  Decimal?                      @db.Decimal(20, 2)
+  percentThreshold Decimal?                      @db.Decimal(20, 6)
+  operator         CostMaterialityOperator
+  validFrom        DateTime
+  validTo          DateTime?
+  active           Boolean                       @default(true)
+  createdById      Int
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+
+  company   CostCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  costGroup CostGroup?  @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  createdBy User        @relation("CostMaterialityRuleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([companyId, comparisonType, active, validFrom, validTo])
+  @@index([costGroupId])
+  @@map("cost_materiality_rules")
+}
+
+model CostCommentary {
+  id                 Int                           @id @default(autoincrement())
+  periodId           Int
+  comparisonType     CostFluctuationComparisonType
+  analysisLevel      CostCommentaryAnalysisLevel
+  analysisKey        String
+  costGroupId        Int
+  natureId           Int?
+  coaId              Int?
+  calculatedItemKey  String?
+  analysisLineageKey String
+  reason             String                        @db.Text
+  status             CostCommentaryStatus
+  preparedById       Int?
+  preparedAt         DateTime?
+  submittedAt        DateTime?
+  reviewedById       Int?
+  reviewedAt         DateTime?
+  reviewerNote       String?                       @db.Text
+  createdAt          DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  period     CostPeriod              @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  costGroup  CostGroup               @relation(fields: [costGroupId], references: [id], onDelete: Restrict)
+  nature     CostNature?             @relation(fields: [natureId], references: [id], onDelete: Restrict)
+  coa        CostCoa?                @relation(fields: [coaId], references: [id], onDelete: Restrict)
+  preparedBy User?                   @relation("CostCommentaryPreparedBy", fields: [preparedById], references: [id], onDelete: SetNull)
+  reviewedBy User?                   @relation("CostCommentaryReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  history    CostCommentaryHistory[]
+
+  @@unique([periodId, comparisonType, analysisKey, analysisLineageKey])
+  @@index([periodId, comparisonType, analysisLineageKey])
+  @@index([costGroupId])
+  @@index([natureId])
+  @@index([coaId])
+  @@map("cost_commentaries")
+}
+
+model CostCommentaryHistory {
+  id           Int                  @id @default(autoincrement())
+  commentaryId Int
+  version      Int
+  reason       String               @db.Text
+  status       CostCommentaryStatus
+  reviewerNote String?              @db.Text
+  changedById  Int
+  changedAt    DateTime             @default(now())
+
+  commentary CostCommentary @relation(fields: [commentaryId], references: [id], onDelete: Restrict)
+  changedBy  User           @relation("CostCommentaryHistoryChangedBy", fields: [changedById], references: [id], onDelete: Restrict)
+
+  @@unique([commentaryId, version])
+  @@index([changedById])
+  @@map("cost_commentary_history")
+}
+
+model CostPeriodReview {
+  id           Int                    @id @default(autoincrement())
+  periodId     Int                    @unique
+  reviewStatus CostPeriodReviewStatus @default(OPEN)
+  reviewedById Int?
+  reviewedAt   DateTime?
+  note         String?                @db.Text
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  period     CostPeriod @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  reviewedBy User?      @relation("CostPeriodReviewReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([reviewStatus])
+  @@map("cost_period_reviews")
+}
+
+model MaterialData {
+  id           Int    @id @default(autoincrement())
   materialId   String
   materialName String
   location     String
-  
-  stokAwalOpr       Float
-  stokAwalSap       Float
-  stokAwalSelisih   Float
-  stokAwalTotal     Float
-  
-  produksiOpr       Float
-  produksiSap       Float
-  produksiSelisih   Float
-  produksiTotal     Float
-  
-  rilisOpr          Float
-  rilisSap          Float
-  rilisSelisih      Float
-  rilisTotal        Float
-  
-  stokAkhirOpr      Float
-  stokAkhirSap      Float
-  stokAkhirSelisih  Float
-  stokAkhirTotal    Float
-  
-  blank             Float
-  blankTotal        Float
-  grandTotal        Float
-  
-  importDate DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@map("material_data")
+  stokAwalOpr     Float
+  stokAwalSap     Float
+  stokAwalSelisih Float
+  stokAwalTotal   Float
+
+  produksiOpr     Float
+  produksiSap     Float
+  produksiSelisih Float
+  produksiTotal   Float
+
+  rilisOpr     Float
+  rilisSap     Float
+  rilisSelisih Float
+  rilisTotal   Float
+
+  stokAkhirOpr     Float
+  stokAkhirSap     Float
+  stokAkhirSelisih Float
+  stokAkhirTotal   Float
+
+  blank      Float
+  blankTotal Float
+  grandTotal Float
+
+  importDate DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
   @@index([materialId])
   @@index([location])
   @@index([importDate])
+  @@map("material_data")
 }
 
 model Accrual {
-  id             Int              @id @default(autoincrement())
-  companyCode    String?
-  noPo           String?
-  kdAkr          String
-  alokasi        String?
-  kdAkunBiaya    String           @map("namaAkun")
-  vendor         String
-  deskripsi      String
-  headerText     String?          // Header text untuk jurnal SAP
-  klasifikasi    String?
-  totalAmount    Float            // Total amount keseluruhan (bisa 0; total accrual = sum periodes.amountAccrual)
-  saldoAwal      Float?           // Saldo awal dari import (saldo akhir/outstanding), fixed
-  costCenter     String?
-  startDate      DateTime         // Tanggal mulai periode pertama
-  jumlahPeriode  Int              // Berapa bulan/periode
-  pembagianType  String           @default("otomatis") // "otomatis" atau "manual"
-  
-  periodes       AccrualPeriode[] // Relasi ke detail periode
-  
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  id            Int      @id @default(autoincrement())
+  companyCode   String?
+  noPo          String?
+  kdAkr         String
+  alokasi       String?
+  kdAkunBiaya   String   @map("namaAkun")
+  vendor        String
+  deskripsi     String
+  headerText    String? // Header text untuk jurnal SAP
+  klasifikasi   String?
+  totalAmount   Float // Total amount keseluruhan (bisa 0; total accrual = sum periodes.amountAccrual)
+  saldoAwal     Float? // Saldo awal dari import (saldo akhir/outstanding), fixed
+  costCenter    String?
+  startDate     DateTime // Tanggal mulai periode pertama
+  jumlahPeriode Int // Berapa bulan/periode
+  pembagianType String   @default("otomatis") // "otomatis" atau "manual"
 
-  @@map("accruals")
+  periodes AccrualPeriode[] // Relasi ke detail periode
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([kdAkr])
   @@index([startDate])
   @@index([createdAt])
   @@index([vendor])
+  @@map("accruals")
 }
 
 model AccrualPeriode {
-  id             Int                       @id @default(autoincrement())
-  accrualId      Int
-  accrual        Accrual                   @relation(fields: [accrualId], references: [id], onDelete: Cascade)
-  
-  periodeKe      Int                       // 1, 2, 3, dst
-  bulan          String                    // "Jan 2026", "Feb 2026"
-  tahun          Int                       // 2026
-  amountAccrual  Float                     // Nilai accrual periode ini (auto-sum dari costcenters jika ada)
-  
-  realisasis     AccrualRealisasi[]        // Relasi ke realisasi
-  costcenters    AccrualPeriodeCostCenter[] // Rincian accrual per cost center
-  
-  createdAt      DateTime                  @default(now())
-  updatedAt      DateTime                  @updatedAt
+  id        Int     @id @default(autoincrement())
+  accrualId Int
+  accrual   Accrual @relation(fields: [accrualId], references: [id], onDelete: Cascade)
 
-  @@map("accrual_periodes")
+  periodeKe     Int // 1, 2, 3, dst
+  bulan         String // "Jan 2026", "Feb 2026"
+  tahun         Int // 2026
+  amountAccrual Float // Nilai accrual periode ini (auto-sum dari costcenters jika ada)
+
+  realisasis  AccrualRealisasi[] // Relasi ke realisasi
+  costcenters AccrualPeriodeCostCenter[] // Rincian accrual per cost center
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([accrualId])
   @@index([bulan, tahun])
+  @@map("accrual_periodes")
 }
 
 model AccrualPeriodeCostCenter {
@@ -128,178 +706,178 @@ model AccrualPeriodeCostCenter {
   accrualPeriodeId Int
   accrualPeriode   AccrualPeriode @relation(fields: [accrualPeriodeId], references: [id], onDelete: Cascade)
 
-  costCenter       String?
-  kdAkunBiaya      String?
+  costCenter  String?
+  kdAkunBiaya String?
+  amount      Float
+  headerText  String?
+  lineText    String?
+  keterangan  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accrualPeriodeId])
+  @@map("accrual_periode_costcenters")
+}
+
+model AccrualRealisasi {
+  id               Int            @id @default(autoincrement())
+  accrualPeriodeId Int
+  accrualPeriode   AccrualPeriode @relation(fields: [accrualPeriodeId], references: [id], onDelete: Cascade)
+
+  tanggalRealisasi DateTime
   amount           Float
   headerText       String?
   lineText         String?
   keterangan       String?
+  kdAkunBiaya      String?
+  costCenter       String?
 
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("accrual_periode_costcenters")
-  @@index([accrualPeriodeId])
-}
-
-model AccrualRealisasi {
-  id                Int              @id @default(autoincrement())
-  accrualPeriodeId  Int
-  accrualPeriode    AccrualPeriode   @relation(fields: [accrualPeriodeId], references: [id], onDelete: Cascade)
-  
-  tanggalRealisasi  DateTime
-  amount            Float
-  headerText        String?
-  lineText          String?
-  keterangan        String?
-  kdAkunBiaya       String?
-  costCenter        String?
-  
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-
-  @@map("accrual_realisasis")
   @@index([accrualPeriodeId])
   @@index([tanggalRealisasi])
+  @@map("accrual_realisasis")
 }
 
 model Prepaid {
-  id             Int              @id @default(autoincrement())
-  companyCode    String?
-  noPo           String?
-  kdAkr          String?
-  alokasi        String?
-  namaAkun       String?
-  vendor         String?
-  deskripsi      String?
-  headerText     String?          // Header text untuk jurnal SAP
-  klasifikasi    String?
-  totalAmount    Float            // Total amount keseluruhan
-  remaining      Float            // Sisa amount yang belum diamortisasi
-  costCenter     String?
-  startDate      DateTime         // Tanggal mulai periode pertama
-  period         Int              // Berapa bulan/periode
-  periodUnit     String           @default("bulan") // "bulan", "tahun", etc
-  type           String           @default("Linear") // "Linear" atau "Verbal"
-  pembagianType  String           @default("otomatis") // "otomatis" atau "manual"
-  
-  periodes       PrepaidPeriode[] // Relasi ke detail periode
-  
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
+  id            Int      @id @default(autoincrement())
+  companyCode   String?
+  noPo          String?
+  kdAkr         String?
+  alokasi       String?
+  namaAkun      String?
+  vendor        String?
+  deskripsi     String?
+  headerText    String? // Header text untuk jurnal SAP
+  klasifikasi   String?
+  totalAmount   Float // Total amount keseluruhan
+  remaining     Float // Sisa amount yang belum diamortisasi
+  costCenter    String?
+  startDate     DateTime // Tanggal mulai periode pertama
+  period        Int // Berapa bulan/periode
+  periodUnit    String   @default("bulan") // "bulan", "tahun", etc
+  type          String   @default("Linear") // "Linear" atau "Verbal"
+  pembagianType String   @default("otomatis") // "otomatis" atau "manual"
 
-  @@map("prepaids")
+  periodes PrepaidPeriode[] // Relasi ke detail periode
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([kdAkr])
   @@index([startDate])
+  @@map("prepaids")
 }
 
 model PrepaidPeriode {
-  id             Int                         @id @default(autoincrement())
-  prepaidId      Int
-  prepaid        Prepaid                     @relation(fields: [prepaidId], references: [id], onDelete: Cascade)
-  
-  periodeKe      Int                         // 1, 2, 3, dst
-  bulan          String                      // "Jan 2026", "Feb 2026"
-  tahun          Int                         // 2026
-  amountPrepaid  Float                       // Nilai prepaid periode ini (sum dari costcenters jika ada)
-  isAmortized    Boolean                     @default(false) // Sudah diamortisasi atau belum
-  amortizedDate  DateTime?                   // Tanggal amortisasi
+  id        Int     @id @default(autoincrement())
+  prepaidId Int
+  prepaid   Prepaid @relation(fields: [prepaidId], references: [id], onDelete: Cascade)
 
-  costcenters    PrepaidPeriodeCostCenter[]  // Rincian per cost center
-  
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  periodeKe     Int // 1, 2, 3, dst
+  bulan         String // "Jan 2026", "Feb 2026"
+  tahun         Int // 2026
+  amountPrepaid Float // Nilai prepaid periode ini (sum dari costcenters jika ada)
+  isAmortized   Boolean   @default(false) // Sudah diamortisasi atau belum
+  amortizedDate DateTime? // Tanggal amortisasi
 
-  @@map("prepaid_periodes")
+  costcenters PrepaidPeriodeCostCenter[] // Rincian per cost center
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([prepaidId])
   @@index([bulan, tahun])
+  @@map("prepaid_periodes")
 }
 
 model PrepaidPeriodeCostCenter {
-  id                 Int            @id @default(autoincrement())
-  prepaidPeriodeId   Int
-  prepaidPeriode     PrepaidPeriode @relation(fields: [prepaidPeriodeId], references: [id], onDelete: Cascade)
+  id               Int            @id @default(autoincrement())
+  prepaidPeriodeId Int
+  prepaidPeriode   PrepaidPeriode @relation(fields: [prepaidPeriodeId], references: [id], onDelete: Cascade)
 
-  costCenter         String?
-  kdAkunBiaya        String?
-  amount             Float
-  headerText         String?
-  lineText           String?
+  costCenter  String?
+  kdAkunBiaya String?
+  amount      Float
+  headerText  String?
+  lineText    String?
 
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("prepaid_periode_costcenters")
   @@index([prepaidPeriodeId])
+  @@map("prepaid_periode_costcenters")
 }
 
 model FluktuasiImport {
-  id              Int      @id @default(autoincrement())
-  fileName        String   // Nama file Excel yang diupload
-  uploadedBy      String   // Username atau email user yang upload
-  sheetDataList   Json     // Array of SheetData (kode akun sheets)
-  rekapSheetData  Json?    // RekapSheetData (rekap sheet)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id             Int    @id @default(autoincrement())
+  fileName       String // Nama file Excel yang diupload
+  uploadedBy     String // Username atau email user yang upload
+  sheetDataList  Json // Array of SheetData (kode akun sheets)
+  rekapSheetData Json? // RekapSheetData (rekap sheet)
 
-  @@map("fluktuasi_imports")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([uploadedBy])
   @@index([createdAt])
+  @@map("fluktuasi_imports")
 }
 
 model FluktuasiAkunPeriode {
-  id          Int      @id @default(autoincrement())
-  accountCode String   // Kode akun (sheet name, e.g. "410100")
-  periode     String   // Format "YYYY.MM" e.g. "2026.01"
-  amount      Float    // Net total amount untuk account+period ini
-  klasifikasi String   @default("") // Joined dari keyword matching
-  remark      String   @default("")
-  uploadedBy  String   @default("system")
-  fileName    String   @default("")
+  id          Int    @id @default(autoincrement())
+  accountCode String // Kode akun (sheet name, e.g. "410100")
+  periode     String // Format "YYYY.MM" e.g. "2026.01"
+  amount      Float // Net total amount untuk account+period ini
+  klasifikasi String @default("") // Joined dari keyword matching
+  remark      String @default("")
+  uploadedBy  String @default("system")
+  fileName    String @default("")
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("fluktuasi_akun_periodes")
   @@unique([accountCode, periode])
   @@index([accountCode])
   @@index([periode])
   @@index([uploadedBy])
+  @@map("fluktuasi_akun_periodes")
 }
 
 model FluktuasiSheetRows {
-  id                Int      @id @default(autoincrement())
-  accountCode       String   @unique  // Sheet name / kode akun, e.g. "71510001"
-  headers           Json     // string[] — deduplicated internal headers
-  originalHeaders   Json     // string[] — display headers
-  klasifikasiColIdx Int?     // Index of description column in headers
-  docnoColIdx       Int?     // Index of document number column in headers
-  rows              Json     // Array<Record<string, any>> — full transaction rows
-  fileName          String   @default("")
+  id                Int    @id @default(autoincrement())
+  accountCode       String @unique // Sheet name / kode akun, e.g. "71510001"
+  headers           Json // string[] — deduplicated internal headers
+  originalHeaders   Json // string[] — display headers
+  klasifikasiColIdx Int? // Index of description column in headers
+  docnoColIdx       Int? // Index of document number column in headers
+  rows              Json // Array<Record<string, any>> — full transaction rows
+  fileName          String @default("")
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("fluktuasi_sheet_rows")
   @@index([accountCode])
+  @@map("fluktuasi_sheet_rows")
 }
 
 model FluktuasiKeyword {
-  id           Int      @id @default(autoincrement())
-  keyword      String   // Keyword yang dicari (case-insensitive)
-  type         String   // "klasifikasi" atau "remark"
-  result       String   // Hasil yang akan ditampilkan
-  priority     Int      @default(0) // Prioritas (makin besar makin prioritas)
-  accountCodes String   @default("") // Koma-separated account codes; kosong = berlaku untuk semua
-  sourceColumn String   @default("") // Nama kolom sumber pencocokan; kosong = kolom deskripsi default
+  id           Int    @id @default(autoincrement())
+  keyword      String // Keyword yang dicari (case-insensitive)
+  type         String // "klasifikasi" atau "remark"
+  result       String // Hasil yang akan ditampilkan
+  priority     Int    @default(0) // Prioritas (makin besar makin prioritas)
+  accountCodes String @default("") // Koma-separated account codes; kosong = berlaku untuk semua
+  sourceColumn String @default("") // Nama kolom sumber pencocokan; kosong = kolom deskripsi default
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@map("fluktuasi_keywords")
   @@index([type])
   @@index([keyword])
+  @@map("fluktuasi_keywords")
 }
 
 model PushSubscription {
@@ -310,6 +888,6 @@ model PushSubscription {
   userId    Int?
   createdAt DateTime @default(now())
 
-  @@map("push_subscriptions")
   @@index([userId])
+  @@map("push_subscriptions")
 }

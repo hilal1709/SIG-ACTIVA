@@ -1,0 +1,114 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getCurrentUserRole, isAdmin } from '@/app/utils/rolePermissions';
+import { costStructureProcessApi, ProcessApiError } from './api';
+import { shouldAutoAdvance } from './presentation';
+import { ProcessTracker } from './process-tracker';
+import type { CostStructureProcess } from './types';
+
+const NETWORK_BACKOFF_MS = [1200, 2500, 5000];
+type WorkflowError = { title: string; message: string; detail?: string };
+
+export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadId: number; onProcessChange?: (value: CostStructureProcess) => void }) {
+  const [process, setProcess] = useState<CostStructureProcess | null>(null);
+  const [error, setError] = useState<WorkflowError | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [admin, setAdmin] = useState(false);
+  const [auditMessage, setAuditMessage] = useState('');
+  const requestInFlight = useRef(false);
+  const networkAttempt = useRef(0);
+
+  const update = useCallback((value: CostStructureProcess) => { setProcess(value); onProcessChange?.(value); }, [onProcessChange]);
+  const load = useCallback(async () => {
+    try { update(await costStructureProcessApi.get(uploadId)); setError(null); networkAttempt.current = 0; }
+    catch (caught) {
+      const e = caught instanceof ProcessApiError ? caught : new ProcessApiError(caught instanceof Error ? caught.message : 'Koneksi proses gagal.');
+      if (e.process) update(e.process);
+      setError({ title: 'Koneksi proses terganggu', message: e.message, detail: e.technicalDetail });
+    }
+  }, [uploadId, update]);
+
+  const advance = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true; setSubmitting(true);
+    try {
+      await costStructureProcessApi.advance(uploadId);
+      update(await costStructureProcessApi.get(uploadId));
+      setError(null); networkAttempt.current = 0;
+    } catch (caught) {
+      const e = caught instanceof ProcessApiError ? caught : new ProcessApiError(caught instanceof Error ? caught.message : 'Koneksi proses gagal.');
+      if (e.process) {
+        // A 409 with authoritative process state is a business/no-progress stop, not
+        // a network retry. Keep the server state visible and require explicit retry
+        // so a WAITING stage cannot create an automatic POST loop.
+        update(e.process);
+        setError({ title: 'Tahap proses belum dapat dilanjutkan', message: e.message, detail: e.technicalDetail });
+        networkAttempt.current = NETWORK_BACKOFF_MS.length;
+      } else {
+        setError({ title: 'Koneksi proses terganggu', message: e.message, detail: e.technicalDetail });
+        if (e.retryable) networkAttempt.current = Math.min(networkAttempt.current + 1, NETWORK_BACKOFF_MS.length);
+        else networkAttempt.current = NETWORK_BACKOFF_MS.length;
+      }
+    } finally { requestInFlight.current = false; setSubmitting(false); }
+  }, [uploadId, update]);
+
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const role = getCurrentUserRole();
+    // Role state is intentionally hydrated from browser session storage after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAdmin(role !== null && isAdmin(role));
+  }, []);
+  useEffect(() => {
+    if (!process || !shouldAutoAdvance(process) || requestInFlight.current) return;
+    if (error && networkAttempt.current >= NETWORK_BACKOFF_MS.length) return;
+    const delay = NETWORK_BACKOFF_MS[Math.max(0, networkAttempt.current - 1)] ?? 900;
+    const timer = window.setTimeout(() => void advance(), delay);
+    return () => window.clearTimeout(timer);
+  }, [advance, process, error]);
+
+  const hydrateAudit = async () => {
+    if (!process || requestInFlight.current) return;
+    requestInFlight.current = true; setSubmitting(true); setAuditMessage(''); setError(null);
+    try {
+      const response = await fetch(`/api/cost-structure/periods/${process.periodId}/hydrate-audit`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedUploadId: uploadId }),
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error ?? 'Audit hydration gagal.');
+      setAuditMessage(`Audit export siap · ${Number(value.rowCount ?? 0).toLocaleString('id-ID')} rows · hash terverifikasi.`);
+      await load();
+    } catch (caught) {
+      setError({ title: 'Audit export belum siap', message: caught instanceof Error ? caught.message : 'Audit hydration gagal.' });
+    } finally { requestInFlight.current = false; setSubmitting(false); }
+  };
+
+  const finalize = async () => {
+    if (!process?.readyForFinalization || requestInFlight.current) return;
+    requestInFlight.current = true; setSubmitting(true);
+    try {
+      const response = await fetch(`/api/cost-structure/periods/${process.periodId}/finalize`, { method: 'POST' });
+      if (!response.ok) throw new Error('Finalisasi gagal. Periksa kembali kesiapan periode.');
+      await load();
+    } catch (caught) { setError({ title: 'Finalisasi gagal', message: caught instanceof Error ? caught.message : 'Finalisasi gagal.' }); }
+    finally { requestInFlight.current = false; setSubmitting(false); }
+  };
+
+  if (!process) return <section className="min-w-0 rounded-xl border bg-card p-4 sm:p-6">{error ? <InlineError error={error} retry={load} /> : <p className="flex items-center gap-2 text-sm text-muted-foreground"><span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Memuat status proses…</p>}</section>;
+
+  const auditStage = process.stages.find((stage) => stage.key === 'AUDIT_READINESS');
+  const showAuditMaintenance = admin && auditStage?.status === 'NOT_APPLICABLE';
+  return <div className="min-w-0 space-y-3">
+    <ProcessTracker process={process} submitting={submitting} onRetry={advance} onFinalize={finalize} />
+    {showAuditMaintenance && <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm"><div className="min-w-0"><p className="font-medium">Audit historical untuk export belum lengkap</p><p className="mt-1 break-words text-xs text-muted-foreground">Menyiapkan snapshot audit hanya memproses AUDIT_* dari workbook authoritative; Engine 1 dan calculation run tidak diubah.</p></div><button type="button" disabled={submitting} onClick={() => void hydrateAudit()} className="rounded-md border border-primary px-3 py-2 font-medium text-primary disabled:opacity-50">{submitting ? 'Menyiapkan…' : 'Siapkan audit export'}</button></div>}
+    {auditMessage && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{auditMessage}</p>}
+    {error && <InlineError error={error} retry={advance} />}
+  </div>;
+}
+
+function InlineError({ error, retry }: { error: WorkflowError; retry: () => void | Promise<void> }) {
+  return <div className="max-w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p className="font-semibold">{error.title}</p><p className="mt-1 break-words">{error.message}</p>{error.detail && <details className="mt-2"><summary className="cursor-pointer font-medium">Technical detail</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs">{error.detail}</pre></details>}<button type="button" onClick={() => void retry()} className="mt-3 rounded-md border border-amber-700 px-3 py-1.5 font-medium">Coba lagi</button></div>;
+}
