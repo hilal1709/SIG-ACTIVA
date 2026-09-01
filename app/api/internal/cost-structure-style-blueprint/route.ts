@@ -82,8 +82,8 @@ function extractSheet(sheet: ExcelJS.Worksheet) {
     const row = sheet.getRow(rowNumber);
     if (row.height !== undefined || row.hidden || row.outlineLevel) rows.push({ row: rowNumber, height: row.height, hidden: row.hidden || undefined, outlineLevel: row.outlineLevel || undefined });
   }
-  const model = sheet.model as unknown as { merges?: string[] };
-  return { name: sheet.name, state: sheet.state, rowCount: sheet.rowCount, columnCount: sheet.columnCount, views: normalize(sheet.views), pageSetup: normalize(sheet.pageSetup), pageMargins: normalize(sheet.pageMargins), headerFooter: normalize(sheet.headerFooter), properties: normalize(sheet.properties), merges: model.merges ?? [], columns, rows, styles, runs };
+  const model = sheet.model as unknown as { merges?: string[]; pageMargins?: unknown; properties?: unknown };
+  return { name: sheet.name, state: sheet.state, rowCount: sheet.rowCount, columnCount: sheet.columnCount, views: normalize(sheet.views), pageSetup: normalize(sheet.pageSetup), pageMargins: normalize(model.pageMargins), headerFooter: normalize(sheet.headerFooter), properties: normalize(model.properties), merges: model.merges ?? [], columns, rows, styles, runs };
 }
 
 export async function GET(request: NextRequest) {
