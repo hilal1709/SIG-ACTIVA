@@ -1,66 +1,68 @@
 import type ExcelJS from 'exceljs';
 
-/**
- * Style roles are intentionally open-ended. The approved template extraction may contain many
- * distinct static styles, while apply.ts validates every referenced role at runtime.
- */
 export type StyleRole = string;
+export type BlueprintCellStyle = Partial<Pick<ExcelJS.Style, 'font' | 'alignment' | 'fill' | 'border' | 'numFmt' | 'protection'>>;
 
-export type BlueprintCellStyle = Partial<Pick<ExcelJS.Style,
-  'font' | 'alignment' | 'border' | 'fill' | 'numFmt' | 'protection'>>;
-
-export interface ColumnBlueprint {
-  key: string | number;
+export type BlueprintColumn = {
+  key: string;
   width?: number;
   hidden?: boolean;
   outlineLevel?: number;
   styleRole?: StyleRole;
-}
+};
 
-export interface RowBlueprint {
+export type BlueprintRow = {
   index: number;
   height?: number;
   hidden?: boolean;
   outlineLevel?: number;
   styleRole?: StyleRole;
-}
+};
 
-export interface RangeStyleBlueprint {
+export type BlueprintRange = {
   range: string;
   styleRole: StyleRole;
-}
+};
 
-/** A range whose last row can follow DB-generated output size while preserving a template minimum. */
-export interface RepeatingRangeBlueprint {
+export type BlueprintRepeatingRange = {
   fromColumn: string;
   toColumn: string;
   fromRow: number;
   toRow?: number;
   minimumToRow?: number;
   styleRole: StyleRole;
-}
+};
 
-export interface SheetStyleBlueprint {
+export type BlueprintWorksheetProperties = {
+  defaultRowHeight?: number;
+  defaultColWidth?: number;
+  dyDescent?: number;
+  outlineLevelRow?: number;
+  outlineLevelCol?: number;
+};
+
+export type SheetStyleBlueprint = {
   sourceTemplateName?: string;
-  aliases?: readonly string[];
-  columns?: readonly ColumnBlueprint[];
-  rows?: readonly RowBlueprint[];
-  merges?: readonly string[];
-  views?: readonly Partial<ExcelJS.WorksheetView>[];
-  autoFilter?: ExcelJS.AutoFilter;
+  aliases?: string[];
+  styleCatalog: Record<StyleRole, BlueprintCellStyle>;
+  columns?: BlueprintColumn[];
+  rows?: BlueprintRow[];
+  merges?: string[];
+  views?: ExcelJS.WorksheetView[];
+  autoFilter?: ExcelJS.AutoFilter | string;
   autoFilterMinRowCount?: number;
   pageSetup?: Partial<ExcelJS.PageSetup>;
   headerFooter?: Partial<ExcelJS.HeaderFooter>;
+  properties?: BlueprintWorksheetProperties;
   state?: ExcelJS.WorksheetState;
-  styleCatalog: Readonly<Record<StyleRole, BlueprintCellStyle>>;
-  repeatingRanges?: readonly RepeatingRangeBlueprint[];
-  ranges?: readonly RangeStyleBlueprint[];
-}
+  repeatingRanges?: BlueprintRepeatingRange[];
+  ranges?: BlueprintRange[];
+};
 
-export interface WorkbookStyleBlueprint {
-  /** Identifies the template/style dataset without changing the exporter architecture. */
-  templateVersion: string;
+export type WorkbookStyleBlueprint = {
   companyCode: '2000' | '7000';
+  sourceTemplatePeriod: '2026-07';
+  templateVersion: string;
   exactTemplateFidelity: boolean;
-  sheets: Readonly<Record<string, SheetStyleBlueprint>>;
-}
+  sheets: Record<string, SheetStyleBlueprint>;
+};
