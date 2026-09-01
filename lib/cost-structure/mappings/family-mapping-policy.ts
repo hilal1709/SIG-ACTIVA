@@ -16,9 +16,25 @@ export type InferredFamilyMapping = {
   evidenceCount: number;
 };
 
-export function coaFamilyPrefix(coaCode: string): string | null {
+export type HierarchicalFamilyEvidenceLevel = {
+  familyPrefix: string;
+  evidence: FamilyMappingEvidence[];
+};
+
+export type HierarchicalInferredFamilyMapping = InferredFamilyMapping & {
+  familyPrefix: string;
+  evidenceCoaCount: number;
+};
+
+export function coaFamilyPrefixes(coaCode: string): string[] {
   const normalized = coaCode.trim();
-  return /^\d{4,}$/.test(normalized) ? normalized.slice(0, 4) : null;
+  if (!/^\d{4,}$/.test(normalized)) return [];
+  return [normalized.slice(0, 4), normalized.slice(0, 3)];
+}
+
+/** Backward-compatible primary family key. */
+export function coaFamilyPrefix(coaCode: string): string | null {
+  return coaFamilyPrefixes(coaCode)[0] ?? null;
 }
 
 function usableEvidence(item: FamilyMappingEvidence) {
@@ -50,9 +66,9 @@ function infer(items: FamilyMappingEvidence[], scope: InferredFamilyMapping['sco
 /**
  * Family inference is fail-closed:
  * 1. same company + same source family evidence has priority;
- * 2. if same-company evidence exists but conflicts, no fallback is allowed;
+ * 2. if same-company evidence exists but conflicts, no cross-company fallback is allowed;
  * 3. cross-company evidence is used only when there is no same-company evidence and
- *    every usable mapping in that same source/four-digit family has one target signature;
+ *    every usable mapping in that same source/family has one target signature;
  * 4. RECLASS is never inferred automatically.
  */
 export function inferFamilyMappingTarget(
@@ -62,4 +78,39 @@ export function inferFamilyMappingTarget(
   const sameCompany = evidence.filter((item) => item.companyId === currentCompanyId && usableEvidence(item));
   if (sameCompany.length) return infer(sameCompany, 'SAME_COMPANY');
   return infer(evidence.filter((item) => item.companyId !== currentCompanyId), 'CROSS_COMPANY');
+}
+
+/**
+ * Tries family levels from narrowest to broadest (currently 4 digits, then 3 digits).
+ * A conflicting narrower family stops inference completely; it is never hidden by a
+ * broader consensus. The broader 3-digit fallback additionally requires at least two
+ * distinct evidence COAs in the selected scope so one sibling cannot define a broad family.
+ */
+export function inferHierarchicalFamilyMappingTarget(
+  levels: HierarchicalFamilyEvidenceLevel[],
+  currentCompanyId: number
+): HierarchicalInferredFamilyMapping | null {
+  for (const level of levels) {
+    const usable = level.evidence.filter(usableEvidence);
+    if (!usable.length) continue;
+
+    const inferred = inferFamilyMappingTarget(level.evidence, currentCompanyId);
+    // Evidence exists at this more-specific level but does not agree: fail closed.
+    if (!inferred) return null;
+
+    const sameCompany = usable.filter((item) => item.companyId === currentCompanyId);
+    const scopedEvidence = inferred.scope === 'SAME_COMPANY'
+      ? sameCompany
+      : usable.filter((item) => item.companyId !== currentCompanyId);
+    const evidenceCoaCount = new Set(scopedEvidence.map((item) => item.coaCode)).size;
+
+    if (level.familyPrefix.length === 3 && evidenceCoaCount < 2) return null;
+
+    return {
+      ...inferred,
+      familyPrefix: level.familyPrefix,
+      evidenceCoaCount,
+    };
+  }
+  return null;
 }

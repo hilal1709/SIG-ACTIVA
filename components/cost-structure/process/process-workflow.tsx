@@ -10,6 +10,10 @@ import type { CostStructureProcess } from './types';
 const NETWORK_BACKOFF_MS = [1200, 2500, 5000];
 type WorkflowError = { title: string; message: string; detail?: string };
 
+function mappingRecoveryRefreshKey(uploadId: number) {
+  return `cost-structure:mapping-recovery-refresh:${uploadId}`;
+}
+
 export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadId: number; onProcessChange?: (value: CostStructureProcess) => void }) {
   const [process, setProcess] = useState<CostStructureProcess | null>(null);
   const [error, setError] = useState<WorkflowError | null>(null);
@@ -55,9 +59,16 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   }, [uploadId, update]);
 
   useEffect(() => {
-    mappingRecoveryAttemptedForUpload.current = null;
+    // Mapping recovery mutates persisted mapping/readiness outside the parent workspace's
+    // initial GETs. After a recovery we reload once so its work queue cannot keep showing
+    // stale pre-recovery counts. The session marker suppresses exactly the immediate
+    // post-reload recovery attempt, preventing a reload loop when genuine blockers remain.
+    const refreshKey = mappingRecoveryRefreshKey(uploadId);
+    const skipImmediateRecovery = window.sessionStorage.getItem(refreshKey) === '1';
+    if (skipImmediateRecovery) window.sessionStorage.removeItem(refreshKey);
+    mappingRecoveryAttemptedForUpload.current = skipImmediateRecovery ? uploadId : null;
     void load();
-  }, [load]);
+  }, [load, uploadId]);
   useEffect(() => {
     const role = getCurrentUserRole();
     // Role state is intentionally hydrated from browser session storage after mount.
@@ -69,14 +80,20 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
 
     // A persisted mapping blocker may pre-date newly approved effective-dated mappings.
     // Run the idempotent reconciliation/backfill action exactly once per page mount.
-    // If genuine residual mappings remain, the resulting BLOCKED state is shown and no
-    // second automatic attempt is made, preserving the no-loop guarantee.
+    // After the attempt, reload once to synchronize the mapping work queue. A one-shot
+    // session marker prevents the reload from immediately repeating the same recovery.
     if (
       shouldAttemptMappingRecovery(process) &&
       mappingRecoveryAttemptedForUpload.current !== uploadId
     ) {
       mappingRecoveryAttemptedForUpload.current = uploadId;
-      const timer = window.setTimeout(() => void advance(), 300);
+      const timer = window.setTimeout(() => {
+        void (async () => {
+          await advance();
+          window.sessionStorage.setItem(mappingRecoveryRefreshKey(uploadId), '1');
+          window.location.reload();
+        })();
+      }, 300);
       return () => window.clearTimeout(timer);
     }
 
