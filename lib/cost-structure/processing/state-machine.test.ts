@@ -45,17 +45,46 @@ test('resolved and reconciled upload advances to calculation', () => {
   assert.equal(status.canAdvance, true);
 });
 
-test('missing audit snapshot is a deterministic stage before calculation', () => {
-  const status = deriveProcessStatus(base({ reconciliationReady: true, auditReady: false, auditMissing: ['AUDIT_GHOPO'] }));
-  assert.equal(status.currentStage, 'AUDIT_READINESS');
+test('missing audit templates are visible but do not block Engine 1 calculation', () => {
+  const status = deriveProcessStatus(base({ reconciliationReady: true, auditReady: false, auditMissing: ['AUDIT_GHOPO', 'AUDIT_DERIV'] }));
+  assert.equal(status.currentStage, 'CALCULATION');
   assert.equal(status.canAdvance, true);
-  assert.equal(status.stages[3].blockers?.[0].message, 'Audit source AUDIT_GHOPO belum tersedia.');
+  const audit = status.stages.find((stage) => stage.key === 'AUDIT_READINESS');
+  assert.equal(audit?.status, 'NOT_APPLICABLE');
+  assert.match(audit?.message ?? '', /AUDIT_GHOPO, AUDIT_DERIV/);
+  assert.match(audit?.message ?? '', /tidak memblokir Engine 1/);
+});
+
+test('persisted successful run bypasses missing audit templates and advances to post-check', () => {
+  const status = deriveProcessStatus(base({
+    periodStatus: 'CALCULATED',
+    reconciliationReady: true,
+    auditReady: false,
+    auditMissing: ['AUDIT_GHOPO', 'AUDIT_DERIV', 'AUDIT_SI2000_DRV'],
+    calculation: { status: 'SUCCESS', belongsToUpload: true },
+  }));
+  assert.equal(status.currentStage, 'POST_CHECK');
+  assert.equal(status.canAdvance, true);
+  assert.equal(status.stages.find((stage) => stage.key === 'CALCULATION')?.status, 'COMPLETED');
 });
 
 test('successful calculation and post-check are ready for explicit finalization', () => {
   const status = deriveProcessStatus(base({ periodStatus: 'COST_STRUCTURE_RECONCILED', reconciliationReady: true, calculation: { status: 'SUCCESS', belongsToUpload: true } }));
   assert.equal(status.overallStatus, 'READY');
   assert.equal(status.readyForFinalization, true);
+});
+
+test('successful calculation remains ready for finalization even when audit templates are absent', () => {
+  const status = deriveProcessStatus(base({
+    periodStatus: 'COST_STRUCTURE_RECONCILED',
+    reconciliationReady: true,
+    auditReady: false,
+    auditMissing: ['AUDIT_GHOPO'],
+    calculation: { status: 'SUCCESS', belongsToUpload: true },
+  }));
+  assert.equal(status.overallStatus, 'READY');
+  assert.equal(status.readyForFinalization, true);
+  assert.equal(status.stages.find((stage) => stage.key === 'AUDIT_READINESS')?.status, 'NOT_APPLICABLE');
 });
 
 test('pipeline action contract never includes finalize', async () => {
@@ -95,7 +124,7 @@ test('Company 2000 optional CC_DRV absence does not block when audit contract is
   assert.equal(status.currentStage, 'CALCULATION');
 });
 
-test('Company 7000 missing required source remains a source-validation blocker', () => {
+test('Company 7000 missing required Engine-1 source remains a source-validation blocker', () => {
   const status = deriveProcessStatus(base({ uploadStatus: 'VALIDATION_FAILED', validationBlockers: [{ code: 'MISSING_SOURCE', message: 'CC_WHRPG wajib tersedia.' }] }));
   assert.equal(status.currentStage, 'SOURCE_VALIDATION');
   assert.equal(status.stages[1].blockers?.[0].code, 'MISSING_SOURCE');
@@ -109,10 +138,11 @@ test('post-check errors retain stage-specific details', () => {
   assert.deepEqual(status.stages[5].blockers, [{ code: 'HPP_RECONCILIATION', message: 'HPP difference 1.00.' }]);
 });
 
-test('pipeline hydrates the exact active upload and lets Phase D resolve missing-COA control rows', () => {
+test('automatic pipeline leaves audit hydration outside Engine 1 and lets Phase D resolve missing-COA control rows', () => {
   const service = readFileSync('lib/cost-structure/processing/service.ts', 'utf8');
   const hydration = readFileSync('lib/cost-structure/audit-hydration/service.ts', 'utf8');
-  assert.match(service, /hydrateAuditSnapshot\(periodId, userId, uploadId\)/);
+  assert.doesNotMatch(service, /hydrateAuditSnapshot/);
+  assert.match(service, /getAuditSnapshotReadiness/);
   assert.match(hydration, /expectedUploadId\?: number/);
   assert.match(service, /phaseDResolvableIssueCodes[\s\S]*SOURCE_ROW_MISSING_COA/);
   const producedSet = service.match(/const phaseDProducedIssueCodes = new Set\(\[([\s\S]*?)\]\);/)?.[1] ?? '';
