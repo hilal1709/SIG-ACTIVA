@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getCurrentUserRole, isAdmin } from '@/app/utils/rolePermissions';
 import { costStructureProcessApi, ProcessApiError } from './api';
 import { shouldAutoAdvance } from './presentation';
 import { ProcessTracker } from './process-tracker';
@@ -13,6 +14,8 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   const [process, setProcess] = useState<CostStructureProcess | null>(null);
   const [error, setError] = useState<WorkflowError | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [admin, setAdmin] = useState(false);
+  const [auditMessage, setAuditMessage] = useState('');
   const requestInFlight = useRef(false);
   const networkAttempt = useRef(0);
 
@@ -52,12 +55,34 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
+    const role = getCurrentUserRole();
+    setAdmin(role !== null && isAdmin(role));
+  }, []);
+  useEffect(() => {
     if (!process || !shouldAutoAdvance(process) || requestInFlight.current) return;
     if (error && networkAttempt.current >= NETWORK_BACKOFF_MS.length) return;
     const delay = NETWORK_BACKOFF_MS[Math.max(0, networkAttempt.current - 1)] ?? 900;
     const timer = window.setTimeout(() => void advance(), delay);
     return () => window.clearTimeout(timer);
   }, [advance, process, error]);
+
+  const hydrateAudit = async () => {
+    if (!process || requestInFlight.current) return;
+    requestInFlight.current = true; setSubmitting(true); setAuditMessage(''); setError(null);
+    try {
+      const response = await fetch(`/api/cost-structure/periods/${process.periodId}/hydrate-audit`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedUploadId: uploadId }),
+      });
+      const value = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(value.error ?? 'Audit hydration gagal.');
+      setAuditMessage(`Audit export siap · ${Number(value.rowCount ?? 0).toLocaleString('id-ID')} rows · hash terverifikasi.`);
+      await load();
+    } catch (caught) {
+      setError({ title: 'Audit export belum siap', message: caught instanceof Error ? caught.message : 'Audit hydration gagal.' });
+    } finally { requestInFlight.current = false; setSubmitting(false); }
+  };
 
   const finalize = async () => {
     if (!process?.readyForFinalization || requestInFlight.current) return;
@@ -71,7 +96,15 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   };
 
   if (!process) return <section className="min-w-0 rounded-xl border bg-card p-4 sm:p-6">{error ? <InlineError error={error} retry={load} /> : <p className="flex items-center gap-2 text-sm text-muted-foreground"><span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />Memuat status proses…</p>}</section>;
-  return <div className="min-w-0 space-y-3"><ProcessTracker process={process} submitting={submitting} onRetry={advance} onFinalize={finalize} />{error && <InlineError error={error} retry={advance} />}</div>;
+
+  const auditStage = process.stages.find((stage) => stage.key === 'AUDIT_READINESS');
+  const showAuditMaintenance = admin && auditStage?.status === 'NOT_APPLICABLE';
+  return <div className="min-w-0 space-y-3">
+    <ProcessTracker process={process} submitting={submitting} onRetry={advance} onFinalize={finalize} />
+    {showAuditMaintenance && <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3 text-sm"><div className="min-w-0"><p className="font-medium">Audit historical untuk export belum lengkap</p><p className="mt-1 break-words text-xs text-muted-foreground">Menyiapkan snapshot audit hanya memproses AUDIT_* dari workbook authoritative; Engine 1 dan calculation run tidak diubah.</p></div><button type="button" disabled={submitting} onClick={() => void hydrateAudit()} className="rounded-md border border-primary px-3 py-2 font-medium text-primary disabled:opacity-50">{submitting ? 'Menyiapkan…' : 'Siapkan audit export'}</button></div>}
+    {auditMessage && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{auditMessage}</p>}
+    {error && <InlineError error={error} retry={advance} />}
+  </div>;
 }
 
 function InlineError({ error, retry }: { error: WorkflowError; retry: () => void | Promise<void> }) {
