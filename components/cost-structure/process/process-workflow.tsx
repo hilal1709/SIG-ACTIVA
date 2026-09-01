@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentUserRole, isAdmin } from '@/app/utils/rolePermissions';
 import { costStructureProcessApi, ProcessApiError } from './api';
-import { shouldAutoAdvance } from './presentation';
+import { shouldAttemptMappingRecovery, shouldAutoAdvance } from './presentation';
 import { ProcessTracker } from './process-tracker';
 import type { CostStructureProcess } from './types';
 
@@ -18,6 +18,7 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   const [auditMessage, setAuditMessage] = useState('');
   const requestInFlight = useRef(false);
   const networkAttempt = useRef(0);
+  const mappingRecoveryAttemptedForUpload = useRef<number | null>(null);
 
   const update = useCallback((value: CostStructureProcess) => { setProcess(value); onProcessChange?.(value); }, [onProcessChange]);
   const load = useCallback(async () => {
@@ -53,7 +54,10 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
     } finally { requestInFlight.current = false; setSubmitting(false); }
   }, [uploadId, update]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    mappingRecoveryAttemptedForUpload.current = null;
+    void load();
+  }, [load]);
   useEffect(() => {
     const role = getCurrentUserRole();
     // Role state is intentionally hydrated from browser session storage after mount.
@@ -61,12 +65,27 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
     setAdmin(role !== null && isAdmin(role));
   }, []);
   useEffect(() => {
-    if (!process || !shouldAutoAdvance(process) || requestInFlight.current) return;
+    if (!process || requestInFlight.current) return;
+
+    // A persisted mapping blocker may pre-date newly approved effective-dated mappings.
+    // Run the idempotent reconciliation/backfill action exactly once per page mount.
+    // If genuine residual mappings remain, the resulting BLOCKED state is shown and no
+    // second automatic attempt is made, preserving the no-loop guarantee.
+    if (
+      shouldAttemptMappingRecovery(process) &&
+      mappingRecoveryAttemptedForUpload.current !== uploadId
+    ) {
+      mappingRecoveryAttemptedForUpload.current = uploadId;
+      const timer = window.setTimeout(() => void advance(), 300);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (!shouldAutoAdvance(process)) return;
     if (error && networkAttempt.current >= NETWORK_BACKOFF_MS.length) return;
     const delay = NETWORK_BACKOFF_MS[Math.max(0, networkAttempt.current - 1)] ?? 900;
     const timer = window.setTimeout(() => void advance(), delay);
     return () => window.clearTimeout(timer);
-  }, [advance, process, error]);
+  }, [advance, process, error, uploadId]);
 
   const hydrateAudit = async () => {
     if (!process || requestInFlight.current) return;
