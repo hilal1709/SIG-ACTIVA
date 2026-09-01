@@ -80,9 +80,7 @@ function extractSheet(sheet: ExcelJS.Worksheet) {
   const rows = [];
   for (let rowNumber = 1; rowNumber <= sheet.rowCount; rowNumber += 1) {
     const row = sheet.getRow(rowNumber);
-    if (row.height !== undefined || row.hidden || row.outlineLevel || Object.keys(row.style ?? {}).length) {
-      rows.push({ row: rowNumber, height: row.height, hidden: row.hidden || undefined, outlineLevel: row.outlineLevel || undefined, style: Object.keys(row.style ?? {}).length ? normalize(row.style) : undefined });
-    }
+    if (row.height !== undefined || row.hidden || row.outlineLevel) rows.push({ row: rowNumber, height: row.height, hidden: row.hidden || undefined, outlineLevel: row.outlineLevel || undefined });
   }
   const model = sheet.model as unknown as { merges?: string[] };
   return { name: sheet.name, state: sheet.state, rowCount: sheet.rowCount, columnCount: sheet.columnCount, views: normalize(sheet.views), pageSetup: normalize(sheet.pageSetup), pageMargins: normalize(sheet.pageMargins), headerFooter: normalize(sheet.headerFooter), properties: normalize(sheet.properties), merges: model.merges ?? [], columns, rows, styles, runs };
