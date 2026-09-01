@@ -1,0 +1,51 @@
+name: Temporary freeze Company 2000 style
+
+on:
+  push:
+    branches:
+      - fix/export-deriv-zero-style-and-readiness
+    paths:
+      - .github/workflows/tmp-freeze-company-2000-style.yml
+
+permissions:
+  contents: write
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    env:
+      PREVIEW_ORIGIN: https://sig-activa-dzbw56m6j-hudas-projects-b6a5213c.vercel.app
+      VERCEL_SHARE: Ge2iEkq6ce9jDkiFdUmi6fXwhrF6c2Ue
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/export-deriv-zero-style-and-readiness
+          fetch-depth: 0
+      - name: Fetch exact style package
+        run: |
+          set -euo pipefail
+          curl -fsSL -c /tmp/vercel-cookies "${PREVIEW_ORIGIN}/?_vercel_share=${VERCEL_SHARE}" -o /dev/null
+          curl -fsSL -b /tmp/vercel-cookies "${PREVIEW_ORIGIN}/api/internal/cost-structure-style-blueprint?target=199" -o /tmp/style-package.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const zlib = require('node:zlib');
+          const pkg = JSON.parse(fs.readFileSync('/tmp/style-package.json', 'utf8'));
+          if (pkg.companyCode !== '2000' || pkg.uploadId !== 16 || pkg.uploadVersion !== 2 || pkg.encoding !== 'gzip-base64' || typeof pkg.data !== 'string') {
+            throw new Error(`Unexpected style package identity: ${JSON.stringify({companyCode: pkg.companyCode, uploadId: pkg.uploadId, uploadVersion: pkg.uploadVersion, encoding: pkg.encoding})}`);
+          }
+          const decoded = JSON.parse(zlib.gunzipSync(Buffer.from(pkg.data, 'base64')).toString('utf8'));
+          const names = decoded.sheets?.map((sheet) => sheet.name);
+          const expected = ['SI', 'rincian biaya', 'cc_adm', 'cc pasar'];
+          if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error(`Unexpected sheets: ${JSON.stringify(names)}`);
+          const content = `// Generated once from authoritative Company 2000 Jul-2026 active upload v2.\n// Static style metadata only; production export must not read Storage.\nexport const COMPANY_2000_EXACT_STYLE_SOURCE = ${JSON.stringify({companyCode: pkg.companyCode, sourceFileName: pkg.sourceFileName, uploadId: pkg.uploadId, uploadVersion: pkg.uploadVersion})} as const;\nexport const COMPANY_2000_EXACT_STYLE_GZIP_BASE64 = ${JSON.stringify(pkg.data)} as const;\n`;
+          fs.writeFileSync('lib/cost-structure/export/style-blueprint/company-2000-exact-data.ts', content);
+          console.log(JSON.stringify({source: pkg.sourceFileName, uploadId: pkg.uploadId, uploadVersion: pkg.uploadVersion, sheets: names, compressedBytes: Buffer.from(pkg.data, 'base64').length}));
+          NODE
+      - name: Commit frozen style metadata
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/cost-structure/export/style-blueprint/company-2000-exact-data.ts
+          git commit -m "chore(export): freeze Company 2000 Jul-2026 exact style metadata"
+          git push origin HEAD:fix/export-deriv-zero-style-and-readiness
