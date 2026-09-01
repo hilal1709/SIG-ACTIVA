@@ -61,7 +61,7 @@ function extractSheet(sheet: ExcelJS.Worksheet) {
     };
     for (let column = 1; column <= sheet.columnCount; column += 1) {
       const cell = sheet.getCell(rowNumber, column);
-      if (!cell.hasStyle) { flush(column - 1); continue; }
+      if (!Object.keys(cell.style ?? {}).length) { flush(column - 1); continue; }
       const id = styleId(cell.style);
       if (currentStyle === id) continue;
       flush(column - 1);
