@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import type { ComparedNode, ComparisonType } from '../analysis/types';
 
 export type ParetoDriver = {
@@ -12,25 +13,38 @@ export type ParetoDriver = {
 };
 export type GeneratedCommentary = { text: string; metadata: Record<string, unknown>; drivers: ParetoDriver[] };
 
-const amount = (value: string) => Number(value);
-const rupiah = (value: number) => `${value < 0 ? '-' : ''}Rp${Math.abs(value).toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
-const percent = (value: string) => `${Number(value).toLocaleString('id-ID', { maximumFractionDigits: 2 })}%`;
+const decimal = (value: string | number) => new Prisma.Decimal(value);
+const sign = (value: Prisma.Decimal) => value.cmp(0);
+const rupiah = (value: Prisma.Decimal) => {
+  const negative = value.isNegative();
+  const [whole, fraction = ''] = value.abs().toFixed(2).split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const trimmedFraction = fraction.replace(/0+$/, '');
+  return `${negative ? '-' : ''}Rp${grouped}${trimmedFraction ? `,${trimmedFraction}` : ''}`;
+};
+const percent = (value: string | Prisma.Decimal) => {
+  const normalized = value instanceof Prisma.Decimal ? value : decimal(value);
+  const [whole, fraction = ''] = normalized.toFixed(2).split('.');
+  const trimmedFraction = fraction.replace(/0+$/, '');
+  return `${whole}${trimmedFraction ? `,${trimmedFraction}` : ''}%`;
+};
 
 export function selectParetoDrivers(parent: ComparedNode): ParetoDriver[] {
   const values = (parent.children ?? [])
-    .filter((child) => amount(child.varianceAmount) !== 0)
-    .sort((a, b) => Math.abs(amount(b.varianceAmount)) - Math.abs(amount(a.varianceAmount)) || a.key.localeCompare(b.key));
-  const gross = values.reduce((sum, child) => sum + Math.abs(amount(child.varianceAmount)), 0);
-  if (!gross) return [];
+    .filter((child) => !decimal(child.varianceAmount).isZero())
+    .sort((a, b) => decimal(b.varianceAmount).abs().cmp(decimal(a.varianceAmount).abs()) || a.key.localeCompare(b.key));
+  const gross = values.reduce((sum, child) => sum.plus(decimal(child.varianceAmount).abs()), decimal(0));
+  if (gross.isZero()) return [];
 
   const minimum = values.length >= 3 ? 3 : 1;
   const selected: ParetoDriver[] = [];
-  const parentDirection = Math.sign(amount(parent.varianceAmount));
-  let cumulative = 0;
+  const parentDirection = sign(decimal(parent.varianceAmount));
+  let cumulative = decimal(0);
 
   for (const child of values) {
-    cumulative += Math.abs(amount(child.varianceAmount));
-    const childDirection = Math.sign(amount(child.varianceAmount));
+    const childVariance = decimal(child.varianceAmount);
+    cumulative = cumulative.plus(childVariance.abs());
+    const childDirection = sign(childVariance);
     selected.push({
       key: child.key,
       code: child.code,
@@ -38,10 +52,12 @@ export function selectParetoDrivers(parent: ComparedNode): ParetoDriver[] {
       nodeType: child.nodeType,
       varianceAmount: child.varianceAmount,
       rank: selected.length + 1,
-      grossImpactShare: (Math.abs(amount(child.varianceAmount)) / gross).toFixed(6),
+      grossImpactShare: childVariance.abs().div(gross).toFixed(6),
       direction: parentDirection === 0 ? 'NEUTRAL' : childDirection === parentDirection ? 'PRIMARY' : 'OFFSET',
     });
-    if ((selected.length >= minimum && cumulative / gross >= 0.8) || selected.length === 10) break;
+    const reachedPareto = selected.length >= minimum && cumulative.div(gross).gte('0.8');
+    const reachedCap = selected.length >= 10;
+    if (reachedPareto || reachedCap) break;
   }
   return selected;
 }
@@ -61,26 +77,26 @@ export function generateCommentary(
 ): GeneratedCommentary | null {
   if (node.nodeType === 'COMPANY' || node.nodeType === 'ANALYSIS_BASIS') return null;
 
-  const current = amount(node.currentAmount);
-  const comparison = amount(node.comparisonAmount);
-  const variance = amount(node.varianceAmount);
-  if (current === 0 && comparison === 0) return null;
+  const current = decimal(node.currentAmount);
+  const comparison = decimal(node.comparisonAmount);
+  const variance = decimal(node.varianceAmount);
+  if (current.isZero() && comparison.isZero()) return null;
 
   let movement: string;
-  if (comparison === 0 && current !== 0) movement = `muncul biaya sebesar ${rupiah(current)}`;
-  else if (current === 0 && comparison !== 0) movement = `tidak lagi terdapat biaya dan turun menjadi nol dari ${rupiah(comparison)}`;
-  else if (variance === 0) movement = `secara neto tidak berubah pada ${rupiah(current)}`;
-  else movement = `${variance > 0 ? 'meningkat' : 'menurun'} ${rupiah(Math.abs(variance))}`;
+  if (comparison.isZero() && !current.isZero()) movement = `muncul biaya sebesar ${rupiah(current)}`;
+  else if (current.isZero() && !comparison.isZero()) movement = `tidak lagi terdapat biaya dan turun menjadi nol dari ${rupiah(comparison)}`;
+  else if (variance.isZero()) movement = `secara neto tidak berubah pada ${rupiah(current)}`;
+  else movement = `${variance.isPositive() ? 'meningkat' : 'menurun'} ${rupiah(variance.abs())}`;
 
-  const pct = variance !== 0 && node.variancePercentStatus === 'AVAILABLE' && node.variancePercent !== null
+  const pct = !variance.isZero() && node.variancePercentStatus === 'AVAILABLE' && node.variancePercent !== null
     ? ` atau ${percent(node.variancePercent)}`
     : '';
   const drivers = node.nodeType === 'COST_GROUP' || node.nodeType === 'NATURE' ? selectParetoDrivers(node) : [];
   const primary = drivers.filter((driver) => driver.direction === 'PRIMARY');
   const offsets = drivers.filter((driver) => driver.direction === 'OFFSET');
   const neutral = drivers.filter((driver) => driver.direction === 'NEUTRAL');
-  const describe = (driver: ParetoDriver) => `${driverLabel(driver)} (${rupiah(amount(driver.varianceAmount))}; dampak bruto Pareto ${percent(String(Number(driver.grossImpactShare) * 100))})`;
-  const distributed = drivers.length >= 3 && Number(drivers[0]?.grossImpactShare ?? 1) < 0.4;
+  const describe = (driver: ParetoDriver) => `${driverLabel(driver)} (${rupiah(decimal(driver.varianceAmount))}; dampak bruto Pareto ${percent(decimal(driver.grossImpactShare).times(100))})`;
+  const distributed = drivers.length >= 3 && decimal(drivers[0]?.grossImpactShare ?? '1').lt('0.4');
 
   let text = `${node.nodeType === 'CALCULATED_ITEM' ? 'Item perhitungan' : 'Biaya'} ${node.label} ${movement}${pct} dibanding ${comparisonLabel}.`;
   if (primary.length) {
