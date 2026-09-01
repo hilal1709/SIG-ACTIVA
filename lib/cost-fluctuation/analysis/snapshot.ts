@@ -150,7 +150,7 @@ export function assertSnapshotReconciles(snapshot: AnalyticalSnapshot) {
 
 export function buildFinalizedMonthlySnapshot(period: PersistedPeriod | null): AnalyticalSnapshot | null {
   if (!period || period.status !== 'FINALIZED') return null; const run = period.activeRun;
-  if (!run || period.activeCalculationRunId !== run.id || run.periodId !== period.id || run.status !== 'SUCCESS' || !run.isActive || !run.uploadIsActiveVersion) throw new FluctuationIntegrityError(`Finalized period ${period.id} has invalid active calculation-run/upload lineage.`);
+  if (!run || period.activeCalculationRunId !== run.id || run.periodId !== period.id || run.status !== 'SUCCESS' || !run.isActive || run.uploadIsActiveVersion === false) throw new FluctuationIntegrityError(`Finalized period ${period.id} has invalid active calculation-run/upload lineage.`);
   if (!CANONICAL[period.companyCode]) throw new FluctuationIntegrityError(`Company ${period.companyCode} is outside the Engine 2 scope.`);
   const totals = run.results.filter((r) => r.resultType === 'TOTAL' && r.resultCode === 'TOTAL_COMPANY'); if (totals.length !== 1) throw new FluctuationIntegrityError(`Finalized period ${period.id} must have exactly one TOTAL_COMPANY result.`);
   const basisCode: AnalysisBasisCode = period.companyCode === '2000' ? 'SI' : 'GHOPO'; const groups = engineGroups(period, basisCode);
