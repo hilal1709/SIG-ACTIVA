@@ -7,10 +7,11 @@ import { ProcessTracker } from './process-tracker';
 import type { CostStructureProcess } from './types';
 
 const NETWORK_BACKOFF_MS = [1200, 2500, 5000];
+type WorkflowError = { title: string; message: string; detail?: string };
 
 export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadId: number; onProcessChange?: (value: CostStructureProcess) => void }) {
   const [process, setProcess] = useState<CostStructureProcess | null>(null);
-  const [error, setError] = useState<{ message: string; detail?: string } | null>(null);
+  const [error, setError] = useState<WorkflowError | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const requestInFlight = useRef(false);
   const networkAttempt = useRef(0);
@@ -21,7 +22,7 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
     catch (caught) {
       const e = caught instanceof ProcessApiError ? caught : new ProcessApiError(caught instanceof Error ? caught.message : 'Koneksi proses gagal.');
       if (e.process) update(e.process);
-      setError({ message: e.message, detail: e.technicalDetail });
+      setError({ title: 'Koneksi proses terganggu', message: e.message, detail: e.technicalDetail });
     }
   }, [uploadId, update]);
 
@@ -35,11 +36,14 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
     } catch (caught) {
       const e = caught instanceof ProcessApiError ? caught : new ProcessApiError(caught instanceof Error ? caught.message : 'Koneksi proses gagal.');
       if (e.process) {
+        // A 409 with authoritative process state is a business/no-progress stop, not
+        // a network retry. Keep the server state visible and require explicit retry
+        // so a WAITING stage cannot create an automatic POST loop.
         update(e.process);
-        setError(null);
-        networkAttempt.current = 0;
+        setError({ title: 'Tahap proses belum dapat dilanjutkan', message: e.message, detail: e.technicalDetail });
+        networkAttempt.current = NETWORK_BACKOFF_MS.length;
       } else {
-        setError({ message: e.message, detail: e.technicalDetail });
+        setError({ title: 'Koneksi proses terganggu', message: e.message, detail: e.technicalDetail });
         if (e.retryable) networkAttempt.current = Math.min(networkAttempt.current + 1, NETWORK_BACKOFF_MS.length);
         else networkAttempt.current = NETWORK_BACKOFF_MS.length;
       }
@@ -62,7 +66,7 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
       const response = await fetch(`/api/cost-structure/periods/${process.periodId}/finalize`, { method: 'POST' });
       if (!response.ok) throw new Error('Finalisasi gagal. Periksa kembali kesiapan periode.');
       await load();
-    } catch (caught) { setError({ message: caught instanceof Error ? caught.message : 'Finalisasi gagal.' }); }
+    } catch (caught) { setError({ title: 'Finalisasi gagal', message: caught instanceof Error ? caught.message : 'Finalisasi gagal.' }); }
     finally { requestInFlight.current = false; setSubmitting(false); }
   };
 
@@ -70,6 +74,6 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   return <div className="min-w-0 space-y-3"><ProcessTracker process={process} submitting={submitting} onRetry={advance} onFinalize={finalize} />{error && <InlineError error={error} retry={advance} />}</div>;
 }
 
-function InlineError({ error, retry }: { error: { message: string; detail?: string }; retry: () => void | Promise<void> }) {
-  return <div className="max-w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p className="font-semibold">Koneksi proses terganggu</p><p className="mt-1 break-words">{error.message}</p>{error.detail && <details className="mt-2"><summary className="cursor-pointer font-medium">Technical detail</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs">{error.detail}</pre></details>}<button type="button" onClick={() => void retry()} className="mt-3 rounded-md border border-amber-700 px-3 py-1.5 font-medium">Coba lagi</button></div>;
+function InlineError({ error, retry }: { error: WorkflowError; retry: () => void | Promise<void> }) {
+  return <div className="max-w-full rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p className="font-semibold">{error.title}</p><p className="mt-1 break-words">{error.message}</p>{error.detail && <details className="mt-2"><summary className="cursor-pointer font-medium">Technical detail</summary><pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all text-xs">{error.detail}</pre></details>}<button type="button" onClick={() => void retry()} className="mt-3 rounded-md border border-amber-700 px-3 py-1.5 font-medium">Coba lagi</button></div>;
 }
