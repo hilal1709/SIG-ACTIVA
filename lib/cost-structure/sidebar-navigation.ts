@@ -20,7 +20,6 @@ export const costStructureNavigation: CostNavigationItem[] = [
       { id: 'cost-readiness', label: 'Historical Readiness', href: '/cost-fluctuation/readiness' },
     ],
   },
-  { id: 'cost-periods', label: 'Riwayat Periode', href: '/cost-structure/periods' },
 ];
 
 export const costStructureAdminNavigation: CostNavigationItem[] = [
