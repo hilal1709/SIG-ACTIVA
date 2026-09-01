@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { isMappingBlockingAmount } from '../reconciliation/money';
 import { DERIVATIVE_SOURCE_CODES } from './constants';
 import type { Company7000GroupCode, Company7000NatureTarget, EngineActualLine, FormulaDependency, ResolvedAdjustment, ResolvedSourceLine } from './types';
 
@@ -72,7 +73,7 @@ export function calculateCompany7000(input: Company7000Input) {
     const controlledDerived = line.disposition === 'RECLASSIFIED' && Boolean(line.ruleCode);
     if (derivatives.has(line.logicalSourceCode) || (!mappedSources.has(line.logicalSourceCode) && !controlledDerived)) continue;
     if (line.disposition === 'CONTROL_ROW' || line.disposition === 'SUPPORT_SOURCE' || line.disposition === 'EXCLUDED') continue;
-    if (line.disposition === 'UNMAPPED' && line.amount.isZero()) continue;
+    if (line.disposition === 'UNMAPPED' && !isMappingBlockingAmount(line.amount.toString())) continue;
     if (line.applicableMappingCount !== 1) throw new Error(line.applicableMappingCount === 0 ? 'Non-zero source row has no effective mapping.' : 'Source row has ambiguous effective mappings.');
     if (line.disposition === 'UNMAPPED') throw new Error('Non-zero UNMAPPED source amount blocks calculation.');
     const target = input.natures.find((nature) => nature.costGroupId === line.costGroupId && nature.natureId === line.natureId);
