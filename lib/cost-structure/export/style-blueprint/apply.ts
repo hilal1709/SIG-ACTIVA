@@ -23,6 +23,7 @@ function applyRange(sheet: ExcelJS.Worksheet, range: string, style: BlueprintCel
 }
 
 export function applySheetStyleBlueprint(sheet: ExcelJS.Worksheet, blueprint: SheetStyleBlueprint) {
+  if (blueprint.properties) Object.assign(sheet.properties, structuredClone(blueprint.properties));
   if (blueprint.views) sheet.views = structuredClone(blueprint.views) as ExcelJS.WorksheetView[];
   if (blueprint.pageSetup) Object.assign(sheet.pageSetup, structuredClone(blueprint.pageSetup));
   if (blueprint.headerFooter) Object.assign(sheet.headerFooter, structuredClone(blueprint.headerFooter));
