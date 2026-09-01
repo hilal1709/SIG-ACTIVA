@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { isMappingBlockingAmount } from '../reconciliation/money';
 import { COMPANY_2000_GROUPS, COMPANY_2000_SOURCES, COMPANY_2000_SUPPORT_SOURCES } from './constants';
 import type { Company2000GroupCode, EngineActualLine, EngineResult, ResolvedAdjustment, ResolvedSourceLine } from './types';
 import type { Company2000SupportControls } from './company-2000-si-adapter';
@@ -21,7 +22,7 @@ export function calculateCompany2000(input: { sourceLines: ResolvedSourceLine[];
   for (const line of input.sourceLines) {
     if (!allowedSources.has(line.logicalSourceCode) && !supportSources.has(line.logicalSourceCode)) continue;
     if (line.disposition === 'CONTROL_ROW' || line.disposition === 'SUPPORT_SOURCE' || line.disposition === 'EXCLUDED') continue;
-    if (line.disposition === 'UNMAPPED' && line.amount.isZero()) continue;
+    if (line.disposition === 'UNMAPPED' && !isMappingBlockingAmount(line.amount.toString())) continue;
     if (line.applicableMappingCount !== 1) {
       throw new Error(line.applicableMappingCount === 0 ? 'Non-zero source row has no effective mapping.' : 'Source row has ambiguous effective mappings.');
     }

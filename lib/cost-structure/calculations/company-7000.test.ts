@@ -59,12 +59,12 @@ test('formula normalization is half-up before residual reconciliation and lineag
   assert.equal(result.controls.find((item) => item.resultCode === 'HPP_NATURE_RECONCILIATION')?.difference.toFixed(2), '0.00');
 });
 
-test('mapping safety, exclusions, reclassification, zero-unmapped and Derivatif isolation', () => {
+test('mapping safety, exclusions, reclassification, de-minimis unmapped and Derivatif isolation', () => {
   const base = golden();
   const expected = calculateCompany7000(base).companyTotal.toFixed(2);
-  base.sourceLines.push(line('ADUM', 101, 'N01', '999', { logicalSourceCode: 'DERIVATIF' }), line('ADUM', 101, 'N01', '999', { disposition: 'EXCLUDED', mappingAction: 'EXCLUDE' }), line('ADUM', 101, 'N01', '5', { disposition: 'RECLASSIFIED', mappingAction: 'RECLASS' }), line('ADUM', 101, 'N01', '0', { disposition: 'UNMAPPED', applicableMappingCount: 0 }));
+  base.sourceLines.push(line('ADUM', 101, 'N01', '999', { logicalSourceCode: 'DERIVATIF' }), line('ADUM', 101, 'N01', '999', { disposition: 'EXCLUDED', mappingAction: 'EXCLUDE' }), line('ADUM', 101, 'N01', '5', { disposition: 'RECLASSIFIED', mappingAction: 'RECLASS' }), line('ADUM', 101, 'N01', '0', { disposition: 'UNMAPPED', applicableMappingCount: 0 }), line('ADUM', 101, 'N01', '-1', { disposition: 'UNMAPPED', applicableMappingCount: 0 }));
   assert.equal(calculateCompany7000(base).companyTotal.toFixed(2), d(expected).add(5).toFixed(2));
-  const unknown = golden(); unknown.sourceLines.push(line('ADUM', 101, 'N01', '1', { disposition: 'UNMAPPED', applicableMappingCount: 0 }));
+  const unknown = golden(); unknown.sourceLines.push(line('ADUM', 101, 'N01', '1.01', { disposition: 'UNMAPPED', applicableMappingCount: 0 }));
   assert.throws(() => calculateCompany7000(unknown), /no effective mapping/);
   const ambiguous = golden(); ambiguous.sourceLines[0].applicableMappingCount = 2;
   assert.throws(() => calculateCompany7000(ambiguous), /ambiguous/);
