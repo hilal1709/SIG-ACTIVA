@@ -89,7 +89,10 @@ function extractSheet(sheet: ExcelJS.Worksheet) {
 
 export async function GET(request: NextRequest) {
   if (process.env.VERCEL_ENV === 'production') return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  const periodId = Number(request.nextUrl.searchParams.get('periodId'));
+  const target = request.nextUrl.searchParams.get('target');
+  const [targetPeriod, ...targetSheetParts] = target?.split(':') ?? [];
+  const periodId = Number(target ? targetPeriod : request.nextUrl.searchParams.get('periodId'));
+  const requestedSheet = target ? targetSheetParts.join(':') || null : request.nextUrl.searchParams.get('sheet');
   if (!Number.isInteger(periodId) || periodId <= 0) return NextResponse.json({ error: 'periodId is required' }, { status: 400 });
   const period = await prisma.costPeriod.findUnique({ where: { id: periodId }, include: { company: true, activeCalculationRun: { include: { upload: true } } } });
   const run = period?.activeCalculationRun;
@@ -97,7 +100,6 @@ export async function GET(request: NextRequest) {
   const bytes = await costStructureStorage.download(run.upload.storageKey);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as never);
-  const requestedSheet = request.nextUrl.searchParams.get('sheet');
   if (!requestedSheet) return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: run.upload.originalFileName, sheets: workbook.worksheets.map((sheet) => ({ name: sheet.name, rowCount: sheet.rowCount, columnCount: sheet.columnCount, state: sheet.state })) });
   const sheet = workbook.worksheets.find((item) => item.name.trim().toLocaleLowerCase() === requestedSheet.trim().toLocaleLowerCase());
   if (!sheet) return NextResponse.json({ error: `Sheet ${requestedSheet} not found` }, { status: 404 });
