@@ -56,6 +56,8 @@ export default function ProcessWorkflow({ uploadId, onProcessChange }: { uploadI
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     const role = getCurrentUserRole();
+    // Role state is intentionally hydrated from browser session storage after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAdmin(role !== null && isAdmin(role));
   }, []);
   useEffect(() => {
