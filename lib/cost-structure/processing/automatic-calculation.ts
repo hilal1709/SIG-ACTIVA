@@ -2,12 +2,7 @@ import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { CalculationConflictError, runCostStructureCalculation } from '@/lib/cost-structure/calculations/run-service';
 
-const AUTOMATIC_CALCULATION_LOCK_NAMESPACE = 0x534947n; // "SIG"
-const ADVISORY_KEY_MULTIPLIER = 4_294_967_296n;
-
-function automaticCalculationLockKey(periodId: number) {
-  return AUTOMATIC_CALCULATION_LOCK_NAMESPACE * ADVISORY_KEY_MULTIPLIER + BigInt(periodId);
-}
+const AUTOMATIC_CALCULATION_LOCK_NAMESPACE = 0x534947; // "SIG"
 
 /**
  * Serializes automatic calculation starts for one period and makes repeated
@@ -16,7 +11,7 @@ function automaticCalculationLockKey(periodId: number) {
  */
 export async function runAutomaticCostStructureCalculation(periodId: number, uploadId: number, userId: number) {
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${automaticCalculationLockKey(periodId)})`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(${AUTOMATIC_CALCULATION_LOCK_NAMESPACE}::integer, ${periodId}::integer)`;
 
     const upload = await tx.costUpload.findUnique({
       where: { id: uploadId },
