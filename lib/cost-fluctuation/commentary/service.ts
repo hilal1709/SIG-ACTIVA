@@ -37,13 +37,16 @@ export async function saveDraft(input: SaveDraftInput, userId: number) {
     const status = nextStatus(existing?.status ?? null, 'SAVE', reason, '', existing?.preparedById ?? userId, userId);
     const data = { reason, status, preparedById: userId, preparedAt: new Date(), reviewerNote: null, reviewedById: null, reviewedAt: null };
     const generated = generateCommentary(context.target.node, input.comparisonType, context.analysis.comparisonLabel, context.analysisLineageKey);
+    const generatedBaseline = generated && !existing?.generatedText
+      ? { generatedText: generated.text, generationMetadataJson: auditJson(generated.metadata), generatedAt: new Date() }
+      : {};
     const row = existing
-      ? await tx.costCommentary.update({ where: { id: existing.id }, data })
+      ? await tx.costCommentary.update({ where: { id: existing.id }, data: { ...data, ...generatedBaseline } })
       : await tx.costCommentary.create({ data: { ...data, ...identity, analysisLevel: context.analysisLevel, costGroupId: context.target.groupId, natureId: context.target.natureId, coaId: context.coaId, calculatedItemKey: context.calculatedItemKey,
         generatedText: generated?.text ?? null, generationMetadataJson: generated ? auditJson(generated.metadata) : Prisma.JsonNull, generatedAt: generated ? new Date() : null } });
     const version = (existing?.history[0]?.version ?? 0) + 1;
     await tx.costCommentaryHistory.create({ data: { commentaryId: row.id, version, reason, status, changedById: userId } });
-    await tx.costAuditLog.create({ data: { userId, periodId: input.periodId, action: WORKFLOW_AUDIT.SAVE, entityType: 'CostCommentary', entityId: String(row.id), newValueJson: auditJson({ analysisKey: row.analysisKey, comparisonType: row.comparisonType, status: row.status, version }) } });
+    await tx.costAuditLog.create({ data: { userId, periodId: input.periodId, action: WORKFLOW_AUDIT.SAVE, entityType: 'CostCommentary', entityId: String(row.id), newValueJson: auditJson({ analysisKey: row.analysisKey, comparisonType: row.comparisonType, status: row.status, version, generatedBaselineCaptured: Boolean(generated && !existing?.generatedText) }) } });
     return row;
   }, transactionOptions);
 }
