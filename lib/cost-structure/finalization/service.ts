@@ -4,6 +4,7 @@ import {
   assertFinalizationReady,
   assertReconciliationReady,
   FinalizationError,
+  mappingCompleteForReadiness,
   type FinalizationSnapshot,
 } from './policy';
 export { assertFinalizationReady, assertPersistedControlsReady, assertReconciliationReady, FinalizationError } from './policy';
@@ -21,13 +22,16 @@ async function loadSnapshot(periodId: number, db: SnapshotDb = prisma): Promise<
   if (!period) return null;
   const runId = period.activeCalculationRun?.id;
   const uploadId = period.activeCalculationRun?.uploadId;
-  const [results, unresolvedErrors, unmappedRows, reconciliationErrors] = await Promise.all([
+  const [results, unresolvedErrors, mappingRows, reconciliationErrors] = await Promise.all([
     runId ? db.costCalculationResult.findMany({
       where: { calculationRunId: runId },
       select: { resultCode: true, resultType: true, reconciliationStatus: true, reconciliationDifference: true },
     }) : [],
     uploadId ? db.costValidationIssue.count({ where: { uploadId, severity: 'ERROR', resolved: false } }) : 0,
-    uploadId ? db.costSourceRow.count({ where: { uploadId, mappingStatus: 'UNMAPPED', amount: { not: 0 } } }) : 0,
+    uploadId ? db.costSourceRow.findMany({
+      where: { uploadId, mappingStatus: { in: ['MAPPED', 'EXCLUDED', 'RECLASSIFIED', 'UNMAPPED'] } },
+      select: { logicalSourceCode: true, coaCodeRaw: true, amount: true, mappingStatus: true },
+    }) : [],
     uploadId ? db.costValidationIssue.count({
       where: { uploadId, issueCode: { in: ['CC_GROUP_NOT_RECONCILED', 'SOURCE_NOT_RECONCILED'] }, resolved: false },
     }) : 0,
@@ -43,7 +47,12 @@ async function loadSnapshot(periodId: number, db: SnapshotDb = prisma): Promise<
     } : null,
     unresolvedErrors,
     sourceReconciled: reconciliationErrors === 0,
-    mappingComplete: unmappedRows === 0,
+    mappingComplete: mappingCompleteForReadiness(mappingRows.map((row) => ({
+      logicalSourceCode: row.logicalSourceCode,
+      coaCodeRaw: row.coaCodeRaw,
+      amount: row.amount?.toString() ?? null,
+      mappingStatus: row.mappingStatus,
+    }))),
     results,
   };
 }
