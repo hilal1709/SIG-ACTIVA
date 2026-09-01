@@ -106,11 +106,12 @@ function extractSheet(sheet: ExcelJS.Worksheet) {
 export async function GET(request: NextRequest) {
   if (process.env.VERCEL_ENV === 'production') return NextResponse.json({ error: 'Not found' }, { status: 404 });
   const target = request.nextUrl.searchParams.get('target');
-  const [targetPeriod, ...targetSheetParts] = target?.split(':') ?? [];
-  const compressed = targetSheetParts.at(-1)?.toLowerCase() === 'gzip';
-  if (compressed) targetSheetParts.pop();
+  const package2000 = target === '199';
+  const [targetPeriod, ...targetSheetParts] = package2000 ? ['1'] : target?.split(':') ?? [];
+  const compressed = package2000 || targetSheetParts.at(-1)?.toLowerCase() === 'gzip';
+  if (!package2000 && compressed) targetSheetParts.pop();
   const periodId = Number(target ? targetPeriod : request.nextUrl.searchParams.get('periodId'));
-  const requestedSheet = target ? targetSheetParts.join(':') || null : request.nextUrl.searchParams.get('sheet');
+  const requestedSheet = package2000 ? null : target ? targetSheetParts.join(':') || null : request.nextUrl.searchParams.get('sheet');
   if (!Number.isInteger(periodId) || periodId <= 0) return NextResponse.json({ error: 'periodId is required' }, { status: 400 });
 
   const period = await prisma.costPeriod.findUnique({
@@ -126,6 +127,25 @@ export async function GET(request: NextRequest) {
   const bytes = await costStructureStorage.download(upload.storageKey);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(bytes as never);
+
+  if (package2000) {
+    const targetNames = ['SI', 'rincian biaya', 'cc_adm', 'cc pasar'];
+    const sheets = targetNames.map((name) => {
+      const sheet = workbook.worksheets.find((item) => item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase());
+      if (!sheet) throw new Error(`Sheet ${name} not found`);
+      return extractSheet(sheet);
+    });
+    const payload = {
+      companyCode: period.company.companyCode,
+      sourceFileName: upload.originalFileName,
+      uploadId: upload.id,
+      uploadVersion: upload.version,
+      sheets,
+    };
+    const data = gzipSync(Buffer.from(JSON.stringify(payload), 'utf8'), { level: 9 }).toString('base64');
+    return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: upload.originalFileName, uploadId: upload.id, uploadVersion: upload.version, encoding: 'gzip-base64', data });
+  }
+
   if (!requestedSheet) return NextResponse.json({ companyCode: period.company.companyCode, sourceFileName: upload.originalFileName, uploadId: upload.id, uploadVersion: upload.version, sheets: workbook.worksheets.map((sheet) => ({ name: sheet.name, rowCount: sheet.rowCount, columnCount: sheet.columnCount, state: sheet.state })) });
   const sheet = workbook.worksheets.find((item) => item.name.trim().toLocaleLowerCase() === requestedSheet.trim().toLocaleLowerCase());
   if (!sheet) return NextResponse.json({ error: `Sheet ${requestedSheet} not found` }, { status: 404 });
