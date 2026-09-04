@@ -21,6 +21,15 @@ test('Stage E GET is scoped to the current active upload', () => {
   assert.match(route, /uploadId:\s*activeUpload\.id/);
 });
 
+test('Stage E reads authoritative coaCodeRaw and fail-closes incomplete source populations', () => {
+  const service = readFileSync('lib/cost-structure/raw-v2/si-service.ts', 'utf8');
+  assert.match(service, /coaCodeRaw:\s*\{\s*not:\s*null\s*\}/);
+  assert.match(service, /coaCode:\s*row\.coaCodeRaw!/);
+  assert.doesNotMatch(service, /coaCodeResolved:\s*\{\s*not:\s*null\s*\}/);
+  assert.match(service, /actual !== source\.detailRowCount/);
+  assert.match(service, /analytical population tidak lengkap/);
+});
+
 test('Stage E runtime has no hard-coded acceptance COA or August amounts', () => {
   const runtime = readFileSync('lib/cost-structure/raw-v2/si.ts', 'utf8') + readFileSync('lib/cost-structure/raw-v2/si-service.ts', 'utf8');
   assert.doesNotMatch(runtime, /62140001|147739445941|3448504987|159829527515/);
