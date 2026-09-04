@@ -57,11 +57,24 @@ export async function calculateRawV2Company2000Si(input: { fiscalYear: number; f
       where: {
         uploadId: upload.id,
         logicalSourceCode: { in: ['TB', 'CC_ADUM', 'CC_PASAR', 'CC_DERIV'] },
-        coaCodeResolved: { not: null },
+        coaCodeRaw: { not: null },
         amount: { not: null },
       },
       orderBy: [{ logicalSourceCode: 'asc' }, { sourceRowNumber: 'asc' }, { id: 'asc' }],
     });
+
+    const populationBySource = new Map<string, number>();
+    for (const row of dbRows) populationBySource.set(row.logicalSourceCode, (populationBySource.get(row.logicalSourceCode) ?? 0) + 1);
+    for (const code of ['TB', 'CC_ADUM', 'CC_PASAR', 'CC_DERIV']) {
+      const source = byCode.get(code);
+      if (source?.presenceStatus !== 'PRESENT') continue;
+      const actual = populationBySource.get(code) ?? 0;
+      if (actual !== source.detailRowCount) {
+        throw new RawV2SiEligibilityError(
+          `${code} analytical population tidak lengkap: ${actual} dari ${source.detailRowCount} detail rows terbaca.`
+        );
+      }
+    }
 
     const company = await tx.costCompany.findUnique({ where: { companyCode: '2000' } });
     if (!company) throw new RawV2SiEligibilityError('Company 2000 master tidak ditemukan.');
@@ -84,7 +97,7 @@ export async function calculateRawV2Company2000Si(input: { fiscalYear: number; f
       logicalSourceCode: row.logicalSourceCode,
       originalSheetName: row.originalSheetName,
       sourceRowNumber: row.sourceRowNumber,
-      coaCode: row.coaCodeResolved!,
+      coaCode: row.coaCodeRaw!,
       descriptionRaw: row.descriptionRaw,
       amount: row.amount!,
     }));
