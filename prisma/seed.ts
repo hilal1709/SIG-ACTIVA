@@ -45,7 +45,63 @@ async function main() {
     role: adminSystem.role 
   });
 
-  console.log('Seed completed successfully - Only user data synced');
+  const costCompanies = [
+    {
+      companyCode: '2000',
+      companyName: 'Company 2000',
+      groups: [
+        { code: 'ADUM', name: 'ADUM', displayOrder: 1 },
+        { code: 'PASAR', name: 'PASAR', displayOrder: 2 },
+      ],
+    },
+    {
+      companyCode: '7000',
+      companyName: 'Company 7000',
+      groups: [
+        { code: 'HPP', name: 'HPP', displayOrder: 1 },
+        { code: 'ADUM', name: 'ADUM', displayOrder: 2 },
+        { code: 'PASAR', name: 'PASAR', displayOrder: 3 },
+      ],
+    },
+  ];
+
+  for (const companySeed of costCompanies) {
+    const company = await prisma.costCompany.upsert({
+      where: { companyCode: companySeed.companyCode },
+      update: {
+        companyName: companySeed.companyName,
+        active: true,
+      },
+      create: {
+        companyCode: companySeed.companyCode,
+        companyName: companySeed.companyName,
+      },
+    });
+
+    for (const group of companySeed.groups) {
+      await prisma.costGroup.upsert({
+        where: {
+          companyId_code: {
+            companyId: company.id,
+            code: group.code,
+          },
+        },
+        update: {
+          name: group.name,
+          displayOrder: group.displayOrder,
+          active: true,
+        },
+        create: {
+          companyId: company.id,
+          ...group,
+        },
+      });
+    }
+  }
+
+  console.log('Cost Structure company and group master data synced');
+
+  console.log('Seed completed successfully');
 }
 
 main()
