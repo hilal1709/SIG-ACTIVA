@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SIG ACTIVA
 
-## Getting Started
+SIG ACTIVA is a finance/accounting web application built with Next.js, React, TypeScript, Prisma and PostgreSQL.
 
-First, run the development server:
+Current functional areas include Material reporting, Fluktuasi OI/EXP, Prepaid monitoring, Accrual monitoring, user/security administration, and the planned **Cost Structure & Fluktuasi Biaya** module.
+
+## Technology
+
+- Next.js 16 App Router
+- React 19
+- TypeScript
+- Prisma 7
+- PostgreSQL
+- Tailwind CSS
+- `xlsx` / `exceljs`
+- Chart.js / Recharts
+- Custom session-cookie authentication
+
+## Development
+
+Install dependencies and start the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Build:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Production database DDL is managed through the controlled Supabase migration workflow documented in `docs/cost-structure-fluctuation/DATABASE_RUNTIME.md`. Do not run the historical Prisma migration chain wholesale against production.
 
-## Learn More
+Environment configuration must include the database/session variables required by the existing application. Do not commit secrets or local environment files.
 
-To learn more about Next.js, take a look at the following resources:
+The Cost Structure upload workflow additionally requires these server-only variables:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<server-only-service-role-key>
+COST_STRUCTURE_STORAGE_BUCKET=cost-structure-source
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The bucket must remain private with a 50 MB file-size limit. Never prefix the service-role credential with `NEXT_PUBLIC_`.
 
-## Deploy on Vercel
+## Cost Structure & Fluktuasi Biaya
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The new module is designed as two independent but connected engines:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```text
+Monthly Source Workbook
+        ↓
+Engine 1 — Monthly Cost Structure
+        ↓
+Finalized Cost Structure History
+        ↓
+Engine 2 — Fluctuation Analysis
+```
+
+Initial scope:
+
+```text
+Company 2000: ADUM + PASAR
+Company 7000: HPP + ADUM + PASAR
+Derivatif: excluded
+```
+
+The existing **Fluktuasi OI/EXP** feature remains a separate business domain and must not be repurposed for this module.
+
+Project documentation:
+
+- [Project Blueprint](docs/cost-structure-fluctuation/PROJECT_BLUEPRINT.md)
+- [Business Rules](docs/cost-structure-fluctuation/BUSINESS_RULES.md)
+- [Architecture](docs/cost-structure-fluctuation/ARCHITECTURE.md)
+- [Source Data Specification](docs/cost-structure-fluctuation/SOURCE_DATA_SPEC.md)
+- [Data Model](docs/cost-structure-fluctuation/DATA_MODEL.md)
+- [Calculation Rules](docs/cost-structure-fluctuation/CALCULATION_RULES.md)
+- [UI Flow](docs/cost-structure-fluctuation/UI_FLOW.md)
+- [Security](docs/cost-structure-fluctuation/SECURITY.md)
+- [Test Cases](docs/cost-structure-fluctuation/TEST_CASES.md)
+- [Development Plan](docs/cost-structure-fluctuation/DEVELOPMENT_PLAN.md)
+- [Codex Prompts](docs/cost-structure-fluctuation/CODEX_PROMPTS.md)
+
+AI/Codex contributors must also follow root [`AGENTS.md`](AGENTS.md).
+
+## Development rule for financial modules
+
+Accounting results must be validated before UI polish. For the Cost Structure module, company 2000 and company 7000 golden-workbook reconciliation tests are mandatory development gates before Fluctuation Engine implementation.

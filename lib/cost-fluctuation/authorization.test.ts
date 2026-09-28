@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict'; import test from 'node:test';
+import { isCostStructureAuthorized } from '../cost-structure/role-authorization';
+
+test('AUTH-001 unauthenticated has no authorized role', () => { for (const permission of ['READ','PREPARE','REVIEW','ADMIN'] as const) assert.equal(isCostStructureAuthorized('', permission), false); });
+test('AUTH-002 read-only roles can read and cannot mutate', () => { for (const role of ['AUDITOR_INTERNAL','STAFF_PRODUCTION']) { assert.equal(isCostStructureAuthorized(role,'READ'),true); for(const permission of ['PREPARE','REVIEW','ADMIN'] as const)assert.equal(isCostStructureAuthorized(role,permission),false); } });
+test('AUTH-003 STAFF_ACCOUNTING uses actual prepare path only', () => { assert.equal(isCostStructureAuthorized('STAFF_ACCOUNTING','READ'),true);assert.equal(isCostStructureAuthorized('STAFF_ACCOUNTING','PREPARE'),true);assert.equal(isCostStructureAuthorized('STAFF_ACCOUNTING','REVIEW'),false);assert.equal(isCostStructureAuthorized('STAFF_ACCOUNTING','ADMIN'),false); });
+test('AUTH-004 SUPERVISOR_ACCOUNTING reviews/returns but cannot prepare/admin', () => { assert.equal(isCostStructureAuthorized('SUPERVISOR_ACCOUNTING','READ'),true);assert.equal(isCostStructureAuthorized('SUPERVISOR_ACCOUNTING','REVIEW'),true);assert.equal(isCostStructureAuthorized('SUPERVISOR_ACCOUNTING','PREPARE'),false);assert.equal(isCostStructureAuthorized('SUPERVISOR_ACCOUNTING','ADMIN'),false); });
+test('AUTH-005 ADMIN_SYSTEM has all Phase I permissions', () => { for (const permission of ['READ','PREPARE','REVIEW','ADMIN'] as const)assert.equal(isCostStructureAuthorized('ADMIN_SYSTEM',permission),true); });
+test('AUTH-006 unknown roles cannot broaden Cost Structure authorization', () => { for (const permission of ['READ','PREPARE','REVIEW','ADMIN'] as const)assert.equal(isCostStructureAuthorized('NEW_UNAPPROVED_ROLE',permission),false); });

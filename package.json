@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "migrate": "prisma migrate deploy",
     "start": "next start",
     "lint": "eslint",
+    "test": "node scripts/run-cost-structure-tests.mjs",
     "smoke:rate-limit": "node scripts/security-smoke-rate-limit.mjs",
-      "smoke:realtime-auth": "node scripts/security-smoke-realtime-auth.mjs",
+    "smoke:realtime-auth": "node scripts/security-smoke-realtime-auth.mjs",
     "postinstall": "prisma generate"
   },
   "prisma": {

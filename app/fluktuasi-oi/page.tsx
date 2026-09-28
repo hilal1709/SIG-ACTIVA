@@ -1225,11 +1225,94 @@ const FMT_M   = new Intl.NumberFormat('id-ID', { minimumFractionDigits: 2, maxim
 const fmtRp  = (n: number) => FMT_RP.format(n);
 const fmtPct = (n: number) => FMT_PCT.format(n) + '%';
 
+const DIRECT_GAP_DIRECTION_ACCOUNTS = new Set([
+  '71510001',
+  '71510002',
+  '71510003',
+  '71510004',
+  '71510098',
+  '71560001',
+]);
+
+const getGapMovement = (accountCode: string, gap: number): 'Kenaikan' | 'Penurunan' => {
+  const normalizedCode = (accountCode.match(/\d{8}/)?.[0] ?? accountCode).trim();
+  const directDirection = DIRECT_GAP_DIRECTION_ACCOUNTS.has(normalizedCode);
+  const isIncrease = directDirection ? gap > 0 : gap < 0;
+  return isIncrease ? 'Kenaikan' : 'Penurunan';
+};
+
+const REASON_TITLE_ACRONYMS: Record<string, string> = {
+  PSAK: 'PSAK',
+  ROU: 'RoU',
+  OI: 'OI',
+  EXP: 'EXP',
+  KI: 'KI',
+  SLL: 'SLL',
+  BNI: 'BNI',
+  BSI: 'BSI',
+  SLA: 'SLA',
+  K3: 'K3',
+};
+
+const formatReasonAccountName = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) return 'Akun ini';
+
+  return trimmed
+    .split(/\s+/)
+    .map((token) => {
+      const bare = token.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, '');
+      const preserved = REASON_TITLE_ACRONYMS[bare.toUpperCase()];
+      if (preserved) return token.replace(bare, preserved);
+
+      return token
+        .toLowerCase()
+        .replace(/(^|[-(/])([a-z])/g, (_match, prefix: string, letter: string) => prefix + letter.toUpperCase());
+    })
+    .join(' ');
+};
+
+const YOY_PRINCIPAL_REASON_ACCOUNTS = new Set(['71510001', '71510002']);
+const MONTH_NAMES_ID = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+];
+
+const formatYoYPrincipalPeriod = (ac: AmountCol | undefined, relation: 'previous' | 'current'): string => {
+  if (!ac) return '';
+  const normalized = `${ac.yearLabel ?? ''} ${ac.dateLabel ?? ''} ${ac.label ?? ''}`;
+  const year = normalized.match(/20\d{2}/)?.[0] ?? '';
+  let month = 0;
+
+  const db = ac.label.match(/^20\d{2}\.(\d{2})$/);
+  if (db) month = Number(db[1]);
+
+  if (!month) {
+    const monthMap: Record<string, number> = {
+      jan: 1, feb: 2, mar: 3, apr: 4, mei: 5, may: 5, jun: 6,
+      jul: 7, aug: 8, agu: 8, sep: 9, oct: 10, okt: 10, nov: 11,
+      dec: 12, des: 12,
+    };
+    const lower = normalized.toLowerCase();
+    for (const [token, value] of Object.entries(monthMap)) {
+      if (new RegExp(`\\b${token}`, 'i').test(lower)) {
+        month = value;
+        break;
+      }
+    }
+  }
+
+  const monthLabel = month >= 1 && month <= 12 ? MONTH_NAMES_ID[month - 1] : '';
+  const periodLabel = [monthLabel, year].filter(Boolean).join(' ');
+  return periodLabel ? `Saldo Pokok ${periodLabel}` : 'Saldo Pokok';
+};
+
 /** Build a full deterministic analysis string from period data (pre-AI) */
 const buildTemplateReason = (
   gap: number,
   pct: number,
   accountName: string,
+  accountCode: string,
   side: 'mom' | 'yoy' | 'ytd',
   amountCols: AmountCol[],
   rowValues: (string | number)[],
@@ -1238,7 +1321,7 @@ const buildTemplateReason = (
   klasifikasi?: string,
   subBreakdown?: { klasifikasi: string; currAmount: number; prevAmount: number }[],
 ): string => {
-  const name = accountName || 'Akun ini';
+  const name = formatReasonAccountName(accountName);
   const absPct = Math.abs(pct);
   const currAC    = amountCols[currIdx];
   const ytdUpTo   = side === 'ytd' ? getAmountColMonthLabel(currAC) : '';
@@ -1249,8 +1332,10 @@ const buildTemplateReason = (
   if (gap === 0)
     return `Tidak ada fluktuasi ${modeLabel} — nilai ${name} tidak berubah pada periode ini.`;
 
-  const dir    = gap > 0 ? 'Kenaikan' : 'Penurunan';
-  const dirLow = gap > 0 ? 'kenaikan' : 'penurunan';
+  // Materiality threshold for Rekap Reason MoM/YoY: fluctuations below Rp1 million are not shown.
+  if (side !== 'ytd' && Math.abs(gap) < 1_000_000) return '';
+
+  const dir = getGapMovement(accountCode, gap);
   const abs    = Math.abs(gap);
   const fmtAmt = (n: number) => {
     const a = Math.abs(n);
@@ -1270,15 +1355,42 @@ const buildTemplateReason = (
   // Sub-breakdown lines per klasifikasi
   if (subBreakdown && subBreakdown.length > 0) {
     const breakdownLines = subBreakdown
-      .filter(b => b.currAmount !== 0 || b.prevAmount !== 0)
+      // Show only material drivers (>= Rp1 million) for MoM, YoY, and YtD.
+      .filter(b => {
+        const bGap = b.currAmount - b.prevAmount;
+        return Math.abs(bGap) >= 1_000_000;
+      })
+      // List drivers that move in the same direction as the total fluctuation first.
+      // Example: if the total is a decrease, show all decreases before increases.
+      // Preserve the existing relative order within each direction group.
+      .sort((a, b) => {
+        const aGap = a.currAmount - a.prevAmount;
+        const bGap = b.currAmount - b.prevAmount;
+        const totalMovement = getGapMovement(accountCode, gap);
+        const aPriority = getGapMovement(accountCode, aGap) === totalMovement ? 0 : 1;
+        const bPriority = getGapMovement(accountCode, bGap) === totalMovement ? 0 : 1;
+        return aPriority - bPriority;
+      })
       .map(b => {
         const bGap = b.currAmount - b.prevAmount;
-        const sign = bGap > 0 ? '+' : '';
-        return `   - ${b.klasifikasi} ${fmtAmt(b.currAmount)} (${sign}${fmtAmt(bGap)})`;
+        const movement = getGapMovement(accountCode, bGap);
+        const driverLine = `   - ${movement} ${b.klasifikasi} senilai ${fmtAmt(bGap)}`;
+
+        const normalizedAccountCode = (accountCode.match(/\d{8}/)?.[0] ?? accountCode).trim();
+        if (side === 'yoy' && YOY_PRINCIPAL_REASON_ACCOUNTS.has(normalizedAccountCode)) {
+          const previousPrincipal = formatYoYPrincipalPeriod(prevAC, 'previous');
+          const currentPrincipal = formatYoYPrincipalPeriod(currAC, 'current');
+          return [driverLine, `        ${previousPrincipal}`, `        ${currentPrincipal}`].join('\n');
+        }
+
+        return driverLine;
       });
     if (breakdownLines.length > 0) {
       return [header, ...breakdownLines].join('\n');
     }
+    // If source breakdown exists but every driver is below Rp1 million,
+    // keep only the material account-level header and suppress immaterial detail lines.
+    return header;
   }
 
   // Fallback: no breakdown available
@@ -3815,15 +3927,15 @@ export default function FluktuasiOIPage() {
       const prevYoYPer = amountColIndexToPeriode(amountCols, effYP);
 
       const mom = Math.abs(row.gapMoM) !== 0
-        ? buildTemplateReason(row.gapMoM, row.pctMoM, descVal, 'mom', amountCols, row.values, effMC, effMP, undefined,
+        ? buildTemplateReason(row.gapMoM, row.pctMoM, descVal, acctCode, 'mom', amountCols, row.values, effMC, effMP, undefined,
             getBreakdown(acctCode, currPer, prevMoMPer))
         : '';
       const yoy = Math.abs(row.gapYoY) !== 0
-        ? buildTemplateReason(row.gapYoY, row.pctYoY, descVal, 'yoy', amountCols, row.values, effYC, effYP, undefined,
+        ? buildTemplateReason(row.gapYoY, row.pctYoY, descVal, acctCode, 'yoy', amountCols, row.values, effYC, effYP, undefined,
             getBreakdown(acctCode, amountColIndexToPeriode(amountCols, effYC), prevYoYPer))
         : '';
       const ytd = Math.abs(row.gapYtD) !== 0
-        ? buildTemplateReason(row.gapYtD, row.pctYtD, descVal, 'ytd', amountCols, row.values, effYtdC, effYtdP, undefined,
+        ? buildTemplateReason(row.gapYtD, row.pctYtD, descVal, acctCode, 'ytd', amountCols, row.values, effYtdC, effYtdP, undefined,
             getYtdBreakdown(acctCode, ytdCurrPeriodKeys, ytdPrevPeriodKeys))
         : '';
       map.set(idx, { mom, yoy, ytd });
@@ -4944,8 +5056,11 @@ export default function FluktuasiOIPage() {
                         // Whether to hide Reason column (all non-detail rows)
                         const hideReason = isCategory || isAccountSubtotal || isSectionTotal;
                         const isSpecial  = row.type === 'category' || row.type === 'subtotal';
-                        const gapColor  = (v: number) =>
-                          isSpecial ? '#fff' : v < 0 ? '#b91c1c' : v > 0 ? '#15803d' : '#374151';
+                        const gapColor = (v: number) => {
+                          if (isSpecial) return '#fff';
+                          if (v === 0) return '#374151';
+                          return getGapMovement(acctVal, v) === 'Kenaikan' ? '#15803d' : '#b91c1c';
+                        };
                         const rowHasData = hasData(row);
                         return (
                           <tr key={ri} className="js-rekap-row">

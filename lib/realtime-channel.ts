@@ -1,4 +1,4 @@
-const REALTIME_CHANNEL_PREFIX = 'private-sig-activa-role:';
+const REALTIME_CHANNEL_PREFIX = 'private-sig-activa-role-';
 
 const ALLOWED_REALTIME_ROLES = new Set([
   'ADMIN_SYSTEM',
