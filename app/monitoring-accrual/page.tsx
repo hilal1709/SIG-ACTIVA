@@ -335,7 +335,6 @@ export default function MonitoringAccrualPage() {
   const quickRincianModalPanelRef = useRef<HTMLDivElement>(null);
 
   // -- Display states for animated metric counters -----------------
-  const [displaySaldo,    setDisplaySaldo]    = useState(0);
   const [displayCount,    setDisplayCount]    = useState(0);
   const [displayPeriodes, setDisplayPeriodes] = useState(0);
 
@@ -668,6 +667,15 @@ export default function MonitoringAccrualPage() {
     ));
   }, [accrualData, debouncedSearchTerm, itemTotalsCache]);
 
+  // Changing report scope must not leave hidden items selected for bulk deletion.
+  useEffect(() => {
+    const visibleIds = new Set(filteredData.map(item => item.id));
+    setSelectedIds(prev => {
+      const next = new Set([...prev].filter(id => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredData]);
+
   // Group only the items included in the selected snapshot and search.
   const groupedByKodeAkun = useMemo(() => {
     const groups: Record<string, Record<string, Accrual[]>> = {};
@@ -686,14 +694,12 @@ export default function MonitoringAccrualPage() {
   // -- Animated metric counters (placed here after useMemo) -------------
   useEffect(() => {
     if (loading) return;
-    const proxy1 = { value: 0 };
-    animate(proxy1, { value: totalSaldo, duration: 1300, ease: 'easeOutExpo', onUpdate: () => setDisplaySaldo(proxy1.value) } as any);
     const proxy2 = { value: 0 };
     animate(proxy2, { value: accrualData.length, duration: 900, ease: 'easeOutExpo', onUpdate: () => setDisplayCount(Math.round(proxy2.value)) } as any);
     const proxy3 = { value: 0 };
     animate(proxy3, { value: totalPeriodes, duration: 1050, ease: 'easeOutExpo', onUpdate: () => setDisplayPeriodes(Math.round(proxy3.value)) } as any);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, totalSaldo, accrualData.length, totalPeriodes]);
+  }, [loading, accrualData.length, totalPeriodes]);
 
   // -- Table rows animation (placed here after useMemo) -----------------
   useEffect(() => {
@@ -770,7 +776,7 @@ export default function MonitoringAccrualPage() {
           row.getCell(6).value = item.alokasi || '';
           row.getCell(7).value = item.deskripsi;
           row.getCell(8).value = item.totalAmount;
-          row.getCell(8).numFmt = '#,##0.000';
+          row.getCell(8).numFmt = '#,##0';
           
           // DOC DATE
           const docDate = new Date(item.startDate);
@@ -783,7 +789,7 @@ export default function MonitoringAccrualPage() {
           
           // OUTSTANDING
           row.getCell(11).value = totalOutstanding;
-          row.getCell(11).numFmt = '#,##0.000';
+          row.getCell(11).numFmt = '#,##0';
           
           // Apply borders and styling
           for (let col = 1; col <= 11; col++) {
@@ -924,7 +930,7 @@ export default function MonitoringAccrualPage() {
         
         row.getCell(2).value = vendor;
         row.getCell(3).value = amount;
-        row.getCell(3).numFmt = '#,##0.00';
+        row.getCell(3).numFmt = '#,##0';
         
         // Add borders
         for (let col = 1; col <= 3; col++) {
@@ -965,7 +971,7 @@ export default function MonitoringAccrualPage() {
     
     const totalAmountCell = totalRow.getCell(3);
     totalAmountCell.value = totalGrandTotal;
-    totalAmountCell.numFmt = '#,##0.00';
+    totalAmountCell.numFmt = '#,##0';
     totalAmountCell.font = { name: 'Calibri', size: 11, bold: true };
     totalAmountCell.alignment = { horizontal: 'right', vertical: 'middle' };
     totalAmountCell.fill = {
@@ -3424,7 +3430,7 @@ export default function MonitoringAccrualPage() {
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">
                         Outstanding Saldo{filterPeriod ? ` – Akhir ${periodLabel}` : ''}
                       </p>
-                      <p className="text-xs font-bold text-slate-800 font-mono">{formatCurrency(displaySaldo)}</p>
+                      <p className="text-xs font-bold text-slate-800 font-mono">{formatCurrency(totalSaldo)}</p>
                     </div>
                   </div>
 
@@ -3578,7 +3584,7 @@ export default function MonitoringAccrualPage() {
                       const cached = itemTotalsCache.get(item.id);
                       return sum + (cached?.realisasi || 0);
                     }, 0);
-                    const totalSaldoKodeAkun = totalSaldoAwalKodeAkun + totalAccrualKodeAkun - totalRealisasiKodeAkun;
+                    const totalSaldoKodeAkun = allItems.reduce((sum, item) => sum + itemTotalsCache.get(item.id)!.saldo, 0);
 
                     return (
                       <React.Fragment key={kodeAkun}>
@@ -3669,7 +3675,7 @@ export default function MonitoringAccrualPage() {
                             const cached = itemTotalsCache.get(item.id);
                             return sum + (cached?.saldoAwal ?? getSaldoAwal(item));
                           }, 0);
-                          const totalSaldoVendor = totalSaldoAwalVendor + totalAccrualVendor - totalRealisasiVendor;
+                          const totalSaldoVendor = items.reduce((sum, item) => sum + itemTotalsCache.get(item.id)!.saldo, 0);
 
                           return (
                             <React.Fragment key={vendorKey}>
