@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       });
     }
 
