@@ -1,12 +1,12 @@
-# HPP Cost Intelligence — Stages 1–2
+# HPP Cost Intelligence — Stages 1–3
 
-Native Next.js client page at `/hpp-cost-intelligence` (authenticated via the existing app shell). No new packages, APIs, migrations, or environment variables.
+Native Next.js client page at `/hpp-cost-intelligence` (authenticated via the existing app shell). Uses existing PostgreSQL / Prisma connection. No new packages or environment variables.
 
 ## Local preview
 
 1. Use the normal SIG Activa development setup and sign in.
 2. Select **HPP – Cost Intelligence** in the existing sidebar (or navigate directly to `/hpp-cost-intelligence`).
-3. Choose **Muat snapshot JSON** and select an authorized local 2026 snapshot.
+3. Dashboard reads current published HPP history automatically; select a database year or **Snapshot lokal 2026** for an authorized legacy JSON preview.
 4. Test filters, threshold, reset, ranking, heatmap, drill-down, peer selection, search, sorting, pagination, CSV export, and mobile layout.
 
 Snapshot data stays in browser memory. Reload clears it. Never commit confidential operational snapshots or place them in public assets. The JSON contract is an array of unique material/plant records with string `code`, `name`, `plant` and two 12-element arrays `c` (COGM) and `q` (delivery quantity), containing finite numbers or null; positions January–December 2026. Zero and null are distinct.
@@ -16,7 +16,7 @@ Snapshot data stays in browser memory. Reload clears it. Never commit confidenti
 Run from repository root using Node.js 22+:
 
 ```sh
-node --experimental-strip-types --test app/hpp-cost-intelligence/model.test.mjs lib/hpp/access.test.mjs
+npm run test:hpp
 npx tsc --noEmit
 npm run build
 ```
@@ -29,5 +29,13 @@ The unit test uses synthetic data only. Before merge, run the full build and aut
 - The five existing finance read roles (ADMIN_SYSTEM, STAFF_ACCOUNTING, SUPERVISOR_ACCOUNTING, AUDITOR_INTERNAL, STAFF_PRODUCTION) can view and analyze HPP, load a local preview snapshot and export the filtered CSV. Local snapshot selection is not a server write. Unknown roles are denied by signed-session middleware; the sidebar uses the same policy for display. No new role or persisted write endpoint is introduced.
 - Before merge, verify each allowed role, unauthenticated direct-route redirect, unsupported-role denial, active sidebar state, mobile menu closure, and section navigation without losing the loaded snapshot. Database/API write authorization is deferred to the data stages.
 - Snapshot selection is a temporary local preview, not a production data ingestion feature.
-- Database history, Excel import pipeline, SAP Agent, and actual vs RKAP are later stages.
+- Stage 3 adds monthly versioned history and a read-only API. Excel import/publication, SAP Agent, and actual vs RKAP remain later stages.
 - Positive COGM values only are compared; no unverified unit conversions or cross-material aggregation.
+
+## Stage 3 — database and API
+
+- Apply migration `20261127090000_add_hpp_history` using the existing staging database migration procedure (`npx prisma migrate deploy` against an explicitly verified staging DATABASE_URL). Do not apply to production or run `prisma db push` until approved. This migration adds two tables only, with RLS enabled and no browser policies; verify the server Prisma role can access them (existing owner/bypass-RLS configuration). The partial unique current-version index and check constraints are SQL-managed.
+- `HppPeriodVersion`: year, month, revision, source metadata, created-by, created/published dates and current flag. No current publication exists initially. `HppObservation`: unique material–plant within each version; source COGM and quantity in DECIMAL(38,12), optional currency, quantity unit and price unit. Null is distinct from zero; codes are text. Future ingestion must reject non-representable precision and invalid identities, never silently round or normalize. The dashboard converts decimal strings to JavaScript numbers for existing visualization only.
+- One current published revision per year/month is enforced by a partial unique index. Stage 4 must insert a new immutable version and complete monthly observation set, validate coverage, then atomically deactivate the previous current revision and publish the new one within a transaction. Retain prior rows for audit; no destructive replace. A source row with both values blank can be stored explicitly to preserve coverage.
+- `GET /api/hpp/history[?year=2026]` returns available published years, selected year, period/revision/publication metadata, observation count and pivoted rows. Default selects newest published year. No write route or automatic seed. Signed-session role check, private/no-store responses, repeatable-read transaction, maximum 120,000 observations / 50,000 material–plant combinations, explicit error instead of silent truncation. Empty published history is normal; missing migration/DB errors return 503 with a local preview alternative.
+- Test using an isolated staging database and synthetic data: no session -> 401, unknown role -> 403, invalid year -> 400, empty database -> 200 empty, published vs unpublished/superseded versions, month uniqueness, zero/null precision, year changes, CSV year, reload and local preview. Confirm migration and rollback procedure with database owner; no production migration performed by this PR.

@@ -51,6 +51,8 @@ model User {
   costCycleRunsGenerated            CostCycleChangeRun[]       @relation("CostCycleRunGeneratedBy")
   costCycleReferencesUpdated        CostCycleReference[]       @relation("CostCycleReferenceUpdatedBy")
 
+  hppPeriodVersions HppPeriodVersion[] @relation("HppPeriodVersionCreatedBy")
+
   @@map("users")
 }
 
@@ -1429,4 +1431,45 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+
+// HPP: monthly, versioned source data; publication is controlled by the ingestion workflow.
+model HppPeriodVersion {
+  id           Int       @id @default(autoincrement())
+  fiscalYear   Int
+  fiscalPeriod Int
+  revision     Int
+  sourceType   String
+  sourceName   String?
+  sourceSha256 String?   @db.VarChar(64)
+  createdById  Int?
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  isCurrent    Boolean   @default(false)
+  createdBy    User?     @relation("HppPeriodVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  observations HppObservation[]
+
+  @@unique([fiscalYear, fiscalPeriod, revision])
+  @@index([isCurrent, fiscalYear, fiscalPeriod])
+  @@index([createdById])
+  @@map("hpp_period_versions")
+}
+
+model HppObservation {
+  id              Int              @id @default(autoincrement())
+  periodVersionId Int
+  materialCode    String
+  materialName    String
+  plant           String
+  cogm            Decimal?         @db.Decimal(38, 12)
+  deliveryQty     Decimal?         @db.Decimal(38, 12)
+  currency        String?
+  quantityUnit    String?
+  priceUnit       Decimal?         @db.Decimal(38, 12)
+  periodVersion   HppPeriodVersion @relation(fields: [periodVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([periodVersionId, materialCode, plant])
+  @@index([materialCode, plant])
+  @@map("hpp_observations")
 }

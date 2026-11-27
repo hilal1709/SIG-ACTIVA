@@ -54,8 +54,8 @@ export function sortRows(rows: HppRow[], column: SortKey, asc: boolean, current:
     return (typeof x === 'number' && typeof y === 'number' ? x-y : String(x).localeCompare(String(y))) * (asc ? 1 : -1);
   });
 }
-export function makeCsv(rows: HppRow[], current: number, base: number, threshold: number): string {
-  const values = [['Tahun','Periode analisis','Periode pembanding','Kode material','Deskripsi','Plant','COGM pembanding','COGM analisis','Deviasi (%)','Deliv Qty','Status'], ...rows.map(d => [2026, months[current], months[base], d.code, d.name, d.plant, d.c[base], d.c[current], delta(d,current,base), d.q[current], statusLabel(d,current,base,threshold)])];
+export function makeCsv(rows: HppRow[], current: number, base: number, threshold: number, year = 2026): string {
+  const values = [['Tahun','Periode analisis','Periode pembanding','Kode material','Deskripsi','Plant','COGM pembanding','COGM analisis','Deviasi (%)','Deliv Qty','Status'], ...rows.map(d => [year, months[current], months[base], d.code, d.name, d.plant, d.c[base], d.c[current], delta(d,current,base), d.q[current], statusLabel(d,current,base,threshold)])];
   // Prevent spreadsheet formula injection from user-provided text; preserve numeric negatives.
   return '\uFEFF' + values.map(row => row.map(v => {
     let s = String(v ?? '');
