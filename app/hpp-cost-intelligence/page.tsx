@@ -7,7 +7,7 @@ import HppDashboard from './HppDashboard';
 const Header = dynamic(() => import('../components/Header'), { ssr: false });
 const Sidebar = dynamic(() => import('../components/Sidebar'), { ssr: false });
 
-// Existing Activa shell only; menu registration and module-specific permissions are stage 2.
+// Existing Activa shell; HPP authorization is enforced by middleware.
 export default function HppCostIntelligencePage() {
   const [open, setOpen] = useState(false);
   return <div className="flex min-h-screen overflow-x-hidden bg-background">

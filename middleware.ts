@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionCookieName, verifySessionToken } from '@/lib/session';
+import { canReadHpp, isHppPath } from '@/lib/hpp/access';
 
 const PUBLIC_PAGE_PATHS = ['/login', '/register', '/verify-email'];
 const PUBLIC_API_PATHS = [
@@ -149,6 +150,11 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!isApi && isPublicPage(pathname) && isAuthenticated) {
+    return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
+  }
+
+  // HPP navigation visibility is not an authorization boundary. Check the signed session here.
+  if (!isApi && isHppPath(pathname) && !canReadHpp(session?.role)) {
     return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
   }
 
