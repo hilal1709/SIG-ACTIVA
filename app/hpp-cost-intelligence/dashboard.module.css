@@ -14,7 +14,7 @@
 @container (min-width: 560px) {
   .filters { grid-template-columns: repeat(3, minmax(0,1fr)); }
 }
-@container (min-width: 860px) {
+@container (min-width: 780px) {
   .filters {
     grid-template-columns: minmax(94px,1fr) minmax(94px,1fr) minmax(86px,.85fr) minmax(88px,.9fr) minmax(164px,2.2fr) minmax(72px,.75fr) minmax(76px,auto);
   }
