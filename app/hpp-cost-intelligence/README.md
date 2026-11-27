@@ -49,3 +49,7 @@ Staging acceptance: test authorized and forbidden roles, wrong/malformed file, d
 ## HPP UX alignment
 
 HPP Dashboard and Data Management now follow the existing Activa Dashboard motion language (GSAP section reveal, animated integer KPIs, colored metric icons, hover states, shared Card/Skeleton, top loading bar and Sonner feedback). Animations are scoped to HPP, cleaned up on unmount and reduced-motion aware. Retains responsive filter grid, KPI auto-fit and manual register resize. No database/API/model changes. Browser acceptance: first load skeleton, refresh with existing data, empty/error states, filter changes, drill-down, resize/autofit, upload preview, publish feedback and mobile/reduced-motion behavior.
+
+## Stage 5 — SAP Desktop Agent pilot
+
+See scripts/desktop-agent/README.md. Generic device registration and a versioned machine protocol; HPP is the first job handler. New device registration/revocation, scoped job queue, machine-only bearer endpoint, result staging and human review. Synthetic mode cannot publish; SAP publication additionally defaults off. Migration is additive and must be applied through approved Supabase tooling, not the historical Prisma chain. No direct SAP posting. Real SAP GUI adapter and end-to-end Windows validation are pending.

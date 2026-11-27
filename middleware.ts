@@ -98,6 +98,11 @@ export async function middleware(request: NextRequest) {
   const isApi = pathname.startsWith('/api/');
   const method = request.method.toUpperCase();
 
+  // This exact machine endpoint performs its own bearer authentication; all other APIs retain session checks.
+  if (pathname === '/api/desktop-agent' && method === 'POST') {
+    return applySecurityHeaders(NextResponse.next());
+  }
+
   const token = request.cookies.get(getSessionCookieName())?.value;
   const session = await verifySessionToken(token);
   const isAuthenticated = Boolean(session);
@@ -158,7 +163,7 @@ export async function middleware(request: NextRequest) {
     return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
   }
 
-  if (!isApi && startsWithPath(pathname, HPP_MANAGE_ROUTE) && !canManageHpp(session?.role)) {
+  if (!isApi && (startsWithPath(pathname, HPP_MANAGE_ROUTE) || startsWithPath(pathname, '/hpp-cost-intelligence/sap-sync')) && !canManageHpp(session?.role)) {
     return applySecurityHeaders(NextResponse.redirect(new URL('/hpp-cost-intelligence', request.url)));
   }
 
