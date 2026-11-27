@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionCookieName, verifySessionToken } from '@/lib/session';
+import { canReadHpp, isHppPath, canManageHpp, HPP_MANAGE_ROUTE } from '@/lib/hpp/access';
 
 const PUBLIC_PAGE_PATHS = ['/login', '/register', '/verify-email'];
 const PUBLIC_API_PATHS = [
@@ -97,6 +98,21 @@ export async function middleware(request: NextRequest) {
   const isApi = pathname.startsWith('/api/');
   const method = request.method.toUpperCase();
 
+  // Upload-only release: agent routes are opt-in, independent of HPP Excel import.
+  if (process.env.NEXT_PUBLIC_HPP_AGENT_ENABLED !== 'true') {
+    if (startsWithPath(pathname, '/api/desktop-agent') || startsWithPath(pathname, '/api/hpp/sync')) {
+      return applySecurityHeaders(NextResponse.json({ error: 'SAP Sync belum diaktifkan' }, { status: 404 }));
+    }
+    if (startsWithPath(pathname, '/hpp-cost-intelligence/sap-sync')) {
+      return applySecurityHeaders(NextResponse.redirect(new URL('/hpp-cost-intelligence', request.url)));
+    }
+  }
+
+  // This exact machine endpoint performs its own bearer authentication; all other APIs retain session checks.
+  if (pathname === '/api/desktop-agent' && method === 'POST') {
+    return applySecurityHeaders(NextResponse.next());
+  }
+
   const token = request.cookies.get(getSessionCookieName())?.value;
   const session = await verifySessionToken(token);
   const isAuthenticated = Boolean(session);
@@ -150,6 +166,15 @@ export async function middleware(request: NextRequest) {
 
   if (!isApi && isPublicPage(pathname) && isAuthenticated) {
     return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
+  }
+
+  // HPP navigation visibility is not an authorization boundary. Check the signed session here.
+  if (!isApi && isHppPath(pathname) && !canReadHpp(session?.role)) {
+    return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
+  }
+
+  if (!isApi && (startsWithPath(pathname, HPP_MANAGE_ROUTE) || startsWithPath(pathname, '/hpp-cost-intelligence/sap-sync')) && !canManageHpp(session?.role)) {
+    return applySecurityHeaders(NextResponse.redirect(new URL('/hpp-cost-intelligence', request.url)));
   }
 
   if (!isApi && isAdminPage(pathname)) {

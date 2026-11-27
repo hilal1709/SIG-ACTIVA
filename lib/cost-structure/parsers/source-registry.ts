@@ -1,0 +1,34 @@
+import type { LogicalSourceCode } from './types';
+
+type Definition = { code: LogicalSourceCode; companies: string[]; required: boolean; aliases: string[] };
+const definitions: Definition[] = [
+  { code:'TB', companies:['2000','7000'], required:true, aliases:['TB'] },
+  { code:'CC_PROD', companies:['2000','7000'], required:true, aliases:['CC PROD','CC_PROD'] },
+  { code:'CC_ADUM', companies:['2000','7000'], required:true, aliases:['CC ADUM','CC_ADUM','CC ADM','CC_ADM'] },
+  { code:'CC_PASAR', companies:['2000','7000'], required:true, aliases:['CC PASAR','CC_PASAR'] },
+  { code:'CC_WHRPG', companies:['7000'], required:true, aliases:['CC WHRPG','CC_WHRPG','WHRPG'] },
+  { code:'COAL', companies:['7000'], required:true, aliases:['COAL','BATU BARA'] },
+  { code:'CLINKER_PURCHASE', companies:['7000'], required:true, aliases:['CLINKER PURCHASE','CLINKER_PURCHASE','BELI'] },
+  { code:'SOLAR_PP_ORDER', companies:['7000'], required:true, aliases:['SOLAR PP ORDER','SOLAR_PP_ORDER'] },
+  { code:'OA_STAT', companies:['7000'], required:true, aliases:['OA STAT','OA_STAT','STATISTICAL PASAR'] },
+  { code:'ADJUSTMENT', companies:['2000','7000'], required:false, aliases:['ADJUSTMENT'] },
+
+  // Raw worksheet snapshots remain DB-exportable. Company 2000 Engine 1 V2 additionally
+  // adapts persisted Rincian/CC_DRV cells into calculation-support lineage. CC derivatif is
+  // period-optional: historical periods before its introduction legitimately have no sheet.
+  { code:'AUDIT_SI', companies:['2000'], required:false, aliases:['SI'] },
+  // Company 7000 used a single `SI` summary before the workbook was split into GHoPO + DERIV.
+  // Persist that historical predecessor under the stable AUDIT_GHOPO logical code so existing
+  // Company-7000 summary consumers can distinguish it later by originalSheetName without
+  // fabricating a DERIV source that did not exist in the period.
+  { code:'AUDIT_GHOPO', companies:['7000'], required:false, aliases:['GHOPO','SI'] },
+  { code:'AUDIT_DERIV', companies:['7000'], required:false, aliases:['DERIV'] },
+  { code:'AUDIT_RINCIAN', companies:['2000'], required:true, aliases:['RINCIAN BIAYA'] },
+  { code:'AUDIT_RINCIAN', companies:['7000'], required:false, aliases:['RINCIAN BIAYA'] },
+  { code:'AUDIT_CC_DRV', companies:['2000'], required:false, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
+  { code:'AUDIT_CC_DRV', companies:['7000'], required:false, aliases:['CC DRV','CC_DRV','CC DERIVATIF'] },
+  { code:'AUDIT_SI2000_DRV', companies:['7000'], required:false, aliases:['SI2000 DRV','SI2000_DRV'] },
+];
+export const normalizeLabel = (v: string) => v.trim().toUpperCase().replace(/[\s_.-]+/g, ' ');
+export function sourceDefinitions(companyCode: string) { return definitions.filter((d) => d.companies.includes(companyCode)); }
+export function detectSource(sheetName: string, companyCode: string) { const n=normalizeLabel(sheetName); return sourceDefinitions(companyCode).find((d)=>d.aliases.some((a)=>normalizeLabel(a)===n)); }
