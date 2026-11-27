@@ -1,7 +1,8 @@
 'use client';
 
-import { useMemo, useRef, useState, type ReactNode, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type ReactNode, type ChangeEvent, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { Download, FileUp, RotateCcw } from 'lucide-react';
+import styles from './dashboard.module.css';
 import { delta, fmt, key, latestPeriod, makeCsv, months, pct, positive, sortRows, status, statusLabel, summarize, validateSnapshot, type HppRow, type Observation, type SortKey } from './model';
 
 const inputStyle = 'h-9 w-full min-w-0 rounded-md border border-border bg-background px-2 text-xs';
@@ -50,6 +51,42 @@ export default function HppDashboard(){
   const [threshold,setThreshold]=useState('10'),[selection,setSelection]=useState('');
   const [heatCount,setHeatCount]=useState(12),[search,setSearch]=useState(''),[state,setState]=useState('all');
   const [sort,setSort]=useState<SortKey>('dev'),[asc,setAsc]=useState(false),[page,setPage]=useState(0);
+  const [columnWidths,setColumnWidths]=useState<number[]|null>(null);
+  const tableRef=useRef<HTMLTableElement>(null);
+  const resizeRef=useRef<{index:number;startX:number;widths:number[];pointerId:number}|null>(null);
+  function measuredWidths(){
+    return columnWidths ?? Array.from(tableRef.current?.tHead?.rows[0]?.cells ?? [], cell=>Math.ceil(cell.getBoundingClientRect().width));
+  }
+  function setColumnWidth(widths:number[],index:number,width:number){
+    if(widths.length!==cols.length)return;
+    setColumnWidths(widths.map((w,i)=>i===index?Math.max(56,Math.min(1200,Math.round(width))):w));
+  }
+  function startResize(e:ReactPointerEvent<HTMLSpanElement>,index:number){
+    if(e.button!==0)return;
+    const widths=measuredWidths();
+    if(widths.length!==cols.length)return;
+    e.preventDefault();e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    resizeRef.current={index,startX:e.clientX,widths,pointerId:e.pointerId};
+    setColumnWidths(widths);
+  }
+  function moveResize(e:ReactPointerEvent<HTMLSpanElement>){
+    const r=resizeRef.current;
+    if(!r||r.pointerId!==e.pointerId)return;
+    setColumnWidth(r.widths,r.index,r.widths[r.index]+e.clientX-r.startX);
+  }
+  function stopResize(e:ReactPointerEvent<HTMLSpanElement>){
+    if(resizeRef.current?.pointerId!==e.pointerId)return;
+    resizeRef.current=null;
+    if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);
+  }
+  function resizeKey(e:ReactKeyboardEvent<HTMLSpanElement>,index:number){
+    if(e.key==='Home'){e.preventDefault();setColumnWidths(null);return;}
+    if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
+    e.preventDefault();e.stopPropagation();
+    const widths=measuredWidths();
+    if(widths.length===cols.length)setColumnWidth(widths,index,widths[index]+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?32:8));
+  }
   const drill=useRef<HTMLDivElement>(null);
   const fileInput=useRef<HTMLInputElement>(null);
   const latest=latestPeriod(data);
@@ -73,7 +110,7 @@ export default function HppDashboard(){
     try{
       if(file.size>20*1024*1024)throw new Error('Ukuran snapshot maksimal 20 MB.');
       const rows=validateSnapshot(JSON.parse(await file.text()));
-      setData(rows);setSource(file.name);reset(latestPeriod(rows));
+      setData(rows);setSource(file.name);setColumnWidths(null);reset(latestPeriod(rows));
     }catch(err){setError(err instanceof Error?err.message:'Snapshot tidak dapat dibaca.');}
     finally{setLoading(false);}
   }
@@ -85,7 +122,7 @@ export default function HppDashboard(){
   const top=summary.ups[0];
   const change=(r:HppRow)=>delta(r,current,base)??0;
   const rankLabel=(r:HppRow)=><><span className="block truncate">{r.name}</span><span className="block truncate font-normal text-muted-foreground">{r.code} · {r.plant}</span></>;
-  return <div className="mx-auto max-w-[1600px] min-w-0 space-y-3 text-sm">
+  return <div className={styles.dashboard+" mx-auto w-full min-w-0 space-y-3 text-sm"}>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className={note}>{data.length?'Periode data terakhir: '+months[latest]+' 2026 · '+source:'Snapshot 2026 belum dimuat'} · lokal, tidak dikirim ke server</div>
       <input ref={fileInput} type="file" accept=".json,application/json" className="hidden" onChange={loadFile} aria-label="Pilih snapshot JSON"/>
@@ -93,17 +130,17 @@ export default function HppDashboard(){
     </div>
     {error&&<p role="alert" className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
     {!data.length?<Panel><Empty>Muat snapshot JSON HPP 2026 untuk membuka analisis. Data hanya berada di memori tab browser; refresh menghapus snapshot.</Empty></Panel>:<>
-      <Panel><div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-3 xl:grid-cols-7">
+      <Panel><div className={styles.filters}>
         <Field label="Periode analisis"><select className={inputStyle} value={current} onChange={e=>{const p=+e.target.value;setCurrent(p);setBase(Math.max(0,p-1));resetSelection();}}>{months.map((m,i)=><option key={m} value={i}>{m} 2026</option>)}</select></Field>
-        <Field label="Periode pembanding"><select className={inputStyle} value={base} onChange={e=>{setBase(+e.target.value);resetSelection();}}>{months.map((m,i)=><option key={m} value={i}>{m} 2026</option>)}</select></Field>
+        <Field label="Pembanding"><select className={inputStyle} value={base} onChange={e=>{setBase(+e.target.value);resetSelection();}}>{months.map((m,i)=><option key={m} value={i}>{m} 2026</option>)}</select></Field>
         <Field label="Plant"><select className={inputStyle} value={plant} onChange={e=>{setPlant(e.target.value);resetSelection();}}><option value="all">Semua plant</option>{plants.map(p=><option key={p}>{p}</option>)}</select></Field>
         <Field label="Prefix material"><select className={inputStyle} value={prefix} onChange={e=>{const p=e.target.value;setPrefix(p);if(p!=='all'&&material!=='all'&&!material.startsWith(p))setMaterial('all');resetSelection();}}><option value="all">Semua prefix</option>{prefixes.map(p=><option key={p}>{p}</option>)}</select></Field>
-        <div className="col-span-2"><Field label="Material (kode & deskripsi)"><select className={inputStyle} value={material} onChange={e=>{const m=e.target.value;setMaterial(m);if(m!=='all'&&prefix!=='all'&&!m.startsWith(prefix))setPrefix('all');resetSelection();}}><option value="all">Semua material</option>{codes.map(([c,n])=><option key={c} value={c}>{n} · {c}</option>)}</select></Field></div>
-        <Field label="Ambang kenaikan (%)"><input className={inputStyle} type="number" min=".1" max="10000" step="1" value={threshold} onChange={e=>{setThreshold(e.target.value);resetSelection();}}/></Field>
-        <button type="button" className={buttonStyle} onClick={()=>reset()}><RotateCcw size={14}/>Reset filter</button>
+        <div className={styles.materialFilter}><Field label="Material (kode & deskripsi)"><select className={inputStyle} title={material==='all'?'Semua material':(codes.find(([c])=>c===material)?.[1]??'')+' · '+material} value={material} onChange={e=>{const m=e.target.value;setMaterial(m);if(m!=='all'&&prefix!=='all'&&!m.startsWith(prefix))setPrefix('all');resetSelection();}}><option value="all">Semua material</option>{codes.map(([c,n])=><option key={c} value={c}>{n} · {c}</option>)}</select></Field></div>
+        <Field label="Ambang (%)"><input className={inputStyle} type="number" min=".1" max="10000" step="1" value={threshold} onChange={e=>{setThreshold(e.target.value);resetSelection();}}/></Field>
+        <button type="button" className={buttonStyle+" "+styles.resetFilter} onClick={()=>reset()} title="Reset semua filter"><RotateCcw size={14} className="shrink-0"/>Reset</button>
       </div></Panel>
       <Heading title="01 / Executive overview" sub={months[current]+' 2026 vs '+months[base]+' 2026 · '+scope.length+' kombinasi'}/>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">{cards.map(c=><div key={c.title} className="rounded-lg border border-border border-t-[3px] bg-card p-3 shadow-sm" style={{borderTopColor:c.tone}}><div className={note}>{c.title}</div><div className="text-[28px] font-semibold tabular-nums" style={{color:c.tone===red||c.tone===teal?c.tone:undefined}}>{fmt(c.n)}</div><div className={note}>{c.sub}</div></div>)}</div>
+      <div className={styles.kpis}>{cards.map(c=><div key={c.title} className={styles.kpi+" rounded-lg border border-border border-t-[3px] bg-card shadow-sm"} style={{borderTopColor:c.tone}}><div className={note}>{c.title}</div><div className={styles.kpiValue+" font-semibold tabular-nums"} style={{color:c.tone===red||c.tone===teal?c.tone:undefined}}>{fmt(c.n)}</div><div className={note}>{c.sub}</div></div>)}</div>
       <div className="rounded-r-md border-l-[3px] border-l-[#2878a7] bg-sky-50 p-3 text-xs leading-relaxed text-slate-800"><b>Fokus keputusan:</b> {summary.comparable.length?<>{summary.alerts.length} dari {summary.comparable.length} kombinasi sebanding mencapai ambang kenaikan {fmt(limit,limit%1?1:0)}%. {top?<>Kenaikan terbesar: <b>{top.name} · plant {top.plant}</b> ({pct(change(top))}; {fmt(top.c[base],2)} → {fmt(top.c[current],2)}). </>:'Tidak terdapat kenaikan COGM. '}<b>{scope.length-summary.comparable.length}</b> kombinasi tidak dapat dibandingkan; validasi data kosong dan nilai tidak positif. {current===base?'Periode analisis dan pembanding sama.':''}</>:'Tidak ada pasangan COGM positif yang sebanding. Ubah filter atau periode pembanding.'}</div>
       <Heading title="02 / Exception monitoring" sub="Klik kombinasi untuk melihat tren detail"/>
       <div className="grid min-w-0 gap-3 xl:grid-cols-2">
@@ -123,7 +160,8 @@ export default function HppDashboard(){
       <Heading title="04 / Detail & data quality" sub="Telusuri, urutkan, dan ekspor data hasil filter"/>
       <Panel><h3 className="font-semibold">Register material–plant</h3><p className={note}>Status dihitung dari COGM positif di kedua periode.</p><div className="my-3 flex flex-wrap gap-4 text-xs text-muted-foreground"><span>COGM kosong: <b>{summary.missing}</b></span><span>COGM nol: <b>{summary.zero}</b></span><span>Qty nol: <b>{summary.zeroQty}</b></span><span>Pembanding tidak positif/kosong: <b>{summary.invalidBase}</b></span></div>
         <div className="mb-3 grid items-end gap-2 sm:grid-cols-[1fr_1fr_auto]"><Field label="Cari kode, deskripsi atau plant"><input className={inputStyle} value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="Contoh: 7403 / FINE CLAY"/></Field><Field label="Status data"><select className={inputStyle} value={state} onChange={e=>{setState(e.target.value);setPage(0);}}>{[['all','Semua status'],['alert','Naik ≥ ambang'],['up','Naik di bawah ambang'],['down','Turun'],['flat','Tetap'],['quality','Tidak sebanding / kosong']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></Field><button className={buttonStyle} onClick={exportCsv}><Download size={15}/>Ekspor CSV hasil filter</button></div>
-        <div className="overflow-x-auto"><table className="w-full min-w-[980px] border-collapse text-xs"><thead className="bg-muted"><tr>{cols.map(([c,l],i)=><th key={c} scope="col" aria-sort={sort===c?(asc?'ascending':'descending'):'none'} className={'px-2 py-2 '+(i>=3&&i<=6?'text-right':'text-left')}><button className="font-semibold" type="button" onClick={()=>{setAsc(sort===c?!asc:['code','name','plant','state'].includes(c));setSort(c);setPage(0);}}>{l}{sort===c?(asc?' ↑':' ↓'):''}</button></th>)}</tr></thead><tbody>{table.slice(shownPage*PAGE,(shownPage+1)*PAGE).map(d=>{const v=delta(d,current,base),s=status(d,current,base,limit);return <tr key={key(d)} className={'border-b border-border hover:bg-muted/60 '+(selected&&key(selected)===key(d)?'bg-sky-50':'')}><td className="p-2"><button type="button" onClick={()=>choose(d)} className="font-medium hover:underline">{d.code}</button></td><td className="max-w-[260px] truncate p-2" title={d.name}>{d.name}</td><td className="p-2">{d.plant}</td><td className="p-2 text-right tabular-nums">{fmt(d.c[base],2)}</td><td className="p-2 text-right tabular-nums">{fmt(d.c[current],2)}</td><td className="p-2 text-right font-semibold tabular-nums" style={{color:color(v)}}>{pct(v)}</td><td className="p-2 text-right tabular-nums">{fmt(d.q[current],2)}</td><td className="p-2"><span className={'rounded px-2 py-1 text-[10px] font-medium '+(s==='alert'?'bg-red-100 text-red-800':s==='down'?'bg-teal-100 text-teal-800':s==='quality'?'bg-amber-100 text-amber-900':'bg-muted')}>{statusLabel(d,current,base,limit)}</span></td></tr>;})}{!table.length&&<tr><td colSpan={8}><Empty>Tidak ada data sesuai pencarian.</Empty></td></tr>}</tbody></table></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className={note}>Lebar otomatis · geser batas kanan header untuk resize · panah kiri/kanan saat fokus · klik ganda untuk autofit.</p><button type="button" className={buttonStyle} onClick={()=>setColumnWidths(null)}><RotateCcw size={13}/>Autofit kolom</button></div>
+        <div className={styles.tableScroll}><table ref={tableRef} className={styles.register+" text-xs "+(columnWidths?styles.manual:"")} style={columnWidths?{width:columnWidths.reduce((a,b)=>a+b,0)}:undefined}>{columnWidths&&<colgroup>{columnWidths.map((w,i)=><col key={cols[i][0]} style={{width:w}}/>)}</colgroup>}<thead className="bg-muted"><tr>{cols.map(([c,l],i)=><th key={c} scope="col" aria-sort={sort===c?(asc?'ascending':'descending'):'none'} className={styles.th+' '+(i>=3&&i<=6?'text-right':'text-left')}><button className="font-semibold" type="button" onClick={()=>{setAsc(sort===c?!asc:['code','name','plant','state'].includes(c));setSort(c);setPage(0);}}>{l}{sort===c?(asc?' ↑':' ↓'):''}</button><span role="separator" aria-orientation="vertical" aria-label={'Ubah lebar '+l} tabIndex={0} title={'Geser untuk resize '+l+'; klik ganda untuk autofit'} className={styles.resizeHandle} onPointerDown={e=>startResize(e,i)} onPointerMove={moveResize} onPointerUp={stopResize} onPointerCancel={stopResize} onLostPointerCapture={()=>{resizeRef.current=null;}} onDoubleClick={e=>{e.stopPropagation();setColumnWidths(null);}} onKeyDown={e=>resizeKey(e,i)}/></th>)}</tr></thead><tbody>{table.slice(shownPage*PAGE,(shownPage+1)*PAGE).map(d=>{const v=delta(d,current,base),s=status(d,current,base,limit);return <tr key={key(d)} className={'border-b border-border hover:bg-muted/60 '+(selected&&key(selected)===key(d)?'bg-sky-50':'')}><td className={styles.code+" p-2"}><button type="button" onClick={()=>choose(d)} className="font-medium hover:underline">{d.code}</button></td><td className={styles.description+" p-2"} title={d.name}>{d.name}</td><td className={styles.numeric+" p-2"}>{d.plant}</td><td className={styles.numeric+" p-2 text-right tabular-nums"}>{fmt(d.c[base],2)}</td><td className={styles.numeric+" p-2 text-right tabular-nums"}>{fmt(d.c[current],2)}</td><td className={styles.numeric+" p-2 text-right font-semibold tabular-nums"} style={{color:color(v)}}>{pct(v)}</td><td className={styles.numeric+" p-2 text-right tabular-nums"}>{fmt(d.q[current],2)}</td><td className="p-2"><span className={styles.status+' rounded px-2 py-1 text-[10px] font-medium '+(s==='alert'?'bg-red-100 text-red-800':s==='down'?'bg-teal-100 text-teal-800':s==='quality'?'bg-amber-100 text-amber-900':'bg-muted')}>{statusLabel(d,current,base,limit)}</span></td></tr>;})}{!table.length&&<tr><td colSpan={8}><Empty>Tidak ada data sesuai pencarian.</Empty></td></tr>}</tbody></table></div>
         <div className="mt-3 flex flex-wrap items-center justify-end gap-2"><span className={note}>{table.length?(shownPage*PAGE+1)+'–'+Math.min((shownPage+1)*PAGE,table.length)+' dari '+table.length:'0 kombinasi'}</span><button className={buttonStyle} disabled={shownPage===0} onClick={()=>setPage(shownPage-1)}>Sebelumnya</button><button className={buttonStyle} disabled={(shownPage+1)*PAGE>=table.length} onClick={()=>setPage(shownPage+1)}>Berikutnya</button></div>
       </Panel>
       <footer className={note+' border-t border-border pt-3'}><b>Metodologi & batas interpretasi.</b> Snapshot tahun 2026; {data.length} kombinasi unik. Deviasi = (COGM analisis / COGM pembanding − 1) × 100%, hanya untuk kedua COGM positif. Ambang analisis bukan target perusahaan. Bulan kosong berbeda dari nol. Nilai asli tanpa konversi satuan. Tidak menjumlahkan HPP/kuantitas lintas material atau mengestimasi dampak rupiah tanpa verifikasi UoM, price unit dan basis biaya. Penyebab perubahan perlu investigasi SAP. Belum terhubung ke database atau SAP.</footer>
