@@ -1,0 +1,9 @@
+{
+  "protocol": 1,
+  "handlers": {
+    "HPP_EXTRACT": {
+      "mode": "Synthetic",
+      "adapterPath": "C:\\SIGActiva\\Adapters\\HppExistingScript.ps1"
+    }
+  }
+}

@@ -51,6 +51,8 @@ model User {
   costCycleRunsGenerated            CostCycleChangeRun[]       @relation("CostCycleRunGeneratedBy")
   costCycleReferencesUpdated        CostCycleReference[]       @relation("CostCycleReferenceUpdatedBy")
 
+  hppPeriodVersions HppPeriodVersion[] @relation("HppPeriodVersionCreatedBy")
+
   @@map("users")
 }
 
@@ -1429,4 +1431,93 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+
+// HPP: monthly, versioned source data; publication is controlled by the ingestion workflow.
+model HppPeriodVersion {
+  id           Int       @id @default(autoincrement())
+  fiscalYear   Int
+  fiscalPeriod Int
+  revision     Int
+  sourceType   String
+  sourceName   String?
+  sourceSha256 String?   @db.VarChar(64)
+  correctionNote String? @db.Text
+  createdById  Int?
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  isCurrent    Boolean   @default(false)
+  createdBy    User?     @relation("HppPeriodVersionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  observations HppObservation[]
+  syncBaselines HppSyncJob[] @relation("HppSyncBaseline")
+  syncPublished HppSyncJob[] @relation("HppSyncPublished")
+
+  @@unique([fiscalYear, fiscalPeriod, revision])
+  @@index([isCurrent, fiscalYear, fiscalPeriod])
+  @@index([createdById])
+  @@map("hpp_period_versions")
+}
+
+model HppObservation {
+  id              Int              @id @default(autoincrement())
+  periodVersionId Int
+  materialCode    String
+  materialName    String
+  plant           String
+  cogm            Decimal?         @db.Decimal(38, 12)
+  deliveryQty     Decimal?         @db.Decimal(38, 12)
+  currency        String?
+  quantityUnit    String?
+  priceUnit       Decimal?         @db.Decimal(38, 12)
+  periodVersion   HppPeriodVersion @relation(fields: [periodVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([periodVersionId, materialCode, plant])
+  @@index([materialCode, plant])
+  @@map("hpp_observations")
+}
+
+
+// HPP pilot: isolated machine identities and leased extraction jobs.
+model DesktopAgentDevice {
+  id          String   @id @db.VarChar(36)
+  name        String   @db.VarChar(80)
+  tokenHash   String   @unique @db.VarChar(64)
+  createdById Int
+  createdAt   DateTime @default(now())
+  lastSeenAt  DateTime?
+  revokedAt   DateTime?
+  jobs HppSyncJob[]
+
+  @@map("desktop_agent_devices")
+}
+
+model HppSyncJob {
+  id             String   @id @db.VarChar(36)
+  fiscalYear     Int
+  fiscalPeriod   Int
+  baselineId     Int
+  requestedById  Int
+  deviceId       String   @db.VarChar(36)
+  status         String   @db.VarChar(24)
+  scope          Json
+  result         Json?
+  resultHash     String?  @db.VarChar(64)
+  sourceMode     String?  @db.VarChar(24)
+  leaseHash      String?  @db.VarChar(64)
+  leaseUntil     DateTime?
+  createdAt      DateTime @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  reviewedAt     DateTime?
+  reviewedById   Int?
+  publishedId    Int?
+  errorCode      String?  @db.VarChar(40)
+  device DesktopAgentDevice @relation(fields: [deviceId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "hpp_sync_jobs_device_fk")
+  baseline HppPeriodVersion @relation("HppSyncBaseline", fields: [baselineId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "hpp_sync_jobs_baseline_fk")
+  published HppPeriodVersion? @relation("HppSyncPublished", fields: [publishedId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "hpp_sync_jobs_published_fk")
+
+  @@index([deviceId, status, createdAt])
+  @@index([fiscalYear, fiscalPeriod, status])
+  @@map("hpp_sync_jobs")
 }

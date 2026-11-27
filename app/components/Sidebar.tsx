@@ -1,12 +1,13 @@
 'use client';
 
-import { LayoutDashboard, FileText, TrendingUp, Clock, Users, ShieldCheck, X, ChevronRight, ChevronDown, Layers3, Settings } from 'lucide-react';
+import { LayoutDashboard, FileText, TrendingUp, Clock, Users, ShieldCheck, X, ChevronRight, ChevronDown, Layers3, Settings, ChartNoAxesCombined } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { isAdmin, getCurrentUserRole, type UserRole } from '../utils/rolePermissions';
 import { cn } from '@/lib/utils';
+import { HPP_ROUTE, canReadHpp, isHppPath } from '@/lib/hpp/access';
 import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import { Badge } from './ui/badge';
@@ -60,6 +61,7 @@ const menuItems: MenuItem[] = [
     badge: null,
     children: costStructureNavigation,
   },
+  { icon: ChartNoAxesCombined, label: 'HPP – Cost Intelligence', href: HPP_ROUTE, requireAdmin: false, badge: null },
   { icon: TrendingUp, label: 'Monitoring Prepaid', href: '/monitoring-prepaid', requireAdmin: false, badge: null },
   { icon: Clock, label: 'Monitoring Accrual', href: '/monitoring-accrual', requireAdmin: false, badge: null },
   ...costStructureAdminNavigation.map((item) => ({
@@ -138,7 +140,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
 
   const admin = userRole !== null && isAdmin(userRole);
   const filteredMenuItems = menuItems
-    .filter(item => !item.requireAdmin || admin)
+    .filter(item => (!item.requireAdmin || admin) && (item.href !== HPP_ROUTE || canReadHpp(userRole)))
     .map(item => ({ ...item, children: item.children ? visibleNavigationItems(item.children as CostNavigationItem[], admin) : undefined }));
   const handleLinkClick = () => { if (onClose) onClose(); };
 
@@ -182,7 +184,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
             <ul ref={navRef} className="space-y-0.5">
               {filteredMenuItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.href;
+                const isActive = item.href === HPP_ROUTE ? isHppPath(pathname) : pathname === item.href;
                 const hasChildren = !!item.children?.length;
                 const menuOpen = openMenus.has(item.href);
                 const isParentActive = isActive || (hasChildren && item.children!.some(c => navigationContainsPath(c as CostNavigationItem, pathname)));
@@ -197,7 +199,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                       <button type="button" onClick={() => toggleMenu(item.href)} className="px-2 py-2.5 shrink-0 opacity-60 hover:opacity-100 transition-opacity">{menuOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
                     </div>
                   ) : (
-                    <Tooltip><TooltipTrigger asChild><Link href={item.href} onClick={handleLinkClick} onMouseEnter={e => handleItemHover(e.currentTarget as HTMLElement, true)} onMouseLeave={e => handleItemHover(e.currentTarget as HTMLElement, false)} className={cn('group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative', isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
+                    <Tooltip><TooltipTrigger asChild><Link href={item.href} aria-current={isActive ? 'page' : undefined} onClick={handleLinkClick} onMouseEnter={e => handleItemHover(e.currentTarget as HTMLElement, true)} onMouseLeave={e => handleItemHover(e.currentTarget as HTMLElement, false)} className={cn('group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors relative', isActive ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
                       {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-primary rounded-r-full" />}<Icon size={17} className={cn('shrink-0 transition-transform group-hover:scale-110', isActive ? 'text-primary' : '')} /><span className="flex-1 truncate">{item.label}</span>{item.badge && <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">{item.badge}</Badge>}{isActive && <ChevronRight size={14} className="text-primary opacity-60 shrink-0" />}
                     </Link></TooltipTrigger><TooltipContent side="right" className="text-xs">{item.label}</TooltipContent></Tooltip>
                   )}

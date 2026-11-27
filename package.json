@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node scripts/run-cost-structure-tests.mjs",
+    "test:hpp": "node --experimental-strip-types --test app/hpp-cost-intelligence/model.test.mjs lib/hpp/access.test.mjs lib/hpp/history.test.mjs lib/hpp/import-model.test.mjs lib/hpp/agent-model.test.mjs",
     "smoke:rate-limit": "node scripts/security-smoke-rate-limit.mjs",
     "smoke:realtime-auth": "node scripts/security-smoke-realtime-auth.mjs",
     "postinstall": "prisma generate"
