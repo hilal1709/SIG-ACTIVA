@@ -23,6 +23,7 @@ async function review(tx:Prisma.TransactionClient,id:string){
  return {j,r,next,plan};
 }
 export async function GET(req:NextRequest){
+ if(process.env.NEXT_PUBLIC_HPP_AGENT_ENABLED!=='true')return reply({error:'SAP Sync belum diaktifkan'},404);
  try{
   const u=await user(req);
   const id=req.nextUrl.searchParams.get('jobId');
@@ -32,6 +33,7 @@ export async function GET(req:NextRequest){
  }catch(e){return fail(e);}
 }
 export async function POST(req:NextRequest){
+ if(process.env.NEXT_PUBLIC_HPP_AGENT_ENABLED!=='true')return reply({error:'SAP Sync belum diaktifkan'},404);
  try{
   const u=await user(req,true),b=await body(req);
   if(b.action==='register'){

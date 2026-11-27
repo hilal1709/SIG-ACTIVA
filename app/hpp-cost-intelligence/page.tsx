@@ -21,7 +21,7 @@ export default function HppCostIntelligencePage() {
     </div>
     <div className="min-w-0 flex-1 lg:ml-64">
       <Header title="HPP | Cost Intelligence" subtitle="Analisis biaya produksi (COGM) per material dan plant" onMenuClick={() => setOpen(v => !v)}/>
-      <main className="min-w-0 p-4 sm:p-6 md:p-8">{manage&&<div className="mb-3 flex flex-wrap justify-end gap-2"><Link href="/hpp-cost-intelligence/sap-sync" className="rounded-md border border-border px-3 py-2 text-xs font-semibold hover:bg-muted">SAP Data Sync</Link><Link href={HPP_MANAGE_ROUTE} className="rounded-md border border-border px-3 py-2 text-xs font-semibold hover:bg-muted">Data Management</Link></div>}<HppDashboard/></main>
+      <main className="min-w-0 p-4 sm:p-6 md:p-8">{manage&&<div className="mb-3 flex flex-wrap justify-end gap-2">{process.env.NEXT_PUBLIC_HPP_AGENT_ENABLED==='true'&&<Link href="/hpp-cost-intelligence/sap-sync" className="rounded-md border border-border px-3 py-2 text-xs font-semibold hover:bg-muted">SAP Data Sync</Link>}<Link href={HPP_MANAGE_ROUTE} className="rounded-md border border-border px-3 py-2 text-xs font-semibold hover:bg-muted">Data Management</Link></div>}<HppDashboard/></main>
     </div>
   </div>;
 }

@@ -53,3 +53,7 @@ HPP Dashboard and Data Management now follow the existing Activa Dashboard motio
 ## Stage 5 — SAP Desktop Agent pilot
 
 See scripts/desktop-agent/README.md. Generic device registration and a versioned machine protocol; HPP is the first job handler. New device registration/revocation, scoped job queue, machine-only bearer endpoint, result staging and human review. Synthetic mode cannot publish; SAP publication additionally defaults off. Migration is additive and must be applied through approved Supabase tooling, not the historical Prisma chain. No direct SAP posting. Real SAP GUI adapter and end-to-end Windows validation are pending.
+
+## Upload-only production release
+
+Desktop Agent pilot is disabled by default. `NEXT_PUBLIC_HPP_AGENT_ENABLED=true` is an explicit deployment-time feature flag (not a secret); enable only after phase 5 database migration and isolated pilot approval. Machine and sync endpoints independently reject calls when disabled; the menu link is hidden and direct SAP Sync page navigation redirects. Excel import and historical dashboard are independent. SAP publication remains separately gated by `HPP_AGENT_SAP_PUBLISH_ENABLED=true`. Do not apply phase 5 migration for the upload-only release.

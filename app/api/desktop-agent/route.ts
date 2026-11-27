@@ -6,6 +6,7 @@ import type { Prisma } from '@prisma/client';
 export const runtime='nodejs';
 export const dynamic='force-dynamic';
 export async function POST(req:NextRequest){
+ if(process.env.NEXT_PUBLIC_HPP_AGENT_ENABLED!=='true')return reply({error:'SAP Sync belum diaktifkan'},404);
  try{
   const id=await device(req), b=await body(req);
   if(b.protocol!==1)throw new AgentError('Unsupported protocol',400);

@@ -98,6 +98,16 @@ export async function middleware(request: NextRequest) {
   const isApi = pathname.startsWith('/api/');
   const method = request.method.toUpperCase();
 
+  // Upload-only release: agent routes are opt-in, independent of HPP Excel import.
+  if (process.env.NEXT_PUBLIC_HPP_AGENT_ENABLED !== 'true') {
+    if (startsWithPath(pathname, '/api/desktop-agent') || startsWithPath(pathname, '/api/hpp/sync')) {
+      return applySecurityHeaders(NextResponse.json({ error: 'SAP Sync belum diaktifkan' }, { status: 404 }));
+    }
+    if (startsWithPath(pathname, '/hpp-cost-intelligence/sap-sync')) {
+      return applySecurityHeaders(NextResponse.redirect(new URL('/hpp-cost-intelligence', request.url)));
+    }
+  }
+
   // This exact machine endpoint performs its own bearer authentication; all other APIs retain session checks.
   if (pathname === '/api/desktop-agent' && method === 'POST') {
     return applySecurityHeaders(NextResponse.next());
