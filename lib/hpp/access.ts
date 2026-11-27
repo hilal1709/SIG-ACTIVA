@@ -14,3 +14,8 @@ export function canReadHpp(role: string | null | undefined): boolean {
 export function isHppPath(pathname: string): boolean {
   return pathname === HPP_ROUTE || pathname.startsWith(HPP_ROUTE + '/');
 }
+
+export const HPP_MANAGE_ROUTE = HPP_ROUTE + '/data-management';
+export function canManageHpp(role: string | null | undefined): boolean {
+  return role === 'ADMIN_SYSTEM' || role === 'STAFF_ACCOUNTING';
+}

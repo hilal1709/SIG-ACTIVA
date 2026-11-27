@@ -1443,6 +1443,7 @@ model HppPeriodVersion {
   sourceType   String
   sourceName   String?
   sourceSha256 String?   @db.VarChar(64)
+  correctionNote String? @db.Text
   createdById  Int?
   createdAt    DateTime  @default(now())
   publishedAt  DateTime?

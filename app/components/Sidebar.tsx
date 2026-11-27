@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
 import { isAdmin, getCurrentUserRole, type UserRole } from '../utils/rolePermissions';
 import { cn } from '@/lib/utils';
-import { HPP_ROUTE, canReadHpp } from '@/lib/hpp/access';
+import { HPP_ROUTE, canReadHpp, isHppPath } from '@/lib/hpp/access';
 import { Separator } from './ui/separator';
 import { ScrollArea } from './ui/scroll-area';
 import { Badge } from './ui/badge';
@@ -184,7 +184,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
             <ul ref={navRef} className="space-y-0.5">
               {filteredMenuItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = pathname === item.href;
+                const isActive = item.href === HPP_ROUTE ? isHppPath(pathname) : pathname === item.href;
                 const hasChildren = !!item.children?.length;
                 const menuOpen = openMenus.has(item.href);
                 const isParentActive = isActive || (hasChildren && item.children!.some(c => navigationContainsPath(c as CostNavigationItem, pathname)));

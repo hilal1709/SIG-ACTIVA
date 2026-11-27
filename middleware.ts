@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionCookieName, verifySessionToken } from '@/lib/session';
-import { canReadHpp, isHppPath } from '@/lib/hpp/access';
+import { canReadHpp, isHppPath, canManageHpp, HPP_MANAGE_ROUTE } from '@/lib/hpp/access';
 
 const PUBLIC_PAGE_PATHS = ['/login', '/register', '/verify-email'];
 const PUBLIC_API_PATHS = [
@@ -156,6 +156,10 @@ export async function middleware(request: NextRequest) {
   // HPP navigation visibility is not an authorization boundary. Check the signed session here.
   if (!isApi && isHppPath(pathname) && !canReadHpp(session?.role)) {
     return applySecurityHeaders(NextResponse.redirect(new URL('/', request.url)));
+  }
+
+  if (!isApi && startsWithPath(pathname, HPP_MANAGE_ROUTE) && !canManageHpp(session?.role)) {
+    return applySecurityHeaders(NextResponse.redirect(new URL('/hpp-cost-intelligence', request.url)));
   }
 
   if (!isApi && isAdminPage(pathname)) {
