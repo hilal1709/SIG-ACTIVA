@@ -1,0 +1,62 @@
+.dashboard {
+  container-type: inline-size;
+}
+.filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 8px;
+}
+.filters > * { min-width: 0; }
+.filters label > span { overflow-wrap: anywhere; }
+.materialFilter { grid-column: span 2; }
+.resetFilter { white-space: nowrap; }
+@container (min-width: 560px) {
+  .filters { grid-template-columns: repeat(3, minmax(0,1fr)); }
+}
+@container (min-width: 860px) {
+  .filters {
+    grid-template-columns: minmax(94px,1fr) minmax(94px,1fr) minmax(86px,.85fr) minmax(88px,.9fr) minmax(164px,2.2fr) minmax(72px,.75fr) minmax(76px,auto);
+  }
+  .materialFilter { grid-column: auto; }
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.kpi {
+  min-width: 0;
+  padding: clamp(9px, 1.25cqi, 18px);
+  display: flex;
+  flex-direction: column;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.kpiValue {
+  font-size: clamp(23px, 2.5cqi, 32px);
+  line-height: 1.25;
+  margin: 3px 0;
+}
+.kpi > :last-child { margin-top: auto; }
+.tableScroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+.register { width: 100%; border-collapse: collapse; table-layout: auto; }
+.register.manual { table-layout: fixed; }
+.register th, .register td { box-sizing: border-box; vertical-align: middle; }
+.th { position: relative; padding: 8px 13px 8px 8px; overflow-wrap: anywhere; }
+.th button { max-width: 100%; white-space: normal; text-align: inherit; overflow-wrap: anywhere; }
+.description, .status { white-space: normal; overflow-wrap: anywhere; }
+.status { display: inline-block; }
+.numeric, .code { white-space: nowrap; }
+.manual .numeric, .manual .code { white-space: normal; overflow-wrap: anywhere; }
+.manual .code button { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.resizeHandle {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 10px;
+  cursor: col-resize; touch-action: none; user-select: none; z-index: 1;
+}
+.resizeHandle::after {
+  content: ''; position: absolute; top: 22%; bottom: 22%; right: 3px;
+  width: 1px; background: #aab8c6;
+}
+.resizeHandle:hover::after, .resizeHandle:focus-visible::after { width: 2px; background: #dc2626; }
