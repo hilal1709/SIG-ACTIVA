@@ -1,15 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { FileSpreadsheet, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { FileSpreadsheet, RefreshCw, CheckCircle2, LoaderCircle, History, UploadCloud } from 'lucide-react';
+import { toast } from 'sonner';
+import { AnimatedCount, HppLoadingBar, HppSkeleton, useHppReveal } from '../HppUx';
+import styles from '../dashboard.module.css';
 import { IMPORT_MONTHS, MAX_FILE_BYTES, MAX_IMPORT_ROWS, parseImportGrid, type ImportWorkbook, type PeriodPlan } from '@/lib/hpp/import-model';
 
 type Preview={year:number;hash:string;count:number;periods:PeriodPlan[]};
 type HistoryRow={id:number;fiscalYear:number;fiscalPeriod:number;revision:number;sourceType:string;sourceName:string|null;sourceSha256:string|null;correctionNote:string|null;createdAt:string;publishedAt:string|null;isCurrent:boolean;createdBy:{name:string}|null;_count:{observations:number}};
 type History={year:number|null;years:number[];history:HistoryRow[];truncated:boolean};
-const btn='inline-flex items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-semibold hover:bg-muted disabled:opacity-40';
+const btn='inline-flex items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-semibold transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40';
 const muted='text-xs text-muted-foreground';
-const panel='min-w-0 rounded-lg border border-border bg-card p-4 shadow-sm';
+const panel=styles.panel+' min-w-0 rounded-xl border border-border bg-card p-4 shadow';
 const actionLabel:Record<PeriodPlan['action'],string>={new:'Baru',unchanged:'Identik',correction:'Koreksi',blocked:'Diblokir',empty:'Kosong'};
 const actionStyle:Record<PeriodPlan['action'],string>={new:'bg-blue-50 text-blue-800',unchanged:'bg-slate-100 text-slate-700',correction:'bg-amber-100 text-amber-900',blocked:'bg-red-100 text-red-800',empty:'bg-slate-100 text-slate-600'};
 function dateLabel(value:string|null){return value?new Date(value).toLocaleString('id-ID',{timeZone:'Asia/Jakarta'})+' WIB':'—';}
@@ -25,7 +28,10 @@ export default function HppDataManagement(){
   const [preview,setPreview]=useState<Preview|null>(null),[selection,setSelection]=useState<number[]>([]);
   const [reason,setReason]=useState(''),[confirmed,setConfirmed]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
-  const [history,setHistory]=useState<History|null>(null),[historyError,setHistoryError]=useState(''),[historyBusy,setHistoryBusy]=useState(false);
+  const [history,setHistory]=useState<History|null>(null),[historyError,setHistoryError]=useState(''),[historyBusy,setHistoryBusy]=useState(true);
+  const root=useRef<HTMLDivElement>(null);
+  useHppReveal(root,preview!==null);
+  const [operation,setOperation]=useState<'preview'|'publish'|null>(null);
   const input=useRef<HTMLInputElement>(null),historyRequest=useRef(0);
   const loadHistory=useCallback(async(year?:number)=>{
     const id=++historyRequest.current;setHistoryBusy(true);setHistoryError('');
@@ -40,7 +46,7 @@ export default function HppDataManagement(){
   function clearPreview(){setPreview(null);setSelection([]);setReason('');setConfirmed(false);}
   async function chooseFile(e:ChangeEvent<HTMLInputElement>){
     const file=e.target.files?.[0];e.target.value='';if(!file)return;
-    clearPreview();setBook(null);setFileName('');setError('');setMessage('');setBusy(true);
+    clearPreview();setBook(null);setFileName('');setError('');setMessage('');setBusy(true);setOperation('preview');
     try{
       if(!file.name.toLowerCase().endsWith('.xlsx'))throw new Error('Gunakan file .xlsx');
       if(file.size>MAX_FILE_BYTES)throw new Error('Ukuran file maksimal 3 MB');
@@ -66,66 +72,69 @@ export default function HppDataManagement(){
       const result=await api({action:'preview',workbook:parsed,sourceName:file.name}) as Preview;
       setPreview(result);setSelection(result.periods.filter(p=>p.action==='new').map(p=>p.period));
     }catch(e){setError(e instanceof Error?e.message:'File tidak dapat diproses');}
-    finally{setBusy(false);}
+    finally{setBusy(false);setOperation(null);}
   }
   async function refreshPreview(){
-    if(!book)return;setBusy(true);setError('');setMessage('');clearPreview();
+    if(!book)return;setBusy(true);setOperation('preview');setError('');setMessage('');clearPreview();
     try{const result=await api({action:'preview',workbook:book,sourceName:fileName}) as Preview;setPreview(result);setSelection(result.periods.filter(p=>p.action==='new').map(p=>p.period));}
     catch(e){setError(e instanceof Error?e.message:'Preview gagal');}
-    finally{setBusy(false);}
+    finally{setBusy(false);setOperation(null);}
   }
   async function publish(){
     if(!book||!preview||!selection.length||busy)return;
     if(corrections.length&&(!confirmed||reason.trim().length<5))return;
-    setBusy(true);setError('');setMessage('');
+    setBusy(true);setOperation('publish');setError('');setMessage('');
     try{
       const result=await api({action:'publish',workbook:book,sourceName:fileName,hash:preview.hash,selection:selectedPlans.map(p=>({period:p.period,currentId:p.currentId})),confirmCorrection:confirmed,correctionNote:reason}) as {year:number;published:{period:number;revision:number}[];skipped:number[]};
       setMessage('Publikasi berhasil: '+result.published.map(p=>IMPORT_MONTHS[p.period-1]+' v'+p.revision).join(', ')+(result.skipped.length?' · Identik dilewati: '+result.skipped.length:''));
+      toast.success('Publikasi HPP berhasil',{description:result.published.length+' periode diterbitkan. '+result.skipped.length+' periode identik dilewati.'});
       clearPreview();
       await loadHistory(result.year);
       try{const fresh=await api({action:'preview',workbook:book,sourceName:fileName}) as Preview;setPreview(fresh);}catch{setError('Publikasi berhasil, tetapi preview terbaru gagal dimuat.');}
     }catch(e){setError(e instanceof Error?e.message:'Publikasi gagal');clearPreview();}
-    finally{setBusy(false);}
+    finally{setBusy(false);setOperation(null);}
   }
-  return <div className="space-y-4 text-sm">
-    <section className={panel}>
+  return <div ref={root} className="space-y-4 text-sm" aria-busy={busy}>
+    <HppLoadingBar active={busy||historyBusy} label={operation==='publish'?'Mempublikasikan periode HPP':'Memproses data HPP'}/>
+    <nav aria-label="Tahapan import HPP" data-hpp-reveal className="grid grid-cols-2 gap-2 sm:grid-cols-4">{[{label:'Upload Excel',done:!!book,icon:UploadCloud},{label:'Preview & validasi',done:!!preview,icon:FileSpreadsheet},{label:'Publikasi',done:!!message,icon:CheckCircle2},{label:'Histori',done:false,icon:History}].map((step,i)=>{const Icon=step.icon;return <a key={step.label} href={(i===1||i===2)&&!preview?undefined:'#hpp-step-'+(i+1)} aria-disabled={(i===1||i===2)&&!preview?true:undefined} className={'flex min-w-0 items-center gap-2 rounded-xl border border-border bg-card p-3 text-xs font-semibold shadow-sm transition-colors '+((i===1||i===2)&&!preview?'cursor-default opacity-50':'hover:bg-muted')}><span className={'rounded-lg p-2 '+(step.done?'bg-green-50 text-green-700':'bg-muted text-muted-foreground')}><Icon size={15}/></span><span className="min-w-0 break-words">{i+1}. {step.label}</span></a>;})}</nav>
+    <section id="hpp-step-1" data-hpp-reveal className={panel+" scroll-mt-24"}>
       <h2 className="font-semibold text-base">01 / Upload Excel</h2>
       <p className={muted+' mt-1'}>Template Dashboard HPP: Lembar1, tahun laporan B1, Material, Material Description, Plant, pasangan Deliv Qty dan COGM Jan–Des. Maksimal 3 MB dan 1.000 kombinasi. File asli tidak disimpan; data terstruktur divalidasi pada server.</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input ref={input} type="file" accept=".xlsx" className="hidden" onChange={chooseFile} aria-label="Pilih Excel HPP"/>
-        <button type="button" className={btn} disabled={busy} onClick={()=>input.current?.click()}><FileSpreadsheet size={16}/>Pilih Excel &amp; preview</button>
+        <button type="button" className={btn} disabled={busy} onClick={()=>input.current?.click()}>{operation==='preview'?<LoaderCircle size={16} className="animate-spin motion-reduce:animate-none"/>:<FileSpreadsheet size={16}/>}Pilih Excel &amp; preview</button>
         {book&&<button type="button" className={btn} disabled={busy} onClick={()=>void refreshPreview()}><RefreshCw size={14}/>Preview ulang</button>}
         {fileName&&<span className="break-all text-xs">{fileName} · {book?.year} · {book?.rows.length} kombinasi</span>}
       </div>
-      {busy&&<p role="status" className={muted+' mt-2'}>Memproses data…</p>}
+      {busy&&<p role="status" className={muted+' mt-2 flex items-center gap-2'}><LoaderCircle size={14} className="animate-spin text-primary motion-reduce:animate-none"/>{operation==='publish'?'Mempublikasikan periode terpilih…':'Memvalidasi dan membandingkan data…'}</p>}
       {error&&<p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800">{error}</p>}
       {message&&<p role="status" className="mt-3 flex items-center gap-2 rounded-md border border-green-200 bg-green-50 p-3 text-xs text-green-800"><CheckCircle2 size={16}/>{message}</p>}
     </section>
-    {preview&&<section className={panel}>
+    {preview&&<section id="hpp-step-2" data-hpp-reveal className={panel+" scroll-mt-24"}>
       <h2 className="font-semibold text-base">02 / Preview &amp; validasi periode</h2>
       <p className={muted+' mt-1'}>{preview.year} · {preview.count} kombinasi material–plant per bulan. Nilai kosong berbeda dari nol. Seluruh baris, termasuk kombinasi kosong, dipertahankan pada bulan yang dipublikasikan.</p>
-      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,145px),1fr))] gap-2">{[['Periode baru',preview.periods.filter(p=>p.action==='new').length],['Identik',preview.periods.filter(p=>p.action==='unchanged').length],['Koreksi',preview.periods.filter(p=>p.action==='correction').length],['Kosong / diblokir',preview.periods.filter(p=>p.action==='blocked'||p.action==='empty').length]].map(([label,n])=><div className="rounded border border-border p-3" key={label}><p className={muted}>{label}</p><strong className="text-xl tabular-nums">{n}</strong></div>)}</div>
+      <div className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(100%,145px),1fr))] gap-2">{[['Periode baru',preview.periods.filter(p=>p.action==='new').length],['Identik',preview.periods.filter(p=>p.action==='unchanged').length],['Koreksi',preview.periods.filter(p=>p.action==='correction').length],['Kosong / diblokir',preview.periods.filter(p=>p.action==='blocked'||p.action==='empty').length]].map(([label,n])=><div className="rounded border border-border p-3" key={label}><p className={muted}>{label}</p><strong className="text-xl tabular-nums"><AnimatedCount value={Number(n)}/></strong></div>)}</div>
       <div className="my-3 flex flex-wrap gap-2"><button type="button" className={btn} disabled={busy} onClick={()=>setSelection(eligible.filter(p=>p.action==='new').map(p=>p.period))}>Pilih periode baru</button><button type="button" className={btn} disabled={busy} onClick={()=>setSelection(eligible.map(p=>p.period))}>Pilih semua yang valid</button><button type="button" className={btn} disabled={busy} onClick={()=>setSelection([])}>Kosongkan pilihan</button></div>
       <div className="overflow-x-auto"><table className="w-full border-collapse text-xs"><thead className="bg-muted"><tr>{['Pilih','Periode','Versi aktif','Terisi','Kosong','Berubah','Tambah','Hilang','Jadi kosong','Metadata','Status'].map(t=><th key={t} className="p-2 text-left">{t}</th>)}</tr></thead><tbody>{preview.periods.map(p=><tr key={p.period} className="border-b border-border"><td className="p-2"><input type="checkbox" aria-label={'Pilih '+IMPORT_MONTHS[p.period-1]} disabled={busy||!eligible.some(x=>x.period===p.period)} checked={selection.includes(p.period)} onChange={e=>{setConfirmed(false);setSelection(old=>e.target.checked?[...old,p.period]:old.filter(x=>x!==p.period));}}/></td><td className="p-2 font-medium">{IMPORT_MONTHS[p.period-1]}</td><td className="p-2">{p.revision===null?'—':'v'+p.revision}</td>{[p.filled,p.blank,p.changed,p.added,p.missing,p.cleared,p.protectedMetadata].map((v,i)=><td className={'p-2 tabular-nums '+(v>0&&i>=4?'font-semibold text-red-700':'')} key={i}>{v}</td>)}<td className="p-2"><span className={'rounded px-2 py-1 '+actionStyle[p.action]}>{actionLabel[p.action]}</span></td></tr>)}</tbody></table></div>
       <p className={muted+' mt-3'}>Hilang = kombinasi versi aktif tidak ada di workbook baru. Jadi kosong = nilai sebelumnya terisi menjadi kosong. Metadata = kombinasi memiliki unit atau mata uang pada versi aktif. Periode dengan kombinasi hilang atau metadata terverifikasi diblokir; periode identik tidak membuat versi baru.</p>
       <h3 className="mt-4 font-semibold">Sampel sumber (10 kombinasi pertama)</h3>
       <div className="mt-2 overflow-x-auto"><table className="w-full text-xs"><thead className="bg-muted"><tr>{['Material','Deskripsi','Plant','Periode','COGM','Deliv Qty'].map(s=><th className="p-2 text-left" key={s}>{s}</th>)}</tr></thead><tbody>{book?.rows.slice(0,10).map(r=>{const p=(selection[0]??preview.periods.find(x=>x.filled>0)?.period??1)-1;return <tr className="border-b border-border" key={JSON.stringify([r.code,r.plant])}><td className="p-2">{r.code}</td><td className="p-2">{r.name}</td><td className="p-2">{r.plant}</td><td className="p-2">{IMPORT_MONTHS[p]}</td><td className="p-2">{r.c[p]??'—'}</td><td className="p-2">{r.q[p]??'—'}</td></tr>;})}</tbody></table></div>
     </section>}
-    {preview&&<section className={panel}>
+    {preview&&<section id="hpp-step-3" data-hpp-reveal className={panel+" scroll-mt-24"}>
       <h2 className="font-semibold text-base">03 / Publikasi</h2>
       <p className={muted+' mt-1'}>{selection.length} periode dipilih; {corrections.length} koreksi. Dashboard membaca versi aktif setelah publikasi berhasil. Versi lama tidak dihapus.</p>
       {corrections.length>0&&<div className="my-3 space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs">
         <label className="block font-medium">Alasan koreksi (wajib)<textarea value={reason} maxLength={1000} disabled={busy} onChange={e=>{setReason(e.target.value);setConfirmed(false);}} className="mt-1 block w-full rounded border border-border bg-white p-2" rows={3}/></label>
         <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/>Saya telah memeriksa perubahan nilai dan cakupan periode, serta menyetujui penerbitan versi koreksi.</label>
       </div>}
-      <button type="button" className={btn+' mt-3 bg-primary/10'} disabled={busy||selection.length===0||(corrections.length>0&&(!confirmed||reason.trim().length<5))} onClick={()=>void publish()}>Publikasikan {selection.length} periode</button>
+      <button type="button" className={btn+' mt-3 bg-primary/10'} disabled={busy||selection.length===0||(corrections.length>0&&(!confirmed||reason.trim().length<5))} onClick={()=>void publish()}>{operation==='publish'&&<LoaderCircle size={15} className="animate-spin motion-reduce:animate-none"/>}{operation==='publish'?'Mempublikasikan…':'Publikasikan '+selection.length+' periode'}</button>
     </section>}
-    <section className={panel}>
-      <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-base">04 / Histori publikasi</h2><p className={muted}>Versi aktif dan historis, pengguna, sumber, waktu dan alasan koreksi.</p></div><div className="flex items-center gap-2"><select aria-label="Tahun histori" className="rounded border border-border p-2 text-xs" value={history?.year??''} disabled={historyBusy} onChange={e=>void loadHistory(e.target.value?Number(e.target.value):undefined)}><option value="">Tahun terbaru</option>{[...new Set([...(history?.years??[]),...(history?.year?[history.year]:[])])].sort((a,b)=>b-a).map(y=><option key={y} value={y}>{y}</option>)}</select><button className={btn} type="button" disabled={historyBusy} onClick={()=>void loadHistory(history?.year??undefined)}><RefreshCw size={14}/>Refresh</button></div></div>
+    <section id="hpp-step-4" data-hpp-reveal className={panel+" scroll-mt-24"}>
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold text-base">04 / Histori publikasi</h2><p className={muted}>Versi aktif dan historis, pengguna, sumber, waktu dan alasan koreksi.</p></div><div className="flex items-center gap-2"><select aria-label="Tahun histori" className="rounded border border-border p-2 text-xs" value={history?.year??''} disabled={historyBusy} onChange={e=>void loadHistory(e.target.value?Number(e.target.value):undefined)}><option value="">Tahun terbaru</option>{[...new Set([...(history?.years??[]),...(history?.year?[history.year]:[])])].sort((a,b)=>b-a).map(y=><option key={y} value={y}>{y}</option>)}</select><button className={btn} type="button" disabled={historyBusy} onClick={()=>void loadHistory(history?.year??undefined)}><RefreshCw size={14} className={historyBusy?'animate-spin motion-reduce:animate-none':undefined}/>Refresh</button></div></div>
       {historyError&&<p role="alert" className="mt-2 text-xs text-red-700">{historyError}</p>}
       {history?.truncated&&<p className="mt-2 text-xs text-amber-800">Menampilkan 500 versi terbaru pada tahun terpilih.</p>}
       <div className="mt-3 overflow-x-auto"><table className="w-full border-collapse text-xs"><thead className="bg-muted"><tr>{['Periode','Versi','Status','Jumlah','Sumber','Pengguna','Publikasi','Alasan koreksi'].map(s=><th key={s} className="p-2 text-left">{s}</th>)}</tr></thead><tbody>{history?.history.map(h=><tr key={h.id} className="border-b border-border"><td className="p-2 whitespace-nowrap">{IMPORT_MONTHS[h.fiscalPeriod-1]} {h.fiscalYear}</td><td className="p-2">v{h.revision}</td><td className="p-2"><span className={'rounded px-2 py-1 '+(h.isCurrent?'bg-green-100 text-green-800':'bg-muted')}>{h.isCurrent?'Aktif':h.publishedAt?'Historis':'Belum publikasi'}</span></td><td className="p-2 tabular-nums">{h._count.observations}</td><td className="p-2 break-all" title={h.sourceSha256??''}>{h.sourceName??h.sourceType}</td><td className="p-2">{h.createdBy?.name??'—'}</td><td className="p-2 whitespace-nowrap">{dateLabel(h.publishedAt)}</td><td className="p-2 break-words">{h.correctionNote??'—'}</td></tr>)}</tbody></table></div>
-      {!history?.history.length&&<p className={muted+' py-5 text-center'}>{historyBusy?'Memuat histori…':'Belum ada histori yang dapat ditampilkan.'}</p>}
+      {historyBusy&&!history?<HppSkeleton kind="table" label="Memuat histori publikasi…"/>:!history?.history.length&&<p className={muted+' py-5 text-center'}>{historyError?'Histori belum dapat dimuat.':'Belum ada histori yang dapat ditampilkan.'}</p>}
     </section>
   </div>;
 }
